@@ -1,0 +1,15 @@
+# dist folder
+dist/
+
+# ide
+.vscode
+
+# kiro
+.kirograph/
+.kiro
+
+# map
+*.js.map
+
+# dependencies
+node_modules/

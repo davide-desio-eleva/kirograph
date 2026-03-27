@@ -1,0 +1,48 @@
+{
+  "name": "kirograph",
+  "version": "0.1.0",
+  "description": "Semantic code knowledge graph for Kiro — fewer tool calls, instant symbol lookups, 100% local.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "kirograph": "./dist/bin/kirograph.js",
+    "kg": "./dist/bin/kirograph.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc && node scripts/copy-assets.js",
+    "dev": "tsc --watch",
+    "test": "vitest --run",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "keywords": [
+    "kiro",
+    "code-intelligence",
+    "knowledge-graph",
+    "mcp",
+    "semantic-search"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@xenova/transformers": "^2.17.0",
+    "commander": "^14.0.2",
+    "figlet": "^1.11.0",
+    "node-sqlite3-wasm": "^0.8.30",
+    "picomatch": "^4.0.3",
+    "tree-sitter-wasms": "^0.1.11",
+    "web-tree-sitter": "^0.25.3"
+  },
+  "devDependencies": {
+    "@types/figlet": "^1.7.0",
+    "@types/node": "^20.0.0",
+    "@types/picomatch": "^4.0.2",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
