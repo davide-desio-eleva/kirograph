@@ -10,10 +10,12 @@
   },
   "files": [
     "dist",
+    "scripts",
     "README.md"
   ],
   "scripts": {
     "build": "tsc && node scripts/copy-assets.js",
+    "postinstall": "node scripts/postinstall.js",
     "dev": "tsc --watch",
     "test": "vitest --run",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""

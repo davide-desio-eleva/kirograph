@@ -113,6 +113,14 @@ program
     const stats = cg.getStats();
     console.log(`Files: ${stats.files}  Symbols: ${stats.nodes}  Edges: ${stats.edges}`);
     console.log('By kind:', Object.entries(stats.nodesByKind).map(([k, v]) => `${k}=${v}`).join(', '));
+    if (stats.filesByLanguage && Object.keys(stats.filesByLanguage).length > 0) {
+      console.log('By language:', Object.entries(stats.filesByLanguage).map(([k, v]) => `${k}=${v}`).join(', '));
+    }
+    console.log('Frameworks:', stats.frameworks.length > 0 ? stats.frameworks.join(', ') : 'none detected');
+    const semanticLine = stats.embeddingsEnabled
+      ? `Semantic search: enabled (${stats.embeddingCount} embeddings / ${stats.nodes} symbols)`
+      : `Semantic search: disabled`;
+    console.log(semanticLine);
     cg.close();
   });
 

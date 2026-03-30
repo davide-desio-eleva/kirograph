@@ -52,6 +52,14 @@ export class GraphDatabase {
       this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)',
         [CURRENT_SCHEMA_VERSION, Date.now()]);
     }
+
+    // Add attempted_strategies column to unresolved_refs if not present.
+    // SQLite throws if the column already exists, so we catch that error.
+    try {
+      this.db.run('ALTER TABLE unresolved_refs ADD COLUMN attempted_strategies TEXT');
+    } catch {
+      // Column already exists — nothing to do.
+    }
   }
 
   // ── Files ──────────────────────────────────────────────────────────────────
@@ -127,6 +135,10 @@ export class GraphDatabase {
 
   getNodesByFile(filePath: string): Node[] {
     return this.db.all('SELECT * FROM nodes WHERE file_path = ?', [filePath]).map(this.rowToNode);
+  }
+
+  getNodesByKind(kind: Node['kind']): Node[] {
+    return this.db.all('SELECT * FROM nodes WHERE kind = ?', [kind]).map(this.rowToNode);
   }
 
   findNodesByExactName(name: string, kinds?: NodeKind[], limit = 20): Node[] {
@@ -629,6 +641,43 @@ export class GraphDatabase {
 
   // ── Stats ──────────────────────────────────────────────────────────────────
 
+  getEmbeddingCount(): number {
+    try {
+      const row = this.db.get('SELECT COUNT(*) as c FROM vectors');
+      return row ? row.c : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  storeEmbedding(nodeId: string, embedding: Float32Array, model: string): void {
+    const buf = Buffer.from(embedding.buffer);
+    this.db.run(
+      `INSERT OR REPLACE INTO vectors (node_id, embedding, model, created_at) VALUES (?, ?, ?, ?)`,
+      [nodeId, buf, model, Date.now()]
+    );
+  }
+
+  getEmbeddedNodeIds(): string[] {
+    return this.db.all('SELECT node_id FROM vectors').map((r: any) => r.node_id);
+  }
+
+  getAllEmbeddings(): Array<{ nodeId: string; embedding: Float32Array }> {
+    const rows = this.db.all('SELECT node_id, embedding FROM vectors');
+    return rows.map((r: any) => ({
+      nodeId: r.node_id as string,
+      embedding: new Float32Array(
+        (r.embedding as Buffer).buffer,
+        (r.embedding as Buffer).byteOffset,
+        (r.embedding as Buffer).byteLength / 4
+      ),
+    }));
+  }
+
+  getAllNodes(): import('../types').Node[] {
+    return this.db.all('SELECT * FROM nodes').map(this.rowToNode);
+  }
+
   getStats(): GraphStats {
     const files = this.db.get('SELECT COUNT(*) as c FROM files').c;
     const nodes = this.db.get('SELECT COUNT(*) as c FROM nodes').c;
@@ -642,7 +691,8 @@ export class GraphDatabase {
     const dbPath = path.join(this.projectRoot, '.kirograph', 'kirograph.db');
     let dbSizeBytes = 0;
     try { dbSizeBytes = fs.statSync(dbPath).size; } catch { /* ignore */ }
-    return { files, nodes, edges, nodesByKind, filesByLanguage, dbSizeBytes };
+    const embeddingCount = this.getEmbeddingCount();
+    return { files, nodes, edges, nodesByKind, filesByLanguage, dbSizeBytes, embeddingCount, embeddingsEnabled: false, frameworks: [] };
   }
 
   // ── Transactions ──────────────────────────────────────────────────────────

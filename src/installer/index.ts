@@ -10,6 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
+import { logWarn } from '../errors';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -124,7 +125,7 @@ const HOOKS: Array<{ filename: string; hook: object }> = [
       version: '1.0.0',
       description: 'Sync the KiroGraph index when the agent is idle and a dirty marker is present. Batches multiple rapid saves into one sync.',
       when: {
-        type: 'onIdle',
+        type: 'agentStop',
       },
       then: {
         type: 'runCommand',
@@ -134,9 +135,47 @@ const HOOKS: Array<{ filename: string; hook: object }> = [
   },
 ];
 
+function migrateOnIdleHooks(hooksDir: string): void {
+  if (!fs.existsSync(hooksDir)) return;
+  let files: string[];
+  try {
+    files = fs.readdirSync(hooksDir).filter(f => f.endsWith('.json'));
+  } catch {
+    return;
+  }
+  for (const file of files) {
+    const filePath = path.join(hooksDir, file);
+    let raw: string;
+    try {
+      raw = fs.readFileSync(filePath, 'utf8');
+    } catch {
+      logWarn(`KiroGraph installer: could not read hook file ${filePath}`);
+      continue;
+    }
+    let obj: any;
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      logWarn(`KiroGraph installer: could not parse hook file ${filePath}`);
+      continue;
+    }
+    if (obj?.when?.type === 'onIdle') {
+      obj.when.type = 'agentStop';
+      try {
+        fs.writeFileSync(filePath, JSON.stringify(obj, null, 2) + '\n');
+      } catch {
+        logWarn(`KiroGraph installer: could not write migrated hook file ${filePath}`);
+      }
+    }
+  }
+}
+
 function writeHooks(kiroDir: string): void {
   const hooksDir = path.join(kiroDir, 'hooks');
   ensureDir(hooksDir);
+
+  // Migrate existing hooks from onIdle → agentStop
+  migrateOnIdleHooks(hooksDir);
 
   // Remove old sync hooks that are now replaced
   const oldHooks = [

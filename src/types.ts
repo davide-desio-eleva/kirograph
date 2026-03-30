@@ -100,6 +100,9 @@ export interface GraphStats {
   nodesByKind: Record<string, number>;
   filesByLanguage: Record<string, number>;
   dbSizeBytes: number;
+  embeddingCount: number;
+  embeddingsEnabled: boolean;
+  frameworks: string[];
 }
 
 export interface TaskContext {
@@ -137,43 +140,12 @@ export interface SyncResult {
   duration: number;
 }
 
-// ── Error Classes ──────────────────────────────────────────────────────────────
+// ── Error Classes (re-exported from src/errors.ts for backward compatibility) ──
 
-export class KiroGraphError extends Error {
-  constructor(
-    message: string,
-    public readonly code: string,
-    public readonly context?: Record<string, unknown>
-  ) {
-    super(message);
-    this.name = 'KiroGraphError';
-  }
-}
-
-export class FileError extends KiroGraphError {
-  constructor(message: string, public readonly filePath: string) {
-    super(message, 'FILE_ERROR', { filePath });
-    this.name = 'FileError';
-  }
-}
-
-export class ParseError extends KiroGraphError {
-  constructor(message: string, public readonly filePath: string, public readonly line?: number) {
-    super(message, 'PARSE_ERROR', { filePath, line });
-    this.name = 'ParseError';
-  }
-}
-
-export class DatabaseError extends KiroGraphError {
-  constructor(message: string) {
-    super(message, 'DATABASE_ERROR');
-    this.name = 'DatabaseError';
-  }
-}
-
-export class ConfigError extends KiroGraphError {
-  constructor(message: string) {
-    super(message, 'CONFIG_ERROR');
-    this.name = 'ConfigError';
-  }
-}
+export {
+  KiroGraphError,
+  FileError,
+  ParseError,
+  DatabaseError,
+  ConfigError,
+} from './errors';

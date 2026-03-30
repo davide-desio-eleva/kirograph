@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import KiroGraph, { findNearestKiroGraphRoot } from '../index';
 import type { NodeKind } from '../types';
+import { logError } from '../errors';
 
 const MAX_OUTPUT = 15_000;
 
@@ -17,6 +18,12 @@ function truncate(s: string): string {
 function clampLimit(value: number | undefined, defaultValue: number): number {
   const n = typeof value === 'number' ? value : defaultValue;
   return Math.max(1, Math.min(100, Math.round(n)));
+}
+
+/** Map internal kind values to human-readable MCP response kinds. */
+function mapKind(kind: string): string {
+  if (kind === 'type_alias') return 'type';
+  return kind;
 }
 
 /** Write a session marker so hooks can detect MCP was consulted. */
@@ -240,8 +247,14 @@ export class ToolHandler {
   }
 
   async handle(toolName: string, args: Record<string, unknown>): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
-    const text = await this.dispatch(toolName, args);
-    return { content: [{ type: 'text', text: truncate(text) }] };
+    try {
+      const text = await this.dispatch(toolName, args);
+      return { content: [{ type: 'text', text: truncate(text) }] };
+    } catch (err) {
+      logError('MCP tool error', { tool: toolName, error: err });
+      const message = err instanceof Error ? err.message : String(err);
+      return { content: [{ type: 'text', text: `Error: ${message}` }], isError: true };
+    }
   }
 
   private async dispatch(toolName: string, args: Record<string, unknown>): Promise<string> {
@@ -261,7 +274,7 @@ export class ToolHandler {
         );
         if (results.length === 0) return `No symbols found matching "${args.query}".`;
         return results.map(r =>
-          `${r.node.kind} ${r.node.name}\n  File: ${r.node.filePath}:${r.node.startLine}\n  Qualified: ${r.node.qualifiedName}`
+          `${mapKind(r.node.kind)} ${r.node.name}\n  File: ${r.node.filePath}:${r.node.startLine}\n  Qualified: ${r.node.qualifiedName}`
         ).join('\n\n');
       }
 
@@ -276,7 +289,7 @@ export class ToolHandler {
         } else {
           lines.push('## Entry Points');
           for (const n of ctx.entryPoints) {
-            lines.push(`- ${n.kind} \`${n.name}\` — ${n.filePath}:${n.startLine}`);
+            lines.push(`- ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}`);
             if (ctx.codeSnippets.has(n.id)) {
               lines.push('```', ctx.codeSnippets.get(n.id)!, '```');
             }
@@ -284,7 +297,7 @@ export class ToolHandler {
           if (ctx.relatedNodes.length > 0) {
             lines.push('', '## Related Symbols');
             for (const n of ctx.relatedNodes.slice(0, 10)) {
-              lines.push(`- ${n.kind} \`${n.name}\` — ${n.filePath}:${n.startLine}`);
+              lines.push(`- ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}`);
             }
           }
         }
@@ -296,10 +309,10 @@ export class ToolHandler {
         const results = cg.searchNodes(args.symbol as string, undefined, 5);
         if (results.length === 0) return `Symbol "${args.symbol}" not found in index.`;
         const node = results[0].node;
-        const callers = cg.getCallers(node.id, limit);
+        const callers = await cg.getCallers(node.id, limit);
         if (callers.length === 0) return `No callers found for \`${node.name}\`.`;
         return `Callers of \`${node.name}\`:\n` + callers.map(n =>
-          `- ${n.kind} \`${n.name}\` — ${n.filePath}:${n.startLine}`
+          `- ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}`
         ).join('\n');
       }
 
@@ -308,10 +321,10 @@ export class ToolHandler {
         const results = cg.searchNodes(args.symbol as string, undefined, 5);
         if (results.length === 0) return `Symbol "${args.symbol}" not found in index.`;
         const node = results[0].node;
-        const callees = cg.getCallees(node.id, limit);
+        const callees = await cg.getCallees(node.id, limit);
         if (callees.length === 0) return `\`${node.name}\` doesn't call any indexed symbols.`;
         return `\`${node.name}\` calls:\n` + callees.map(n =>
-          `- ${n.kind} \`${n.name}\` — ${n.filePath}:${n.startLine}`
+          `- ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}`
         ).join('\n');
       }
 
@@ -319,10 +332,10 @@ export class ToolHandler {
         const results = cg.searchNodes(args.symbol as string, undefined, 5);
         if (results.length === 0) return `Symbol "${args.symbol}" not found in index.`;
         const node = results[0].node;
-        const affected = cg.getImpactRadius(node.id, (args.depth as number) ?? 2);
+        const affected = await cg.getImpactRadius(node.id, (args.depth as number) ?? 2);
         if (affected.length === 0) return `No dependents found for \`${node.name}\`.`;
         return `Changing \`${node.name}\` may affect ${affected.length} symbol(s):\n` +
-          affected.map(n => `- ${n.kind} \`${n.name}\` — ${n.filePath}:${n.startLine}`).join('\n');
+          affected.map(n => `- ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}`).join('\n');
       }
 
       case 'kirograph_node': {
@@ -330,7 +343,7 @@ export class ToolHandler {
         if (results.length === 0) return `Symbol "${args.symbol}" not found in index.`;
         const node = results[0].node;
         const lines = [
-          `${node.kind} \`${node.name}\``,
+          `${mapKind(node.kind)} \`${node.name}\``,
           `File: ${node.filePath}:${node.startLine}-${node.endLine}`,
           `Qualified: ${node.qualifiedName}`,
           node.signature ? `Signature: ${node.signature}` : '',
@@ -350,6 +363,12 @@ export class ToolHandler {
           .map(([k, v]) => `${k}=${v}`)
           .join(', ');
         const dbMb = (stats.dbSizeBytes / 1024 / 1024).toFixed(2);
+        const semanticLine = stats.embeddingsEnabled
+          ? `  Semantic search: enabled (${stats.embeddingCount} embeddings / ${stats.nodes} symbols)`
+          : `  Semantic search: disabled`;
+        const frameworkLine = stats.frameworks.length > 0
+          ? `  Frameworks: ${stats.frameworks.join(', ')}`
+          : `  Frameworks: none detected`;
         return [
           `KiroGraph Status`,
           `  Project: ${cg.getProjectRoot()}`,
@@ -358,7 +377,9 @@ export class ToolHandler {
           `  Relationships: ${stats.edges}`,
           `  By kind: ${Object.entries(stats.nodesByKind).map(([k, v]) => `${k}=${v}`).join(', ')}`,
           langLine ? `  By language: ${langLine}` : '',
+          frameworkLine,
           `  DB size: ${dbMb} MB`,
+          semanticLine,
         ].filter(Boolean).join('\n');
       }
 
@@ -434,7 +455,7 @@ export class ToolHandler {
         const dead = cg.findDeadCode(limit);
         if (dead.length === 0) return 'No dead code detected.';
         return `Potential dead code (${dead.length} unexported symbols with no incoming references):\n` +
-          dead.map(n => `- ${n.kind} \`${n.name}\` — ${n.filePath}:${n.startLine}`).join('\n');
+          dead.map(n => `- ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}`).join('\n');
       }
 
       case 'kirograph_circular_deps': {
@@ -451,10 +472,10 @@ export class ToolHandler {
         if (toResults.length === 0) return `Symbol "${args.to}" not found in index.`;
         const fromNode = fromResults[0].node;
         const toNode = toResults[0].node;
-        const pathNodes = cg.findPath(fromNode.id, toNode.id);
+        const pathNodes = await cg.findPath(fromNode.id, toNode.id);
         if (pathNodes.length === 0) return `No path found between \`${fromNode.name}\` and \`${toNode.name}\`.`;
         return `Path from \`${fromNode.name}\` to \`${toNode.name}\` (${pathNodes.length} nodes):\n` +
-          pathNodes.map((n, i) => `${i + 1}. ${n.kind} \`${n.name}\` — ${n.filePath}:${n.startLine}`).join('\n');
+          pathNodes.map((n, i) => `${i + 1}. ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}`).join('\n');
       }
 
       case 'kirograph_type_hierarchy': {
@@ -465,7 +486,7 @@ export class ToolHandler {
         const hierarchy = cg.getTypeHierarchy(node.id, direction);
         if (hierarchy.length === 0) return `No type hierarchy found for \`${node.name}\`.`;
         return `Type hierarchy for \`${node.name}\` (direction: ${direction}):\n` +
-          hierarchy.map(n => `- ${n.kind} \`${n.name}\` — ${n.filePath}:${n.startLine}`).join('\n');
+          hierarchy.map(n => `- ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}`).join('\n');
       }
 
       default:

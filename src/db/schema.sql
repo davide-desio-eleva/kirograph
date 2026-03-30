@@ -92,8 +92,10 @@ CREATE INDEX IF NOT EXISTS idx_unresolved_kind ON unresolved_refs(ref_kind);
 
 -- Vectors table for future semantic search (opt-in)
 CREATE TABLE IF NOT EXISTS vectors (
-  node_id TEXT PRIMARY KEY,
+  node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
   embedding BLOB NOT NULL,
   model TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_vectors_model ON vectors(model);
