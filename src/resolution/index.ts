@@ -92,11 +92,11 @@ export class ReferenceResolver {
    * Warms caches first, then processes all pending refs.
    * Returns a ResolutionResult with counts and duration.
    */
-  async resolveAll(): Promise<ResolutionResult> {
+  async resolveAll(onProgress?: (current: number, total: number) => void): Promise<ResolutionResult> {
     const start = Date.now();
 
     this.warmCaches();
-    const resolvedCount = await this.resolveUnresolvedRefs();
+    const resolvedCount = await this.resolveUnresolvedRefs(onProgress);
 
     // Count remaining unresolved
     const rawDb = (this.db as any).db;
@@ -118,7 +118,7 @@ export class ReferenceResolver {
    * Process all pending unresolved references using warm caches.
    * Returns the count of newly resolved edges.
    */
-  async resolveUnresolvedRefs(): Promise<number> {
+  async resolveUnresolvedRefs(onProgress?: (current: number, total: number) => void): Promise<number> {
     if (!this.cacheWarmed) {
       this.warmCaches();
     }
@@ -126,8 +126,11 @@ export class ReferenceResolver {
     const rawDb = (this.db as any).db;
     const refs: any[] = rawDb.all('SELECT * FROM unresolved_refs');
     let resolved = 0;
+    const total = refs.length;
 
-    for (const ref of refs) {
+    for (let i = 0; i < refs.length; i++) {
+      const ref = refs[i];
+      onProgress?.(i, total);
       const {
         id: refId,
         source_id: sourceId,

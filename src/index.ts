@@ -304,13 +304,17 @@ export default class KiroGraph {
 
       // Resolve cross-file references (calls + imports) using ReferenceResolver
       opts?.onProgress?.({ phase: 'resolving', current: 0, total: 1 });
-      const resolutionResult = await this.resolver.resolveAll();
+      const resolutionResult = await this.resolver.resolveAll((current, total) => {
+        opts?.onProgress?.({ phase: 'resolving', current, total });
+      });
       opts?.onProgress?.({ phase: 'resolving', current: resolutionResult.resolved, total: resolutionResult.total, meta: { resolved: resolutionResult.resolved, total: resolutionResult.total } });
 
       // Detect frameworks and update config
       opts?.onProgress?.({ phase: 'detecting frameworks', current: 0, total: 1 });
       const detectedFrameworks = await detectFrameworks(this.projectRoot, this.db);
-      opts?.onProgress?.({ phase: 'detecting frameworks', current: 1, total: 1, meta: { frameworks: detectedFrameworks.map(f => f.name) } });
+      // Collect languages from indexed files
+      const languages = [...new Set(this.db.getAllFiles().map(f => (f as any).language).filter(Boolean))];
+      opts?.onProgress?.({ phase: 'detecting frameworks', current: 1, total: 1, meta: { frameworks: detectedFrameworks.map(f => f.name), languages } });
 
       // Generate embeddings for new/changed nodes (if enabled)
       if (this.vectors.isInitialized()) {

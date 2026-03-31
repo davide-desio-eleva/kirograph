@@ -286,24 +286,27 @@ export function renderIndexProgress(p: IndexProgress): void {
     if (p.current === p.total) process.stdout.write('\n');
 
   } else if (p.phase === 'resolving') {
-    if (p.current === 0) {
-      // Start — show spinner line
+    if (p.current === 0 && p.total <= 1) {
+      // Start — show spinner line before we know the total
       process.stdout.write(`\r  ${_v}resolving${_r}  cross-file references…${' '.repeat(20)}`);
-    } else {
-      // Done — overwrite with result and persist
-      const resolved = (p.meta?.resolved as number) ?? p.current;
-      const total    = (p.meta?.total    as number) ?? p.total;
-      const bar = _bar(total > 0 ? Math.round((resolved / total) * 100) : 100);
-      process.stdout.write(`\r  ${_v}✓ resolving${_r} [${bar}] ${_v}${resolved}${_r}${_d}/${total} refs${_r}\n`);
+    } else if (p.total > 0) {
+      // In-progress or done — show bar
+      const bar = _bar(pct);
+      const suffix = p.current === p.total
+        ? `${_v}${p.current}${_r}${_d}/${p.total} refs${_r}\n`
+        : `${_v}${p.current}${_r}${_d}/${p.total}${_r}${' '.repeat(10)}`;
+      const prefix = p.current === p.total ? `\r  ${_v}✓ resolving${_r}` : `\r  ${_v}resolving${_r} `;
+      process.stdout.write(`${prefix} [${bar}] ${suffix}`);
     }
 
   } else if (p.phase === 'detecting frameworks') {
     if (p.current === 1) {
       const frameworks = (p.meta?.frameworks as string[]) ?? [];
-      const label = frameworks.length > 0
-        ? `${_v}${frameworks.join(', ')}${_r}`
-        : `${_d}none${_r}`;
-      process.stdout.write(`  ${_v}✓ frameworks${_r} detected: ${label}\n`);
+      const languages  = (p.meta?.languages  as string[]) ?? [];
+      const fwLabel = frameworks.length > 0 ? `${_v}${frameworks.join(', ')}${_r}` : `${_d}none${_r}`;
+      const langLabel = languages.length > 0 ? `${_v}${languages.join(', ')}${_r}` : `${_d}none${_r}`;
+      process.stdout.write(`\n  ${_v}✓ languages${_r}  detected: ${langLabel}\n`);
+      process.stdout.write(`  ${_v}✓ frameworks${_r} detected: ${fwLabel}\n`);
     }
 
   } else if (p.phase === 'embeddings') {
