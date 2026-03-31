@@ -102,6 +102,9 @@ export interface GraphStats {
   dbSizeBytes: number;
   embeddingCount: number;
   embeddingsEnabled: boolean;
+  embeddingModel: string;
+  useVecIndex: boolean;
+  vecIndexCount: number;
   frameworks: string[];
 }
 

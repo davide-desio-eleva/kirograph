@@ -363,9 +363,14 @@ export class ToolHandler {
           .map(([k, v]) => `${k}=${v}`)
           .join(', ');
         const dbMb = (stats.dbSizeBytes / 1024 / 1024).toFixed(2);
-        const semanticLine = stats.embeddingsEnabled
-          ? `  Semantic search: enabled (${stats.embeddingCount} embeddings / ${stats.nodes} symbols)`
-          : `  Semantic search: disabled`;
+        const semanticLines = stats.embeddingsEnabled
+          ? [
+              `  Semantic search: enabled`,
+              `  Semantic model:  ${stats.embeddingModel}`,
+              `  Semantic engine: ${stats.useVecIndex ? `sqlite-vec (${stats.vecIndexCount} entries in ANN index)` : 'in-process cosine'}`,
+              `  Embeddings:      ${stats.embeddingCount} / ${stats.nodes} symbols`,
+            ]
+          : [`  Semantic search: disabled`];
         const frameworkLine = stats.frameworks.length > 0
           ? `  Frameworks: ${stats.frameworks.join(', ')}`
           : `  Frameworks: none detected`;
@@ -379,7 +384,7 @@ export class ToolHandler {
           langLine ? `  By language: ${langLine}` : '',
           frameworkLine,
           `  DB size: ${dbMb} MB`,
-          semanticLine,
+          ...semanticLines,
         ].filter(Boolean).join('\n');
       }
 

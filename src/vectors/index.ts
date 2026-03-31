@@ -178,6 +178,11 @@ export class VectorManager {
     }
   }
 
+  /** Number of entries currently in the sqlite-vec ANN index (0 when not in use). */
+  vecIndexCount(): number {
+    return this.vecIndex?.count() ?? 0;
+  }
+
   /**
    * Remove embeddings for the given node IDs from the vec index.
    * The `vectors` table in the main DB is cleaned up automatically via FK cascade

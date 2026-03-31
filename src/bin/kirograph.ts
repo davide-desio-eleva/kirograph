@@ -11,6 +11,32 @@ import { renderIndexProgress } from '../utils';
 
 const program = new Command();
 
+const violet = '\x1b[38;5;99m';
+const bold   = '\x1b[1m';
+const dim    = '\x1b[2m';
+const green  = '\x1b[38;5;114m';
+const reset  = '\x1b[0m';
+
+function label(text: string): string { return `${dim}${text}${reset}`; }
+function value(text: string): string { return `${violet}${bold}${text}${reset}`; }
+function section(text: string): string { return `${violet}${bold}${text}${reset}`; }
+
+/** Render a two-column table with violet borders. Entries: [label, value] pairs. */
+function renderTable(entries: [string, string][], indent = '  '): string {
+  if (entries.length === 0) return '';
+  const colW = Math.max(...entries.map(([k]) => k.length));
+  const top    = `${indent}${violet}┌${'─'.repeat(colW + 2)}┬${'─'.repeat(18)}┐${reset}`;
+  const bottom = `${indent}${violet}└${'─'.repeat(colW + 2)}┴${'─'.repeat(18)}┘${reset}`;
+  const rows = entries.map(([k, v], i) => {
+    const sep = i < entries.length - 1
+      ? `\n${indent}${violet}├${'─'.repeat(colW + 2)}┼${'─'.repeat(18)}┤${reset}`
+      : '';
+    const pad = ' '.repeat(colW - k.length);
+    return `${indent}${violet}│${reset} ${dim}${k}${reset}${pad} ${violet}│${reset} ${violet}${bold}${v}${reset}${' '.repeat(Math.max(0, 16 - v.length))} ${violet}│${reset}${sep}`;
+  });
+  return [top, ...rows, bottom].join('\n');
+}
+
 program
   .name('kirograph')
   .description('Semantic code knowledge graph for Kiro')
@@ -145,16 +171,45 @@ program
     const target = path.resolve(projectPath ?? process.cwd());
     const cg = await KiroGraph.open(target);
     const stats = cg.getStats();
-    console.log(`Files: ${stats.files}  Symbols: ${stats.nodes}  Edges: ${stats.edges}`);
-    console.log('By kind:', Object.entries(stats.nodesByKind).map(([k, v]) => `${k}=${v}`).join(', '));
-    if (stats.filesByLanguage && Object.keys(stats.filesByLanguage).length > 0) {
-      console.log('By language:', Object.entries(stats.filesByLanguage).map(([k, v]) => `${k}=${v}`).join(', '));
+
+    console.log();
+    console.log(section('  Graph'));
+    console.log(`  ${label('Files')}      ${value(String(stats.files))}`);
+    console.log(`  ${label('Symbols')}    ${value(String(stats.nodes))}`);
+    console.log(`  ${label('Edges')}      ${value(String(stats.edges))}`);
+
+    if (stats.frameworks.length > 0) {
+      console.log(`  ${label('Frameworks')} ${value(stats.frameworks.join(', '))}`);
     }
-    console.log('Frameworks:', stats.frameworks.length > 0 ? stats.frameworks.join(', ') : 'none detected');
-    const semanticLine = stats.embeddingsEnabled
-      ? `Semantic search: enabled (${stats.embeddingCount} embeddings / ${stats.nodes} symbols)`
-      : `Semantic search: disabled`;
-    console.log(semanticLine);
+
+    const kindEntries = Object.entries(stats.nodesByKind).sort((a, b) => b[1] - a[1]);
+    if (kindEntries.length > 0) {
+      console.log(`\n  ${label('By kind')}`);
+      console.log(renderTable(kindEntries.map(([k, v]) => [k, String(v)])));
+    }
+
+    const langEntries = Object.entries(stats.filesByLanguage ?? {}).sort((a, b) => b[1] - a[1]);
+    if (langEntries.length > 0) {
+      console.log(`\n  ${label('By language')}`);
+      console.log(renderTable(langEntries.map(([k, v]) => [k, String(v)])));
+    }
+
+    console.log();
+    console.log(section('  Semantic Search'));
+    if (stats.embeddingsEnabled) {
+      const engineLabel = stats.useVecIndex
+        ? `sqlite-vec  ${dim}(${stats.vecIndexCount} entries in ANN index)${reset}`
+        : `in-process cosine`;
+      const coverage = stats.nodes > 0 ? Math.round((stats.embeddingCount / stats.nodes) * 100) : 0;
+      console.log(`  ${label('Status')}     ${green}${bold}enabled${reset}`);
+      console.log(`  ${label('Model')}      ${value(stats.embeddingModel)}`);
+      console.log(`  ${label('Engine')}     ${violet}${engineLabel}${reset}`);
+      console.log(`  ${label('Indexed')}    ${value(`${stats.embeddingCount} / ${stats.nodes}`)}  ${dim}(${coverage}%)${reset}`);
+    } else {
+      console.log(`  ${label('Status')}     ${dim}disabled${reset}`);
+    }
+
+    console.log();
     cg.close();
   });
 

@@ -623,6 +623,9 @@ export default class KiroGraph {
     return {
       ...stats,
       embeddingsEnabled: this.config.enableEmbeddings ?? false,
+      embeddingModel: this.config.embeddingModel,
+      useVecIndex: this.config.useVecIndex ?? false,
+      vecIndexCount: this.vectors.vecIndexCount(),
       frameworks: this.config.frameworkHints ?? [],
     };
   }
