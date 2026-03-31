@@ -130,7 +130,7 @@ export class ReferenceResolver {
 
     for (let i = 0; i < refs.length; i++) {
       const ref = refs[i];
-      onProgress?.(i, total);
+      onProgress?.(i + 1, total);
       const {
         id: refId,
         source_id: sourceId,

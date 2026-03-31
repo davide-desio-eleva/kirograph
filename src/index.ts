@@ -307,7 +307,6 @@ export default class KiroGraph {
       const resolutionResult = await this.resolver.resolveAll((current, total) => {
         opts?.onProgress?.({ phase: 'resolving', current, total });
       });
-      opts?.onProgress?.({ phase: 'resolving', current: resolutionResult.resolved, total: resolutionResult.total, meta: { resolved: resolutionResult.resolved, total: resolutionResult.total } });
 
       // Detect frameworks and update config
       opts?.onProgress?.({ phase: 'detecting frameworks', current: 0, total: 1 });

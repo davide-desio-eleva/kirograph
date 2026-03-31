@@ -305,7 +305,7 @@ export function renderIndexProgress(p: IndexProgress): void {
       const languages  = (p.meta?.languages  as string[]) ?? [];
       const fwLabel = frameworks.length > 0 ? `${_v}${frameworks.join(', ')}${_r}` : `${_d}none${_r}`;
       const langLabel = languages.length > 0 ? `${_v}${languages.join(', ')}${_r}` : `${_d}none${_r}`;
-      process.stdout.write(`\n  ${_v}✓ languages${_r}  detected: ${langLabel}\n`);
+      process.stdout.write(`  ${_v}✓ languages${_r}  detected: ${langLabel}\n`);
       process.stdout.write(`  ${_v}✓ frameworks${_r} detected: ${fwLabel}\n`);
     }
 
