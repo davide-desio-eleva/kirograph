@@ -179,6 +179,18 @@ export class VectorManager {
   }
 
   /**
+   * Remove embeddings for the given node IDs from the vec index.
+   * The `vectors` table in the main DB is cleaned up automatically via FK cascade
+   * when nodes are deleted; this only needs to handle the sqlite-vec side.
+   */
+  deleteEmbeddings(nodeIds: string[]): void {
+    if (!this.vecIndex?.isAvailable()) return;
+    for (const id of nodeIds) {
+      this.vecIndex.delete(id);
+    }
+  }
+
+  /**
    * Embed all eligible nodes in the database that don't yet have embeddings.
    * Processes in batches of BATCH_SIZE.
    */

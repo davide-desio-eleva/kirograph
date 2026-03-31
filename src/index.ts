@@ -338,6 +338,13 @@ export default class KiroGraph {
     const result: SyncResult = { added: [], modified: [], removed: [], nodesCreated: 0, nodesRemoved: 0, errors: [], duration: 0 };
 
     try {
+      const removeFile = (rel: string) => {
+        this.vectors.deleteEmbeddings(this.db.getNodesByFile(rel).map(n => n.id));
+        this.db.deleteFile(rel);
+        this.db.deleteUnresolvedRefsByFile(rel);
+        result.removed.push(rel);
+      };
+
       // Use git fast-path for change detection if no explicit files provided
       let filesToProcess: string[];
       if (changedFiles) {
@@ -348,10 +355,7 @@ export default class KiroGraph {
         if (hasChanges) {
           // Process git-detected changes
           for (const p of gitChanged.removed) {
-            const rel = path.relative(this.projectRoot, p).replace(/\\/g, '/');
-            this.db.deleteFile(rel);
-            this.db.deleteUnresolvedRefsByFile(rel);
-            result.removed.push(rel);
+            removeFile(path.relative(this.projectRoot, p).replace(/\\/g, '/'));
           }
           filesToProcess = [...gitChanged.added, ...gitChanged.modified];
         } else {
@@ -359,11 +363,7 @@ export default class KiroGraph {
           const indexed = new Set(this.db.getAllFiles().map(f => f.path));
           const current = new Set((await scanDirectory(this.projectRoot, this.config)).map(f => path.relative(this.projectRoot, f).replace(/\\/g, '/')));
           for (const p of indexed) {
-            if (!current.has(p)) {
-              this.db.deleteFile(p);
-              this.db.deleteUnresolvedRefsByFile(p);
-              result.removed.push(p);
-            }
+            if (!current.has(p)) removeFile(p);
           }
           filesToProcess = await scanDirectory(this.projectRoot, this.config);
         }
@@ -372,9 +372,7 @@ export default class KiroGraph {
       for (const file of filesToProcess) {
         if (!fs.existsSync(file)) {
           const rel = path.relative(this.projectRoot, file).replace(/\\/g, '/');
-          this.db.deleteFile(rel);
-          this.db.deleteUnresolvedRefsByFile(rel);
-          result.removed.push(rel);
+          removeFile(rel);
           continue;
         }
 
@@ -387,8 +385,10 @@ export default class KiroGraph {
 
           if (!isNew && existing!.contentHash === extracted.contentHash) continue;
 
+          const oldNodes = this.db.getNodesByFile(extracted.filePath);
+          this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
+
           this.db.transaction(() => {
-            const oldNodes = this.db.getNodesByFile(extracted.filePath);
             result.nodesRemoved += oldNodes.length;
             this.db.deleteNodesByFile(extracted.filePath);
             this.db.deleteUnresolvedRefsByFile(extracted.filePath);
@@ -427,6 +427,11 @@ export default class KiroGraph {
 
       // Detect frameworks and update config
       await detectFrameworks(this.projectRoot);
+
+      // Embed new/changed nodes (if embeddings are enabled)
+      if (this.vectors.isInitialized()) {
+        await this.vectors.embedAll();
+      }
 
       this.clearDirty();
       result.duration = Date.now() - start;

@@ -170,8 +170,8 @@ export class VecIndex {
         FROM vec_nodes v
         JOIN vec_nodes_map m ON m.vec_rowid = v.rowid
         WHERE v.embedding MATCH ?
+          AND k = ?
         ORDER BY v.distance
-        LIMIT ?
       `).all(queryVec, topN);
 
       return rows.map((r: any) => r.node_id as string);
