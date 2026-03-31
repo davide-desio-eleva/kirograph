@@ -76,7 +76,7 @@ async function askString(
 
 import { KiroGraphConfig, updateConfig } from '../config';
 
-type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'extractDocstrings' | 'trackCallSites'> & { embeddingModel?: string };
+type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'extractDocstrings' | 'trackCallSites'> & { embeddingModel?: string };
 
 const DEFAULT_EMBEDDING_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
 
@@ -87,7 +87,7 @@ async function promptConfigOptions(rl: readline.Interface): Promise<ConfigPatch>
     'Enables semantic/similarity-based code search. Increases indexing time and requires a compatible local embedding model (e.g. via Ollama).',
   );
 
-  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, extractDocstrings: true, trackCallSites: true };
+  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, semanticEngine: 'cosine', extractDocstrings: true, trackCallSites: true };
 
   if (enableEmbeddings) {
     console.log(`\n  ${dim}HuggingFace model identifier for generating embeddings (e.g. org/model-name).${reset}`);
@@ -104,17 +104,21 @@ async function promptConfigOptions(rl: readline.Interface): Promise<ConfigPatch>
       console.log(`\n  ℹ  To use this model locally, run: ollama pull ${embeddingModel}`);
     }
 
-    patch.useVecIndex = await askBool(
-      rl,
-      'Use sqlite-vec ANN index for semantic search?',
-      'By default semantic search scans all embeddings in-process (cosine similarity over a Float32Array). ' +
-      'This is simple and dependency-free, but scales linearly with the number of indexed symbols.\n' +
-      '  Enabling sqlite-vec switches to an approximate nearest-neighbour (ANN) index stored in ' +
-      '.kirograph/vec.db, making search sub-linear at the cost of two extra native dependencies.\n' +
-      '  Choose yes for large codebases (thousands of indexed symbols); keep the default for small/medium projects.\n' +
-      '  Requires: npm install better-sqlite3 sqlite-vec',
-      false,
-    );
+    // Engine selection
+    console.log(`\n  ${dim}Choose the semantic search engine:${reset}`);
+    console.log(`  ${dim}  1) cosine     — in-process cosine similarity. No extra deps. Best for small/medium projects.${reset}`);
+    console.log(`  ${dim}  2) sqlite-vec — ANN index. Sub-linear search. Best for large codebases. Needs native deps (better-sqlite3, sqlite-vec).${reset}`);
+    console.log(`  ${dim}  3) orama      — Hybrid search (full-text + vector). Best result quality. Pure JS. Needs @orama/orama, @orama/plugin-data-persistence.${reset}`);
+    let semanticEngine: 'cosine' | 'sqlite-vec' | 'orama' = 'cosine';
+    while (true) {
+      const raw = (await ask(rl, `  ${violet}Engine [1/2/3]:${reset} ${dim}(1)${reset} `)).trim();
+      if (raw === '' || raw === '1') { semanticEngine = 'cosine'; break; }
+      if (raw === '2') { semanticEngine = 'sqlite-vec'; break; }
+      if (raw === '3') { semanticEngine = 'orama'; break; }
+      console.log(`  Please enter 1, 2, or 3.`);
+    }
+    patch.semanticEngine = semanticEngine;
+    patch.useVecIndex = semanticEngine === 'sqlite-vec'; // keep legacy field in sync
   }
 
   patch.extractDocstrings = await askBool(
@@ -383,8 +387,8 @@ export async function runInstaller(): Promise<void> {
         console.log(`  • embeddingModel: ${patch.embeddingModel}`);
       }
       if (patch.enableEmbeddings) {
-        console.log(`  • useVecIndex: ${patch.useVecIndex}`);
-        if (patch.useVecIndex) {
+        console.log(`  • semanticEngine: ${patch.semanticEngine}`);
+        if (patch.semanticEngine === 'sqlite-vec') {
           console.log(`\n  Installing sqlite-vec dependencies...`);
           const result = spawnSync('npm', ['install', 'better-sqlite3', 'sqlite-vec'], {
             stdio: 'inherit',
@@ -395,6 +399,18 @@ export async function runInstaller(): Promise<void> {
           } else {
             console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
             console.warn(`    npm install better-sqlite3 sqlite-vec`);
+          }
+        } else if (patch.semanticEngine === 'orama') {
+          console.log(`\n  Installing Orama dependencies...`);
+          const result = spawnSync('npm', ['install', '@orama/orama', '@orama/plugin-data-persistence'], {
+            stdio: 'inherit',
+            shell: true,
+          });
+          if (result.status === 0) {
+            console.log(`  ✓ @orama/orama and @orama/plugin-data-persistence installed`);
+          } else {
+            console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
+            console.warn(`    npm install @orama/orama @orama/plugin-data-persistence`);
           }
         }
       }

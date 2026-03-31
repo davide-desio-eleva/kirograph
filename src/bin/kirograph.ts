@@ -170,7 +170,7 @@ program
     const KiroGraph = (await import('../index')).default;
     const target = path.resolve(projectPath ?? process.cwd());
     const cg = await KiroGraph.open(target);
-    const stats = cg.getStats();
+    const stats = await cg.getStats();
 
     console.log();
     console.log(section('  Graph'));
@@ -197,9 +197,10 @@ program
     console.log();
     console.log(section('  Semantic Search'));
     if (stats.embeddingsEnabled) {
-      const engineLabel = stats.useVecIndex
-        ? `sqlite-vec  ${dim}(${stats.vecIndexCount} entries in ANN index)${reset}`
-        : `in-process cosine`;
+      const engineLabel =
+        stats.semanticEngine === 'sqlite-vec' ? `sqlite-vec  ${dim}(${stats.vecIndexCount} entries in ANN index)${reset}` :
+        stats.semanticEngine === 'orama'      ? `orama  ${dim}(hybrid — ${stats.vecIndexCount} docs in index)${reset}` :
+        `in-process cosine`;
       const coverage = stats.nodes > 0 ? Math.round((stats.embeddingCount / stats.nodes) * 100) : 0;
       console.log(`  ${label('Status')}     ${green}${bold}enabled${reset}`);
       console.log(`  ${label('Model')}      ${value(stats.embeddingModel)}`);

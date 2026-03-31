@@ -357,7 +357,7 @@ export class ToolHandler {
       }
 
       case 'kirograph_status': {
-        const stats = cg.getStats();
+        const stats = await cg.getStats();
         const langLine = Object.entries(stats.filesByLanguage)
           .sort((a, b) => b[1] - a[1])
           .map(([k, v]) => `${k}=${v}`)
@@ -367,7 +367,11 @@ export class ToolHandler {
           ? [
               `  Semantic search: enabled`,
               `  Semantic model:  ${stats.embeddingModel}`,
-              `  Semantic engine: ${stats.useVecIndex ? `sqlite-vec (${stats.vecIndexCount} entries in ANN index)` : 'in-process cosine'}`,
+              `  Semantic engine: ${
+                stats.semanticEngine === 'sqlite-vec' ? `sqlite-vec (${stats.vecIndexCount} entries in ANN index)` :
+                stats.semanticEngine === 'orama'      ? `orama hybrid (${stats.vecIndexCount} docs in index)` :
+                'in-process cosine'
+              }`,
               `  Embeddings:      ${stats.embeddingCount} / ${stats.nodes} symbols`,
             ]
           : [`  Semantic search: disabled`];

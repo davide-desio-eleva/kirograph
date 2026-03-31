@@ -23,7 +23,9 @@ export interface KiroGraphConfig {
   // Parity fields:
   enableEmbeddings: boolean;
   embeddingModel: string;
+  /** @deprecated Use semanticEngine instead. Kept for backwards compatibility. */
   useVecIndex: boolean;
+  semanticEngine: 'cosine' | 'sqlite-vec' | 'orama';
   minLogLevel: 'debug' | 'info' | 'warn' | 'error';
   frameworkHints: string[];
   fuzzyResolutionThreshold: number; // 0.0–1.0
@@ -36,7 +38,7 @@ const CONFIG_FILE = 'config.json';
 
 const KNOWN_FIELDS = new Set<string>([
   'version', 'languages', 'include', 'exclude', 'maxFileSize',
-  'extractDocstrings', 'trackCallSites', 'enableEmbeddings', 'embeddingModel', 'useVecIndex',
+  'extractDocstrings', 'trackCallSites', 'enableEmbeddings', 'embeddingModel', 'useVecIndex', 'semanticEngine',
   'minLogLevel', 'frameworkHints', 'fuzzyResolutionThreshold',
 ]);
 
@@ -71,6 +73,7 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     enableEmbeddings: false,
     embeddingModel: 'nomic-ai/nomic-embed-text-v1.5',
     useVecIndex: false,
+    semanticEngine: 'cosine',
     minLogLevel: 'warn',
     frameworkHints: [],
     fuzzyResolutionThreshold: 0.5,
@@ -118,6 +121,12 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const useVecIndex = typeof raw.useVecIndex === 'boolean'
     ? raw.useVecIndex
     : defaults.useVecIndex;
+  const SEMANTIC_ENGINES = new Set(['cosine', 'sqlite-vec', 'orama']);
+  // useVecIndex is a legacy alias: if set and no explicit semanticEngine, map it
+  const rawEngine = typeof raw.semanticEngine === 'string' && SEMANTIC_ENGINES.has(raw.semanticEngine)
+    ? (raw.semanticEngine as KiroGraphConfig['semanticEngine'])
+    : useVecIndex ? 'sqlite-vec' : defaults.semanticEngine;
+  const semanticEngine = rawEngine;
   const minLogLevel = typeof raw.minLogLevel === 'string' && LOG_LEVELS.has(raw.minLogLevel)
     ? (raw.minLogLevel as KiroGraphConfig['minLogLevel'])
     : defaults.minLogLevel;
@@ -145,6 +154,7 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     enableEmbeddings,
     embeddingModel,
     useVecIndex,
+    semanticEngine,
     minLogLevel,
     frameworkHints,
     fuzzyResolutionThreshold,

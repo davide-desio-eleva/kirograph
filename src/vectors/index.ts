@@ -19,6 +19,7 @@ import type { KiroGraphConfig } from '../config';
 import type { Node } from '../types';
 import type { GraphDatabase } from '../db/database';
 import { VecIndex } from './vec-index';
+import { OramaIndex } from './orama-index';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -87,6 +88,7 @@ export class VectorManager {
   private pipeline: Pipeline | null = null;
   private _initialized = false;
   private vecIndex: VecIndex | null = null;
+  private oramaIndex: OramaIndex | null = null;
 
   constructor(
     private readonly db: GraphDatabase,
@@ -142,15 +144,24 @@ export class VectorManager {
       return;
     }
 
-    // Initialize sqlite-vec ANN index when opted in
-    if (this.config.useVecIndex && this.projectRoot) {
+    // Initialize the selected search engine
+    const engine = this.config.semanticEngine ?? (this.config.useVecIndex ? 'sqlite-vec' : 'cosine');
+
+    if (this.projectRoot && engine !== 'cosine') {
       const kirographDir = path.join(this.projectRoot, '.kirograph');
-      this.vecIndex = new VecIndex(kirographDir, EMBEDDING_DIM);
-      await this.vecIndex.initialize();
-      if (this.vecIndex.isAvailable()) {
-        logDebug('VectorManager: sqlite-vec ANN index ready');
-      } else {
-        logDebug('VectorManager: sqlite-vec unavailable, using in-process cosine search');
+
+      if (engine === 'sqlite-vec') {
+        this.vecIndex = new VecIndex(kirographDir, EMBEDDING_DIM);
+        await this.vecIndex.initialize();
+        logDebug(this.vecIndex.isAvailable()
+          ? 'VectorManager: sqlite-vec ANN index ready'
+          : 'VectorManager: sqlite-vec unavailable, falling back to in-process cosine');
+      } else if (engine === 'orama') {
+        this.oramaIndex = new OramaIndex(kirographDir, EMBEDDING_DIM);
+        await this.oramaIndex.initialize();
+        logDebug(this.oramaIndex.isAvailable()
+          ? 'VectorManager: Orama hybrid index ready'
+          : 'VectorManager: Orama unavailable, falling back to in-process cosine');
       }
     }
   }
@@ -173,14 +184,17 @@ export class VectorManager {
       const embedding = toFloat32Array(output.data);
       this.db.storeEmbedding(node.id, embedding, this.config.embeddingModel || DEFAULT_MODEL);
       this.vecIndex?.upsert(node.id, embedding);
+      if (this.oramaIndex?.isAvailable()) await this.oramaIndex.upsert(node, embedding);
     } catch (err) {
       logWarn('Failed to embed node', { nodeId: node.id, error: String(err) });
     }
   }
 
-  /** Number of entries currently in the sqlite-vec ANN index (0 when not in use). */
-  vecIndexCount(): number {
-    return this.vecIndex?.count() ?? 0;
+  /** Number of entries currently in the active ANN/hybrid index (0 when not in use). */
+  async vecIndexCount(): Promise<number> {
+    if (this.vecIndex?.isAvailable()) return this.vecIndex.count();
+    if (this.oramaIndex?.isAvailable()) return this.oramaIndex.count();
+    return 0;
   }
 
   /**
@@ -189,9 +203,9 @@ export class VectorManager {
    * when nodes are deleted; this only needs to handle the sqlite-vec side.
    */
   deleteEmbeddings(nodeIds: string[]): void {
-    if (!this.vecIndex?.isAvailable()) return;
     for (const id of nodeIds) {
-      this.vecIndex.delete(id);
+      this.vecIndex?.delete(id);
+      if (this.oramaIndex?.isAvailable()) this.oramaIndex.delete(id);
     }
   }
 
@@ -225,6 +239,7 @@ export class VectorManager {
           const embedding = flat.slice(j * dim, (j + 1) * dim);
           this.db.storeEmbedding(node.id, embedding, modelId);
           this.vecIndex?.upsert(node.id, embedding);
+          if (this.oramaIndex?.isAvailable()) await this.oramaIndex.upsert(node, embedding);
         }
       } catch (err) {
         logWarn('VectorManager: batch embedding failed', { batchStart: i, error: String(err) });
@@ -233,6 +248,8 @@ export class VectorManager {
       processed += batch.length;
       onProgress?.(processed, pending.length);
     }
+
+    if (this.oramaIndex?.isAvailable()) await this.oramaIndex.save();
 
     return processed;
   }
@@ -256,7 +273,10 @@ export class VectorManager {
 
       let nodeIds: string[];
 
-      if (this.vecIndex?.isAvailable()) {
+      if (this.oramaIndex?.isAvailable()) {
+        // Hybrid search via Orama — full-text + vector combined
+        nodeIds = await this.oramaIndex.search(query, queryVec, topN);
+      } else if (this.vecIndex?.isAvailable()) {
         // ANN search via sqlite-vec — fast, sub-linear
         nodeIds = this.vecIndex.search(queryVec, topN);
       } else {

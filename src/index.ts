@@ -618,14 +618,15 @@ export default class KiroGraph {
     return [...results].sort();
   }
 
-  getStats() {
+  async getStats() {
     const stats = this.db.getStats();
     return {
       ...stats,
       embeddingsEnabled: this.config.enableEmbeddings ?? false,
       embeddingModel: this.config.embeddingModel,
       useVecIndex: this.config.useVecIndex ?? false,
-      vecIndexCount: this.vectors.vecIndexCount(),
+      semanticEngine: this.config.semanticEngine ?? 'cosine',
+      vecIndexCount: await this.vectors.vecIndexCount(),
       frameworks: this.config.frameworkHints ?? [],
     };
   }
