@@ -49,51 +49,60 @@ program
     }
   });
 
-// ── uninit ────────────────────────────────────────────────────────────────────
+// ── uninit / uninstall ────────────────────────────────────────────────────────
+
+async function runUninit(projectPath: string | undefined, opts: { force?: boolean }): Promise<void> {
+  const target = path.resolve(projectPath ?? process.cwd());
+  const dir = path.join(target, '.kirograph');
+  if (!fs.existsSync(dir)) { console.log('Not initialized.'); return; }
+  if (!opts.force) {
+    const readline = await import('readline');
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    await new Promise<void>(resolve => rl.question('Remove .kirograph/? (y/N) ', ans => {
+      rl.close();
+      if (ans.toLowerCase() !== 'y') { console.log('Cancelled.'); process.exit(0); }
+      resolve();
+    }));
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+  console.log('Removed .kirograph/');
+
+  // Remove .kiro hooks created by kirograph
+  const kiroHooks = [
+    'kirograph-mark-dirty-on-save.json',
+    'kirograph-mark-dirty-on-create.json',
+    'kirograph-sync-on-delete.json',
+    'kirograph-sync-if-dirty.json',
+    'kirograph-sync-on-save.json',
+    'kirograph-sync-on-create.json',
+  ];
+  const hooksDir = path.join(target, '.kiro', 'hooks');
+  let removedHooks = 0;
+  for (const hook of kiroHooks) {
+    const p = path.join(hooksDir, hook);
+    if (fs.existsSync(p)) { fs.unlinkSync(p); removedHooks++; }
+  }
+  if (removedHooks > 0) console.log(`Removed ${removedHooks} hook(s) from .kiro/hooks/`);
+
+  // Remove .kiro/steering/kirograph.md
+  const steeringPath = path.join(target, '.kiro', 'steering', 'kirograph.md');
+  if (fs.existsSync(steeringPath)) {
+    fs.unlinkSync(steeringPath);
+    console.log('Removed .kiro/steering/kirograph.md');
+  }
+}
+
 program
   .command('uninit [projectPath]')
   .description('Remove KiroGraph from a project')
   .option('--force', 'Skip confirmation')
-  .action(async (projectPath: string | undefined, opts: { force?: boolean }) => {
-    const target = path.resolve(projectPath ?? process.cwd());
-    const dir = path.join(target, '.kirograph');
-    if (!fs.existsSync(dir)) { console.log('Not initialized.'); return; }
-    if (!opts.force) {
-      const readline = await import('readline');
-      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-      await new Promise<void>(resolve => rl.question('Remove .kirograph/? (y/N) ', ans => {
-        rl.close();
-        if (ans.toLowerCase() !== 'y') { console.log('Cancelled.'); process.exit(0); }
-        resolve();
-      }));
-    }
-    fs.rmSync(dir, { recursive: true, force: true });
-    console.log('Removed .kirograph/');
+  .action(runUninit);
 
-    // Remove .kiro hooks created by kirograph
-    const kiroHooks = [
-      'kirograph-mark-dirty-on-save.json',
-      'kirograph-mark-dirty-on-create.json',
-      'kirograph-sync-on-delete.json',
-      'kirograph-sync-if-dirty.json',
-      'kirograph-sync-on-save.json',
-      'kirograph-sync-on-create.json',
-    ];
-    const hooksDir = path.join(target, '.kiro', 'hooks');
-    let removedHooks = 0;
-    for (const hook of kiroHooks) {
-      const p = path.join(hooksDir, hook);
-      if (fs.existsSync(p)) { fs.unlinkSync(p); removedHooks++; }
-    }
-    if (removedHooks > 0) console.log(`Removed ${removedHooks} hook(s) from .kiro/hooks/`);
-
-    // Remove .kiro/steering/kirograph.md
-    const steeringPath = path.join(target, '.kiro', 'steering', 'kirograph.md');
-    if (fs.existsSync(steeringPath)) {
-      fs.unlinkSync(steeringPath);
-      console.log('Removed .kiro/steering/kirograph.md');
-    }
-  });
+program
+  .command('uninstall [projectPath]')
+  .description('Alias for uninit — remove KiroGraph from a project')
+  .option('--force', 'Skip confirmation')
+  .action(runUninit);
 
 // ── index ─────────────────────────────────────────────────────────────────────
 program
@@ -442,6 +451,7 @@ function printColoredHelp(): void {
     { name: 'install',       desc: 'Configure KiroGraph for the current Kiro workspace' },
     { name: 'init',          args: '[path]',    desc: 'Initialize KiroGraph in a project', opts: ['-i, --index  Index immediately after init'] },
     { name: 'uninit',        args: '[path]',    desc: 'Remove KiroGraph from a project',   opts: ['--force     Skip confirmation'] },
+    { name: 'uninstall',     args: '[path]',    desc: 'Alias for uninit',                  opts: ['--force     Skip confirmation'] },
     { name: 'index',         args: '[path]',    desc: 'Full re-index of a project',        opts: ['--force     Force re-index all files'] },
     { name: 'sync',          args: '[path]',    desc: 'Incremental sync of changed files', opts: ['--files <f> Specific files to sync'] },
     { name: 'sync-if-dirty', args: '[path]',    desc: 'Sync only if a dirty marker is present', opts: ['-q, --quiet  Suppress output'] },
