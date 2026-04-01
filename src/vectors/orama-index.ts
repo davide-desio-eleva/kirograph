@@ -97,7 +97,7 @@ export class OramaIndex {
       } else {
         this.db = await this.orama!.create({
           schema: {
-            nodeId:    'string',
+            nodeId:    'enum',    // exact-match filterable field (not full-text indexed)
             name:      'string',
             kind:      'string',
             filePath:  'string',
@@ -121,10 +121,10 @@ export class OramaIndex {
     if (!this._available || !this.db) return;
 
     try {
-      // Remove existing document if present (search by nodeId)
+      // Remove existing document if present (exact match on enum field — no full-text)
       const existing = await this.orama!.search(this.db, {
-        term: node.id,
-        where: { nodeId: node.id },
+        term: '',
+        where: { nodeId: { eq: node.id } },
         limit: 1,
       });
       if (existing?.hits?.length > 0) {
@@ -154,8 +154,8 @@ export class OramaIndex {
 
     try {
       const existing = await this.orama!.search(this.db, {
-        term: nodeId,
-        where: { nodeId },
+        term: '',
+        where: { nodeId: { eq: nodeId } },
         limit: 1,
       });
       if (existing?.hits?.length > 0) {
@@ -211,7 +211,7 @@ export class OramaIndex {
   async getEmbeddedNodeIds(): Promise<string[]> {
     if (!this._available || !this.db) return [];
     try {
-      const results = await this.orama!.search(this.db, { term: '', limit: 1_000_000 });
+      const results = await this.orama!.search(this.db, { term: '', limit: 1_000_000, includeVectors: false });
       return (results?.hits ?? []).map((hit: any) => hit.document.nodeId as string);
     } catch {
       return [];
