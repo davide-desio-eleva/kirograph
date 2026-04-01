@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { printBanner } from '../../banner';
+import { printBanner } from '../banner';
 
 export function printColoredHelp(): void {
   const c = {

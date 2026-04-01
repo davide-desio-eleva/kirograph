@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import * as path from 'path';
-import { renderIndexProgress } from '../../utils';
+import { renderIndexProgress } from '../progress';
 import { dim, reset, green, value } from '../ui';
 import { warnFallback } from './utils';
 

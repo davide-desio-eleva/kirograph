@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import * as path from 'path';
 import * as fs from 'fs';
-import { printBanner } from '../../banner';
+import { printBanner } from '../banner';
 import { dim, reset, violet, bold, green } from '../ui';
 
 export const UNINIT_FAREWELLS = [

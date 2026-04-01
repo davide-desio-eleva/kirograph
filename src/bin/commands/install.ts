@@ -5,7 +5,7 @@ export function register(program: Command): void {
     .command('install')
     .description('Configure KiroGraph for the current Kiro workspace')
     .action(async () => {
-      const { runInstaller } = await import('../../installer/index');
+      const { runInstaller } = await import('../installer/index');
       await runInstaller();
     });
 }

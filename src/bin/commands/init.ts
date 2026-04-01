@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import * as path from 'path';
-import { printBanner } from '../../banner';
-import { renderIndexProgress } from '../../utils';
+import { printBanner } from '../banner';
+import { renderIndexProgress } from '../progress';
 import { dim, reset, violet, bold, green, value } from '../ui';
 import { warnFallback } from './utils';
 

@@ -4,7 +4,7 @@
  */
 
 import { Command } from 'commander';
-import { printBanner } from '../banner';
+import { printBanner } from './banner';
 import { printColoredHelp, register as registerHelp } from './commands/help';
 import { register as registerInit } from './commands/init';
 import { register as registerUninit } from './commands/uninit';
