@@ -338,8 +338,8 @@ export default class KiroGraph {
     const result: SyncResult = { added: [], modified: [], removed: [], nodesCreated: 0, nodesRemoved: 0, errors: [], duration: 0 };
 
     try {
-      const removeFile = (rel: string) => {
-        this.vectors.deleteEmbeddings(this.db.getNodesByFile(rel).map(n => n.id));
+      const removeFile = async (rel: string) => {
+        await this.vectors.deleteEmbeddings(this.db.getNodesByFile(rel).map(n => n.id));
         this.db.deleteFile(rel);
         this.db.deleteUnresolvedRefsByFile(rel);
         result.removed.push(rel);
@@ -355,7 +355,7 @@ export default class KiroGraph {
         if (hasChanges) {
           // Process git-detected changes
           for (const p of gitChanged.removed) {
-            removeFile(path.relative(this.projectRoot, p).replace(/\\/g, '/'));
+            await removeFile(path.relative(this.projectRoot, p).replace(/\\/g, '/'));
           }
           filesToProcess = [...gitChanged.added, ...gitChanged.modified];
         } else {
@@ -363,7 +363,7 @@ export default class KiroGraph {
           const indexed = new Set(this.db.getAllFiles().map(f => f.path));
           const current = new Set((await scanDirectory(this.projectRoot, this.config)).map(f => path.relative(this.projectRoot, f).replace(/\\/g, '/')));
           for (const p of indexed) {
-            if (!current.has(p)) removeFile(p);
+            if (!current.has(p)) await removeFile(p);
           }
           filesToProcess = await scanDirectory(this.projectRoot, this.config);
         }
@@ -372,7 +372,7 @@ export default class KiroGraph {
       for (const file of filesToProcess) {
         if (!fs.existsSync(file)) {
           const rel = path.relative(this.projectRoot, file).replace(/\\/g, '/');
-          removeFile(rel);
+          await removeFile(rel);
           continue;
         }
 
@@ -386,7 +386,7 @@ export default class KiroGraph {
           if (!isNew && existing!.contentHash === extracted.contentHash) continue;
 
           const oldNodes = this.db.getNodesByFile(extracted.filePath);
-          this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
+          await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
 
           this.db.transaction(() => {
             result.nodesRemoved += oldNodes.length;
