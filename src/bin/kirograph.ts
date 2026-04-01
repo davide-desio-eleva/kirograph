@@ -56,44 +56,66 @@ program
     const KiroGraph = (await import('../index')).default;
     const target = path.resolve(projectPath ?? process.cwd());
     if (KiroGraph.isInitialized(target)) {
-      console.log('KiroGraph already initialized.');
+      console.log(`  ${dim}KiroGraph already initialized at ${target}${reset}`);
     } else {
       await KiroGraph.init(target);
-      console.log(`Initialized .kirograph/ in ${target}`);
+      console.log(`  ${green}✓${reset} Initialized ${violet}${bold}.kirograph/${reset} in ${dim}${target}${reset}`);
     }
     if (opts.index) {
       const cg = await KiroGraph.open(target);
-      console.log('Indexing...');
+      console.log(`\n  ${dim}Indexing...${reset}`);
       const result = await cg.indexAll({
         force: true,
         onProgress: renderIndexProgress,
       });
       process.stdout.write('\n');
-      console.log(`Done. ${result.filesIndexed} files, ${result.nodesCreated} symbols, ${result.edgesCreated} edges.`);
-      if (result.errors.length) console.warn(`Warnings: ${result.errors.length}`);
+      console.log(`  ${green}✓${reset} ${value(String(result.filesIndexed))} ${dim}files,${reset} ${value(String(result.nodesCreated))} ${dim}symbols,${reset} ${value(String(result.edgesCreated))} ${dim}edges${reset} ${dim}(${result.duration}ms)${reset}`);
+      if (result.errors.length) console.warn(`  \x1b[33m⚠ ${result.errors.length} warning(s)\x1b[0m`);
       const fallback = cg.getEngineFallback();
-      if (fallback) console.warn(`\x1b[33m⚠ Engine fallback: ${fallback}\x1b[0m`);
+      if (fallback) console.warn(`  \x1b[33m⚠ Engine fallback: ${fallback}\x1b[0m`);
       cg.close();
     }
   });
 
 // ── uninit / uninstall ────────────────────────────────────────────────────────
 
+const UNINIT_FAREWELLS = [
+  "Oh. So it's come to this.",
+  "We're sorry to see you go. (Are we? Yes. We are.)",
+  "Deleting months of carefully indexed knowledge. Bold move.",
+  "Fine. We'll just sit here in the dark.",
+  "You can always come back. We won't mention this.",
+  "The graph remembers everything. Except, soon, anything.",
+  "Somewhere a tree-sitter is crying.",
+  "Uninstalling... and pretending it doesn't hurt.",
+  "574 embeddings. Gone. Just like that.",
+  "See you on the other side of `kirograph install`.",
+];
+
 async function runUninit(projectPath: string | undefined, opts: { force?: boolean }): Promise<void> {
   const target = path.resolve(projectPath ?? process.cwd());
   const dir = path.join(target, '.kirograph');
   if (!fs.existsSync(dir)) { console.log('Not initialized.'); return; }
   if (!opts.force) {
+    printBanner();
+    const farewell = UNINIT_FAREWELLS[Math.floor(Math.random() * UNINIT_FAREWELLS.length)]!;
+    console.log(`  ${violet}${bold}${farewell}${reset}`);
+    console.log(`\n  ${dim}This will remove .kirograph/, all Kiro hooks, and the steering file.${reset}`);
+    console.log(`  ${dim}Your source code is untouched.${reset}\n`);
     const readline = await import('readline');
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    await new Promise<void>(resolve => rl.question('Remove .kirograph/? (y/N) ', ans => {
+    await new Promise<void>(resolve => rl.question(`  ${violet}Remove KiroGraph from this project?${reset} ${dim}(y/N)${reset} `, ans => {
       rl.close();
-      if (ans.toLowerCase() !== 'y') { console.log('Cancelled.'); process.exit(0); }
+      if (ans.toLowerCase() !== 'y') {
+        console.log(`\n  ${dim}Cancelled. The graph lives on.${reset}\n`);
+        process.exit(0);
+      }
       resolve();
     }));
+    console.log();
   }
   fs.rmSync(dir, { recursive: true, force: true });
-  console.log('Removed .kirograph/');
+  console.log(`  ${green}✓${reset} Removed .kirograph/`);
 
   // Remove .kiro hooks created by kirograph
   const kiroHooks = [
@@ -110,14 +132,16 @@ async function runUninit(projectPath: string | undefined, opts: { force?: boolea
     const p = path.join(hooksDir, hook);
     if (fs.existsSync(p)) { fs.unlinkSync(p); removedHooks++; }
   }
-  if (removedHooks > 0) console.log(`Removed ${removedHooks} hook(s) from .kiro/hooks/`);
+  if (removedHooks > 0) console.log(`  ${green}✓${reset} Removed ${removedHooks} hook(s) from .kiro/hooks/`);
 
   // Remove .kiro/steering/kirograph.md
   const steeringPath = path.join(target, '.kiro', 'steering', 'kirograph.md');
   if (fs.existsSync(steeringPath)) {
     fs.unlinkSync(steeringPath);
-    console.log('Removed .kiro/steering/kirograph.md');
+    console.log(`  ${green}✓${reset} Removed .kiro/steering/kirograph.md`);
   }
+
+  console.log(`\n  ${dim}Done. Run ${violet}kirograph install${reset}${dim} to come back anytime.${reset}\n`);
 }
 
 program
@@ -146,9 +170,10 @@ program
       onProgress: renderIndexProgress,
     });
     process.stdout.write('\n');
-    console.log(`Indexed ${result.filesIndexed} files, ${result.nodesCreated} symbols in ${result.duration}ms`);
+    console.log(`  ${green}✓${reset} ${value(String(result.filesIndexed))} ${dim}files,${reset} ${value(String(result.nodesCreated))} ${dim}symbols,${reset} ${value(String(result.edgesCreated))} ${dim}edges${reset} ${dim}(${result.duration}ms)${reset}`);
+    if (result.errors.length) console.warn(`  \x1b[33m⚠ ${result.errors.length} warning(s)\x1b[0m`);
     const fallback = cg.getEngineFallback();
-    if (fallback) console.warn(`\x1b[33m⚠ Engine fallback: ${fallback}\x1b[0m`);
+    if (fallback) console.warn(`  \x1b[33m⚠ Engine fallback: ${fallback}\x1b[0m`);
     cg.close();
   });
 
@@ -162,9 +187,15 @@ program
     const target = path.resolve(projectPath ?? process.cwd());
     const cg = await KiroGraph.open(target);
     const result = await cg.sync(opts.files);
-    console.log(`Sync: +${result.added.length} ~${result.modified.length} -${result.removed.length} (${result.duration}ms)`);
+    const changed = result.added.length + result.modified.length + result.removed.length;
+    if (changed === 0) {
+      console.log(`  ${dim}Nothing to sync.${reset}`);
+    } else {
+      console.log(`  ${green}✓${reset} ${dim}added${reset} ${value(String(result.added.length))}  ${dim}modified${reset} ${value(String(result.modified.length))}  ${dim}removed${reset} ${value(String(result.removed.length))}  ${dim}(${result.duration}ms)${reset}`);
+    }
+    if (result.errors.length) console.warn(`  \x1b[33m⚠ ${result.errors.length} warning(s)\x1b[0m`);
     const fallback = cg.getEngineFallback();
-    if (fallback) console.warn(`\x1b[33m⚠ Engine fallback: ${fallback}\x1b[0m`);
+    if (fallback) console.warn(`  \x1b[33m⚠ Engine fallback: ${fallback}\x1b[0m`);
     cg.close();
   });
 
@@ -236,10 +267,14 @@ program
     const KiroGraph = (await import('../index')).default;
     const cg = await KiroGraph.open(process.cwd());
     const results = cg.searchNodes(search, opts.kind as any, parseInt(opts.limit));
-    if (results.length === 0) { console.log('No results.'); } else {
+    if (results.length === 0) {
+      console.log(`  ${dim}No results for${reset} ${violet}${bold}${search}${reset}`);
+    } else {
+      console.log();
       for (const r of results) {
-        console.log(`${r.node.kind} ${r.node.name}  ${r.node.filePath}:${r.node.startLine}`);
+        console.log(`  ${violet}${bold}${r.node.name}${reset}  ${dim}${r.node.kind}${reset}  ${dim}${r.node.filePath}:${r.node.startLine}${reset}`);
       }
+      console.log(`\n  ${dim}${results.length} result(s)${reset}`);
     }
     cg.close();
   });
@@ -317,8 +352,8 @@ function printGrouped(nodes: import('../index').FileTreeNode[], metadata: boolea
   }
   collect(nodes);
   for (const [lang, files] of byLang) {
-    console.log(`\n\x1b[1m${lang}\x1b[0m (${files.length})`);
-    for (const f of files) console.log(`  ${f}`);
+    console.log(`\n  ${violet}${bold}${lang}${reset}  ${dim}(${files.length})${reset}`);
+    for (const f of files) console.log(`  ${dim}${f}${reset}`);
   }
 }
 
@@ -349,24 +384,27 @@ program
     }
 
     // Markdown output
-    console.log(`# Context: ${ctx.task}\n`);
-    console.log(ctx.summary);
+    console.log(`\n  ${section('Context:')} ${violet}${bold}${ctx.task}${reset}\n`);
+    console.log(`  ${dim}${ctx.summary}${reset}`);
     if (ctx.entryPoints.length > 0) {
-      console.log('\n## Entry Points\n');
+      console.log(`\n  ${section('Entry Points')}\n`);
       for (const n of ctx.entryPoints) {
-        console.log(`### \`${n.name}\` (${n.kind}) — ${n.filePath}:${n.startLine}`);
+        console.log(`  ${violet}${bold}${n.name}${reset}  ${dim}${n.kind}  ${n.filePath}:${n.startLine}${reset}`);
         if (ctx.codeSnippets.has(n.id)) {
-          console.log('```');
-          console.log(ctx.codeSnippets.get(n.id));
-          console.log('```');
+          console.log(`\n  ${dim}\`\`\`${reset}`);
+          for (const line of (ctx.codeSnippets.get(n.id) ?? '').split('\n')) {
+            console.log(`  ${line}`);
+          }
+          console.log(`  ${dim}\`\`\`${reset}\n`);
         }
       }
     }
     if (ctx.relatedNodes.length > 0) {
-      console.log('\n## Related Symbols\n');
+      console.log(`\n  ${section('Related Symbols')}\n`);
       for (const n of ctx.relatedNodes) {
-        console.log(`- \`${n.name}\` (${n.kind}) — ${n.filePath}:${n.startLine}`);
+        console.log(`  ${dim}·${reset} ${violet}${n.name}${reset}  ${dim}${n.kind}  ${n.filePath}:${n.startLine}${reset}`);
       }
+      console.log();
     }
     cg.close();
   });
@@ -412,10 +450,11 @@ program
       for (const f of affected) console.log(f);
     } else {
       if (affected.length === 0) {
-        console.log('No affected test files found.');
+        console.log(`  ${dim}No affected test files found.${reset}`);
       } else {
-        console.log(`\nAffected test files (${affected.length}):\n`);
-        for (const f of affected) console.log(`  ${f}`);
+        console.log(`\n  ${section('Affected test files')}  ${dim}(${affected.length})${reset}\n`);
+        for (const f of affected) console.log(`  ${violet}${bold}${f}${reset}`);
+        console.log();
       }
     }
     cg.close();
@@ -447,9 +486,17 @@ program
     const result = await cg.syncIfDirty();
     if (!opts.quiet) {
       if (result) {
-        console.log(`Sync: +${result.added.length} ~${result.modified.length} -${result.removed.length} (${result.duration}ms)`);
+        const changed = result.added.length + result.modified.length + result.removed.length;
+        if (changed === 0) {
+          console.log(`  ${dim}Index up to date.${reset}`);
+        } else {
+          console.log(`  ${green}✓${reset} ${dim}added${reset} ${value(String(result.added.length))}  ${dim}modified${reset} ${value(String(result.modified.length))}  ${dim}removed${reset} ${value(String(result.removed.length))}  ${dim}(${result.duration}ms)${reset}`);
+        }
+        if (result.errors.length) console.warn(`  \x1b[33m⚠ ${result.errors.length} warning(s)\x1b[0m`);
+        const fallback = cg.getEngineFallback();
+        if (fallback) console.warn(`  \x1b[33m⚠ Engine fallback: ${fallback}\x1b[0m`);
       } else {
-        console.log('Not dirty, skipped.');
+        console.log(`  ${dim}Not dirty, skipped.${reset}`);
       }
     }
     cg.close();
@@ -462,12 +509,12 @@ program
   .action(async (projectPath: string | undefined) => {
     const lockPath = path.join(path.resolve(projectPath ?? process.cwd()), '.kirograph', 'kirograph.lock');
     if (!fs.existsSync(lockPath)) {
-      console.log('No lock file found.');
+      console.log(`  ${dim}No lock file found.${reset}`);
       return;
     }
     const content = fs.readFileSync(lockPath, 'utf8').trim();
     fs.unlinkSync(lockPath);
-    console.log(`Lock released (was held by: ${content}).`);
+    console.log(`  ${green}✓${reset} Lock released ${dim}(was held by: ${content})${reset}`);
   });
 
 // ── install ───────────────────────────────────────────────────────────────────
@@ -487,13 +534,10 @@ program
   .option('--path <path>', 'Project path')
   .action(async (opts: { mcp?: boolean; path?: string }) => {
     if (!opts.mcp) {
-      console.log('Usage: kirograph serve --mcp');
-      console.log('Add to .kiro/settings/mcp.json:');
-      console.log(JSON.stringify({
-        mcpServers: {
-          kirograph: { command: 'kirograph', args: ['serve', '--mcp'] }
-        }
-      }, null, 2));
+      console.log(`\n  ${dim}Start the KiroGraph MCP server for Kiro.${reset}`);
+      console.log(`\n  ${dim}Usage:${reset}  ${violet}${bold}kirograph serve --mcp${reset}`);
+      console.log(`\n  ${dim}Add to${reset} ${violet}${bold}.kiro/settings/mcp.json${reset}${dim}:${reset}\n`);
+      console.log(`  ${dim}${JSON.stringify({ mcpServers: { kirograph: { command: 'kirograph', args: ['serve', '--mcp'] } } }, null, 2).split('\n').join('\n  ')}${reset}\n`);
       return;
     }
     const { MCPServer } = await import('../mcp/server');
