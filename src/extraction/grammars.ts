@@ -39,6 +39,7 @@ export const GRAMMAR_FILE_MAP: Record<Language, string> = {
   kotlin: 'tree-sitter-kotlin',
   dart: 'tree-sitter-dart',
   svelte: 'tree-sitter-svelte',
+  elixir: 'tree-sitter-elixir',
   // Pascal is bundled in src/extraction/wasm/ (not in tree-sitter-wasms)
   pascal: 'tree-sitter-pascal',
   // No WASM available

@@ -104,6 +104,131 @@ export async function extractFile(filePath: string, projectRoot: string, content
   return { filePath: relPath, language, contentHash, fileSize, nodes, edges, unresolvedRefs };
 }
 
+// ── Elixir helpers ────────────────────────────────────────────────────────────
+
+const ELIXIR_DEF_KINDS: Record<string, NodeKind> = {
+  defmodule: 'module',
+  def: 'function',
+  defp: 'function',
+  defmacro: 'function',
+  defmacrop: 'function',
+  defprotocol: 'interface',
+  defimpl: 'class',
+  defstruct: 'struct',
+};
+
+const ELIXIR_IMPORT_TARGETS = new Set(['alias', 'import', 'require', 'use']);
+
+function elixirCallTarget(node: any, source: string): string | null {
+  const target = node.childForFieldName?.('target') ?? node.child(0);
+  if (!target) return null;
+  return source.slice(target.startIndex, target.endIndex).trim() || null;
+}
+
+function elixirFirstArg(node: any): any | null {
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+    if (child.type === 'arguments') {
+      return child.namedChild(0) ?? child.child(0) ?? null;
+    }
+  }
+  return null;
+}
+
+function extractElixirName(node: any, source: string, kind: NodeKind): string | null {
+  const firstArg = elixirFirstArg(node);
+  if (!firstArg) return null;
+  if (kind === 'module' || kind === 'interface' || kind === 'class') {
+    return source.slice(firstArg.startIndex, firstArg.endIndex).trim();
+  }
+  if (kind === 'function') {
+    if (firstArg.type === 'call') {
+      const nameNode = firstArg.childForFieldName?.('target') ?? firstArg.child(0);
+      if (nameNode) return source.slice(nameNode.startIndex, nameNode.endIndex).trim();
+    }
+    return source.slice(firstArg.startIndex, firstArg.endIndex).trim();
+  }
+  return null;
+}
+
+function extractElixirImportSource(node: any, source: string): string | null {
+  const firstArg = elixirFirstArg(node);
+  if (!firstArg) return null;
+  return source.slice(firstArg.startIndex, firstArg.endIndex).trim() || null;
+}
+
+function walkElixirCall(
+  node: any,
+  source: string,
+  filePath: string,
+  language: Language,
+  nodes: Node[],
+  edges: Edge[],
+  unresolvedRefs: UnresolvedRef[],
+  now: number,
+  parentId?: string
+): void {
+  const targetText = elixirCallTarget(node, source);
+  if (!targetText) {
+    for (let i = 0; i < node.childCount; i++) {
+      walkTree(node.child(i), source, filePath, language, nodes, edges, unresolvedRefs, now, parentId);
+    }
+    return;
+  }
+
+  if (ELIXIR_IMPORT_TARGETS.has(targetText)) {
+    const modPath = extractElixirImportSource(node, source);
+    if (modPath) {
+      const id = makeNodeId(filePath, 'import', modPath, node.startPosition.row + 1);
+      nodes.push({
+        id, kind: 'import', name: modPath,
+        qualifiedName: `${filePath}::import:${modPath}`,
+        filePath, language,
+        startLine: node.startPosition.row + 1,
+        endLine: node.endPosition.row + 1,
+        startColumn: node.startPosition.column,
+        endColumn: node.endPosition.column,
+        updatedAt: now,
+      });
+      unresolvedRefs.push({ sourceId: id, refName: modPath, refKind: 'import', line: node.startPosition.row + 1, column: node.startPosition.column });
+    }
+    return;
+  }
+
+  const defKind = ELIXIR_DEF_KINDS[targetText];
+  if (defKind) {
+    const name = extractElixirName(node, source, defKind);
+    if (name) {
+      const id = makeNodeId(filePath, defKind, name, node.startPosition.row + 1);
+      const isPrivate = targetText === 'defp' || targetText === 'defmacrop';
+      nodes.push({
+        id, kind: defKind, name,
+        qualifiedName: `${filePath}::${name}`,
+        filePath, language,
+        startLine: node.startPosition.row + 1,
+        endLine: node.endPosition.row + 1,
+        startColumn: node.startPosition.column,
+        endColumn: node.endPosition.column,
+        docstring: extractDocstring(node, source),
+        signature: extractSignature(node, source, defKind),
+        visibility: isPrivate ? 'private' : 'public',
+        isExported: !isPrivate,
+        updatedAt: now,
+      });
+      if (parentId) edges.push({ source: parentId, target: id, kind: 'contains' });
+      collectCallRefs(node, source, id, unresolvedRefs);
+      for (let i = 0; i < node.childCount; i++) {
+        walkTree(node.child(i), source, filePath, language, nodes, edges, unresolvedRefs, now, id);
+      }
+      return;
+    }
+  }
+
+  for (let i = 0; i < node.childCount; i++) {
+    walkTree(node.child(i), source, filePath, language, nodes, edges, unresolvedRefs, now, parentId);
+  }
+}
+
 // ── Node type mappings ────────────────────────────────────────────────────────
 
 /** AST node types that should be descended without creating a symbol node */
@@ -191,6 +316,12 @@ function walkTree(
     for (let i = 0; i < node.childCount; i++) {
       walkTree(node.child(i), source, filePath, language, nodes, edges, unresolvedRefs, now, parentId);
     }
+    return;
+  }
+
+  // Elixir: all definitions and imports are `call` nodes
+  if (language === 'elixir' && node.type === 'call') {
+    walkElixirCall(node, source, filePath, language, nodes, edges, unresolvedRefs, now, parentId);
     return;
   }
 

@@ -39,6 +39,8 @@ export const EXTENSION_MAP: Record<string, Language> = {
   '.dfm': 'pascal',
   '.fmx': 'pascal',
   '.liquid': 'liquid',
+  '.ex': 'elixir',
+  '.exs': 'elixir',
 };
 
 export const GRAMMAR_MAP: Record<Language, string> = {
@@ -59,6 +61,7 @@ export const GRAMMAR_MAP: Record<Language, string> = {
   kotlin: 'tree-sitter-kotlin',
   dart: 'tree-sitter-dart',
   svelte: 'tree-sitter-svelte',
+  elixir: 'tree-sitter-elixir',
   // Pascal and Liquid require custom WASM not bundled in tree-sitter-wasms
   pascal: '',
   liquid: '',

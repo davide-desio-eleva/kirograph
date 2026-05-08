@@ -12,6 +12,7 @@ import { javaLayerDetector } from './java';
 import { rubyLayerDetector } from './ruby';
 import { rustLayerDetector } from './rust';
 import { csharpLayerDetector } from './csharp';
+import { elixirLayerDetector } from './elixir';
 
 const LAYER_DETECTORS: LayerDetector[] = [
   typescriptLayerDetector,
@@ -21,6 +22,7 @@ const LAYER_DETECTORS: LayerDetector[] = [
   rubyLayerDetector,
   rustLayerDetector,
   csharpLayerDetector,
+  elixirLayerDetector,
 ];
 
 export function getAllLayerDetectors(): LayerDetector[] {

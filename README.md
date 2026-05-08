@@ -213,7 +213,7 @@ Four hooks keep the index fresh automatically in the Kiro IDE:
 
 File changes are batched: saves and creates write a dirty marker; the actual sync runs when the agent stops. Deletes sync immediately. This means no overhead during active editing.
 
-Hooks fire for: `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.go`, `.rs`, `.java`, `.cs`, `.rb`, `.php`, `.swift`, `.kt`, `.dart`
+Hooks fire for: `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.go`, `.rs`, `.java`, `.cs`, `.rb`, `.php`, `.swift`, `.kt`, `.dart`, `.ex`, `.exs`
 
 ### CLI Agent Config (`.kiro/agents/kirograph.json`)
 
@@ -1133,6 +1133,7 @@ Architecture analysis runs as a dedicated phase during `kirograph index`. Progre
 | Kotlin | `.kt` |
 | Dart | `.dart` |
 | Svelte | `.svelte` |
+| Elixir | `.ex`, `.exs` |
 
 ## Framework Detection
 
@@ -1155,6 +1156,8 @@ KiroGraph automatically detects frameworks and enriches the graph with framework
 **Swift:** SwiftUI, UIKit, Vapor
 
 **PHP:** Laravel
+
+**Elixir:** Phoenix
 
 Detected frameworks are stored in config and used to improve symbol extraction and resolution.
 

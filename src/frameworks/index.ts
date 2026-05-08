@@ -28,6 +28,7 @@ export { rustResolver } from './rust';
 export { aspnetResolver } from './csharp';
 export { swiftUIResolver, uikitResolver, vaporResolver } from './swift';
 export { laravelResolver, FACADE_MAPPINGS } from './laravel';
+export { phoenixResolver } from './elixir';
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ import { rustResolver } from './rust';
 import { aspnetResolver } from './csharp';
 import { swiftUIResolver, uikitResolver, vaporResolver } from './swift';
 import { laravelResolver } from './laravel';
+import { phoenixResolver } from './elixir';
 
 const FRAMEWORK_RESOLVERS: FrameworkResolver[] = [
   // PHP
@@ -68,6 +70,8 @@ const FRAMEWORK_RESOLVERS: FrameworkResolver[] = [
   swiftUIResolver,
   uikitResolver,
   vaporResolver,
+  // Elixir
+  phoenixResolver,
 ];
 
 export function getAllFrameworkResolvers(): FrameworkResolver[] {

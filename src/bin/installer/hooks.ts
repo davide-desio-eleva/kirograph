@@ -13,6 +13,7 @@ const FILE_PATTERNS = [
   '**/*.py', '**/*.go', '**/*.rs', '**/*.java',
   '**/*.cs', '**/*.rb', '**/*.php', '**/*.swift',
   '**/*.kt', '**/*.dart',
+  '**/*.ex', '**/*.exs',
 ];
 
 const HOOKS: Array<{ filename: string; hook: object }> = [

@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Elixir language support** — `.ex` and `.exs` files are now indexed using the `tree-sitter-elixir` grammar (already included in `tree-sitter-wasms`). Extracts modules (`defmodule`), functions (`def`, `defp`), macros (`defmacro`, `defmacrop`), protocols (`defprotocol`), implementations (`defimpl`), and structs (`defstruct`). `defp` and `defmacrop` are marked private. `alias`, `use`, `import`, and `require` are extracted as import edges.
+- **Phoenix framework detection** — auto-detected via `mix.exs` containing `:phoenix`. Resolves `Controller`, `LiveView`, and `Channel` module references by convention. Extracts HTTP routes (`get`, `post`, `put`, `patch`, `delete`), `resources`, and `live` routes from `router.ex` as `route` nodes.
+- **Elixir architecture layer detection** — Phoenix-aware glob patterns for all five layers: `api` (controllers, channels, router, plugs), `service` (contexts, workers, jobs), `data` (schemas, repo, migrations), `ui` (LiveView, components, views, templates), `shared` (helpers, lib, config, mailers).
+- Auto-sync hooks now fire for `.ex` and `.exs` files.
+
+---
+
 ## [0.11.0] - 2026-04-20
 
 ### Added
