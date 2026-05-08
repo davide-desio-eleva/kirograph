@@ -32,7 +32,7 @@ export const GRAMMAR_FILE_MAP: Record<Language, string> = {
   java: 'tree-sitter-java',
   c: 'tree-sitter-c',
   cpp: 'tree-sitter-cpp',
-  csharp: 'tree-sitter-c-sharp',
+  csharp: 'tree-sitter-c_sharp',
   php: 'tree-sitter-php',
   ruby: 'tree-sitter-ruby',
   swift: 'tree-sitter-swift',
@@ -151,6 +151,15 @@ export async function getParser(language: Language): Promise<any | null> {
  */
 export function isGrammarLoaded(language: Language): boolean {
   return loadedGrammars.has(language);
+}
+
+/**
+ * Returns true if a WASM grammar file exists for the given language,
+ * regardless of whether it has been loaded yet.
+ * Use this to distinguish "language has no grammar" from "grammar failed to load".
+ */
+export function hasWasmGrammar(language: Language): boolean {
+  return resolveWasmPath(language) !== null;
 }
 
 /**

@@ -16,7 +16,7 @@ import * as fs from 'fs';
 import { GraphDatabase } from '../db/database';
 import { scanDirectory, hashContent, getChangedFiles } from '../sync/index';
 import { extractFile } from '../extraction/extractor';
-import { clearParserCache } from '../extraction/grammars';
+import { clearParserCache, initGrammars, hasWasmGrammar } from '../extraction/grammars';
 import { detectFrameworks } from '../frameworks/index';
 import { ReferenceResolver } from '../resolution/index';
 import { VectorManager } from '../vectors/index';
@@ -113,15 +113,60 @@ export class IndexPipeline {
           const msg = err instanceof Error ? err.message : String(err);
           errors.push(`${file}: ${msg}`);
 
-          // Detect WASM runtime abort (tree-sitter or sqlite).
-          // Once Emscripten sets ABORT=true the module is permanently dead.
-          // Reset the parser cache so subsequent files can re-initialize.
-          if (
-            err instanceof WebAssembly.RuntimeError ||
-            msg.includes('Aborted(') ||
-            msg.includes('RuntimeError')
-          ) {
+          // Detect WASM runtime abort and attempt recovery
+          const isWasmCrash = (err as any)?.constructor?.name === 'RuntimeError'
+            || msg.includes('Aborted(') 
+            || msg.includes('RuntimeError')
+            || msg.includes('WASM grammar exists but failed to load');
+          if (isWasmCrash) {
             clearParserCache();
+            try {
+              await initGrammars();
+            } catch {
+              errors.push('WASM runtime unrecoverable after crash — aborting batch');
+              break;
+            }
+          }
+        }
+      }
+
+      // Re-process files that have symbolCount=0 but should have symbols (WASM recovery)
+      const emptyFiles = this.db.getAllFiles().filter(
+        (f: any) => f.symbolCount === 0 && hasWasmGrammar(f.language)
+      );
+      if (emptyFiles.length > 0) {
+        opts?.onProgress?.({ phase: 'retrying', current: 0, total: emptyFiles.length });
+        for (let i = 0; i < emptyFiles.length; i++) {
+          const ef = emptyFiles[i];
+          const absPath = path.join(this.projectRoot, ef.path);
+          opts?.onProgress?.({ phase: 'retrying', current: i + 1, total: emptyFiles.length, currentFile: absPath });
+          try {
+            const extracted = await extractFile(absPath, this.projectRoot);
+            if (!extracted || extracted.nodes.length === 0) continue;
+
+            const oldNodes = this.db.getNodesByFile(extracted.filePath);
+            if (oldNodes.length > 0) await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
+
+            this.db.transaction(() => {
+              this.db.deleteNodesByFile(extracted.filePath);
+              this.db.deleteUnresolvedRefsByFile(extracted.filePath);
+              this.db.upsertFile({
+                path: extracted.filePath,
+                contentHash: extracted.contentHash,
+                language: extracted.language,
+                fileSize: extracted.fileSize,
+                symbolCount: extracted.nodes.length,
+                indexedAt: Date.now(),
+              });
+              for (const node of extracted.nodes) { this.db.upsertNode(node); nodesCreated++; }
+              for (const edge of extracted.edges) { this.db.insertEdge(edge); edgesCreated++; }
+              for (const ref of extracted.unresolvedRefs) {
+                this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column);
+              }
+            });
+            filesIndexed++;
+          } catch {
+            // Already logged in first pass or genuinely broken — skip
           }
         }
       }
@@ -251,7 +296,23 @@ export class IndexPipeline {
           if (isNew) result.added.push(extracted.filePath);
           else result.modified.push(extracted.filePath);
         } catch (err) {
-          result.errors.push(`${file}: ${err instanceof Error ? err.message : String(err)}`);
+          const msg = err instanceof Error ? err.message : String(err);
+          result.errors.push(`${file}: ${msg}`);
+
+          // Detect WASM runtime abort and attempt recovery
+          const isWasmCrash = (err as any)?.constructor?.name === 'RuntimeError'
+            || msg.includes('Aborted(') 
+            || msg.includes('RuntimeError')
+            || msg.includes('WASM grammar exists but failed to load');
+          if (isWasmCrash) {
+            clearParserCache();
+            try {
+              await initGrammars();
+            } catch {
+              result.errors.push('WASM runtime unrecoverable after crash — aborting sync');
+              break;
+            }
+          }
         }
       }
 

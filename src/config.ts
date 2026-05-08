@@ -78,10 +78,10 @@ export function isSafeRegex(pattern: string): boolean {
 
 export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
   return {
-    version: 1,
+    version: 2,
     languages: [],
     include: [],
-    exclude: ['node_modules/**', 'dist/**', 'build/**', '.git/**', '*.min.js', '.kirograph/**'],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/.git/**', '*.min.js', '**/.kirograph/**'],
     maxFileSize: 1_048_576,
     extractDocstrings: true,
     trackCallSites: true,
@@ -230,6 +230,24 @@ function _validatePatterns(raw: unknown, fallback: string[]): string[] {
   return valid;
 }
 
+// ── Migration helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Upgrades shallow exclude patterns (e.g. "node_modules/**") to recursive ones
+ * (e.g. "** /node_modules/**") so nested directories are excluded at any depth.
+ */
+const SHALLOW_TO_RECURSIVE: Record<string, string> = {
+  'node_modules/**': '**/node_modules/**',
+  'dist/**': '**/dist/**',
+  'build/**': '**/build/**',
+  '.git/**': '**/.git/**',
+  '.kirograph/**': '**/.kirograph/**',
+};
+
+function migrateExcludePatterns(patterns: string[]): string[] {
+  return patterns.map(p => SHALLOW_TO_RECURSIVE[p] ?? p);
+}
+
 // ── Load / Save ───────────────────────────────────────────────────────────────
 
 export async function loadConfig(projectRoot: string): Promise<KiroGraphConfig> {
@@ -253,7 +271,17 @@ export async function loadConfig(projectRoot: string): Promise<KiroGraphConfig> 
     return createDefaultConfig(projectRoot);
   }
 
-  return validateConfig(raw);
+  const config = validateConfig(raw);
+
+  // Migrate v1 → v2: upgrade shallow exclude patterns to recursive
+  if (config.version < 2) {
+    config.version = 2;
+    config.exclude = migrateExcludePatterns(config.exclude);
+    await fs.promises.mkdir(dir, { recursive: true });
+    await _writeAtomic(cfgPath, config);
+  }
+
+  return config;
 }
 
 export async function saveConfig(projectRoot: string, config: KiroGraphConfig): Promise<void> {

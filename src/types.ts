@@ -123,7 +123,7 @@ export interface TaskContext {
 }
 
 export interface IndexProgress {
-  phase: 'scanning' | 'parsing' | 'storing' | 'resolving' | 'detecting frameworks' | 'embeddings' | 'architecture';
+  phase: 'scanning' | 'parsing' | 'storing' | 'resolving' | 'detecting frameworks' | 'embeddings' | 'architecture' | 'retrying';
   current: number;
   total: number;
   currentFile?: string;

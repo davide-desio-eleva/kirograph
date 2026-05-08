@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import type { Node, Edge, NodeKind, Language } from '../types';
 import { detectLanguage, isSupportedLanguage } from './languages';
-import { initGrammars, getParser } from './grammars';
+import { initGrammars, getParser, hasWasmGrammar } from './grammars';
 
 export interface UnresolvedRef {
   sourceId: string;
@@ -76,16 +76,20 @@ export async function extractFile(filePath: string, projectRoot: string, content
   await initGrammars();
   const parser = await getParser(language);
   if (!parser) {
-    // Pascal, Liquid, or missing grammar — track file but no AST extraction
-    return {
-      filePath: relPath,
-      language,
-      contentHash,
-      fileSize,
-      nodes: [],
-      edges: [],
-      unresolvedRefs: [],
-    };
+    if (!hasWasmGrammar(language)) {
+      // Language genuinely has no grammar (e.g. Liquid, unknown) — track file but no AST extraction
+      return {
+        filePath: relPath,
+        language,
+        contentHash,
+        fileSize,
+        nodes: [],
+        edges: [],
+        unresolvedRefs: [],
+      };
+    }
+    // Grammar should exist but parser failed (likely WASM crash) — signal extraction failure
+    throw new Error(`Parser unavailable for ${language} (WASM grammar exists but failed to load)`);
   }
 
   const tree = parser.parse(source);
