@@ -409,7 +409,19 @@ export class ReferenceResolver {
       if (candidate.kind === 'namespace' && candidate.name === importPath) return candidate.id;
     }
     // Then fall back to the prefix cache: return any class/interface in this namespace
-    return this.namespacePrefixCache.get(importPath) ?? null;
+    const nsResult = this.namespacePrefixCache.get(importPath) ?? null;
+    if (nsResult) return nsResult;
+
+    // ── 6. Elixir: module names are stored as their full name (e.g. "MyApp.Accounts") ─
+    // Steps 3–4 miss because qualifiedName has a file prefix and nameCache is keyed by name.
+    if (sourceFilePath.endsWith('.ex') || sourceFilePath.endsWith('.exs')) {
+      const mod = (this.nameCache.get(importPath) ?? []).find(
+        n => n.kind === 'module' && n.language === 'elixir'
+      );
+      if (mod) return mod.id;
+    }
+
+    return null;
   }
 
   /**
