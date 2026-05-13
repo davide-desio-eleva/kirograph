@@ -22,6 +22,20 @@ export class GraphDatabase {
     const dbDir = path.join(projectRoot, '.kirograph');
     fs.mkdirSync(dbDir, { recursive: true });
     const dbPath = path.join(dbDir, 'kirograph.db');
+
+    // ── Pre-flight lock check ─────────────────────────────────────────────────
+    // node-sqlite3-wasm calls process.abort() when the DB is locked, producing
+    // a cryptic "Aborted()" with no context. Detect the lock file early and
+    // throw a clean error instead so the global handler can surface it clearly.
+    const lockPath = path.join(dbDir, 'kirograph.db.lock');
+    if (fs.existsSync(lockPath)) {
+      throw new Error(
+        `Database is locked by another process (${lockPath} exists).\n` +
+        `Run: kirograph unlock\n` +
+        `Or delete the lock manually: ${lockPath}`
+      );
+    }
+
     this.db = new Database(dbPath);
     this.db.exec(`
       PRAGMA journal_mode=WAL;

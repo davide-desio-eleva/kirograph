@@ -239,41 +239,91 @@ export class QdrantIndex {
   }
 
   /**
-   * Upsert a node's embedding. Qdrant's upsert is idempotent — the same point
-   * ID is overwritten if it already exists.
+   * Upsert a node's embedding with retry logic.
+   * Qdrant's upsert is idempotent — the same point ID is overwritten if it already exists.
+   * Retries up to 3 times with exponential backoff to handle transient connection failures.
    */
   async upsert(node: Node, embedding: Float32Array): Promise<void> {
     if (!this._available || !this.client) return;
 
-    try {
-      await this.client.upsert(COLLECTION, {
-        points: [{
-          id:      toUuid(node.id),
-          vector:  Array.from(embedding),
-          payload: {
-            node_id:   node.id,
-            name:      node.name,
-            kind:      node.kind,
-            file_path: node.filePath,
-            signature: node.signature ?? '',
-          },
-        }],
-      });
-    } catch (err) {
-      logWarn('QdrantIndex: upsert failed', { nodeId: node.id, error: String(err) });
+    const point = {
+      id:      toUuid(node.id),
+      vector:  Array.from(embedding),
+      payload: {
+        node_id:   node.id,
+        name:      node.name,
+        kind:      node.kind,
+        file_path: node.filePath,
+        signature: node.signature ?? '',
+      },
+    };
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await this.client.upsert(COLLECTION, { points: [point] });
+        return;
+      } catch (err) {
+        if (attempt < 2) {
+          await new Promise(r => setTimeout(r, 100 * (attempt + 1)));
+        } else {
+          logWarn('QdrantIndex: upsert failed', { nodeId: node.id, error: String(err) });
+        }
+      }
     }
   }
 
   /**
-   * Remove a point from the collection.
+   * Batch upsert multiple nodes' embeddings in a single HTTP request.
+   * Much more efficient than individual upserts for bulk indexing.
+   * Retries up to 3 times with exponential backoff.
+   */
+  async bulkUpsert(nodes: Node[], embeddings: Float32Array[]): Promise<void> {
+    if (!this._available || !this.client) return;
+    if (nodes.length === 0) return;
+
+    const points = nodes.map((node, i) => ({
+      id:      toUuid(node.id),
+      vector:  Array.from(embeddings[i]!),
+      payload: {
+        node_id:   node.id,
+        name:      node.name,
+        kind:      node.kind,
+        file_path: node.filePath,
+        signature: node.signature ?? '',
+      },
+    }));
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await this.client.upsert(COLLECTION, { points });
+        return;
+      } catch (err) {
+        if (attempt < 2) {
+          await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
+        } else {
+          logWarn('QdrantIndex: bulk upsert failed', { count: nodes.length, error: String(err) });
+        }
+      }
+    }
+  }
+
+  /**
+   * Remove a point from the collection with retry logic.
    */
   async delete(nodeId: string): Promise<void> {
     if (!this._available || !this.client) return;
 
-    try {
-      await this.client.delete(COLLECTION, { points: [toUuid(nodeId)] });
-    } catch (err) {
-      logWarn('QdrantIndex: delete failed', { nodeId, error: String(err) });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await this.client.delete(COLLECTION, { points: [toUuid(nodeId)] });
+        return;
+      } catch (err) {
+        if (attempt < 2) {
+          await new Promise(r => setTimeout(r, 100 * (attempt + 1)));
+        } else {
+          logWarn('QdrantIndex: delete failed', { nodeId, error: String(err) });
+        }
+      }
     }
   }
 

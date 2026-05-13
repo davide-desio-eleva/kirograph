@@ -1,10 +1,9 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import * as https from 'https';
-import * as http from 'http';
-import { spawnSync, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import { dim, reset, violet, bold, green } from '../ui';
 import { DASHBOARD_SUBDIR } from '../../vectors/qdrant-index';
+import { fetchJson, downloadFile, extractZip } from './archive';
 
 const SERVER_STATE_FILE = 'qdrant-server.json';
 interface ServerState { pid: number; port: number; }
@@ -13,37 +12,10 @@ const UI_RELEASES_API = 'https://api.github.com/repos/qdrant/qdrant-web-ui/relea
 
 // ── Download ───────────────────────────────────────────────────────────────────
 
-function fetchJson(url: string): Promise<any> {
-  return new Promise((resolve, reject) => {
-    https.get(url, { headers: { 'User-Agent': 'kirograph' } }, res => {
-      let body = '';
-      res.on('data', (c: string) => body += c);
-      res.on('end', () => { try { resolve(JSON.parse(body)); } catch (e) { reject(e); } });
-    }).on('error', reject);
-  });
-}
-
-function downloadFile(url: string, dest: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    function doGet(currentUrl: string) {
-      const mod = currentUrl.startsWith('https') ? https : http;
-      mod.get(currentUrl, { headers: { 'User-Agent': 'kirograph' } } as any, res => {
-        if (res.statusCode === 301 || res.statusCode === 302) return doGet(res.headers.location!);
-        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
-        const out = fs.createWriteStream(dest);
-        res.pipe(out);
-        out.on('finish', () => out.close(() => resolve()));
-        out.on('error', reject);
-      }).on('error', reject);
-    }
-    doGet(url);
-  });
-}
-
 async function downloadQdrantUI(cacheDir: string): Promise<void> {
   // Fetch latest release to get zip URL
-  const release  = await fetchJson(UI_RELEASES_API);
-  const asset    = (release.assets as any[]).find((a: any) => a.name === 'dist-qdrant.zip');
+  const release = await fetchJson(UI_RELEASES_API);
+  const asset   = (release.assets as any[]).find((a: any) => a.name === 'dist-qdrant.zip');
   if (!asset) throw new Error('dist-qdrant.zip not found in latest release');
 
   const tmpZip = path.join(cacheDir, '..', '_qdrant-ui.zip');
@@ -51,13 +23,11 @@ async function downloadQdrantUI(cacheDir: string): Promise<void> {
 
   await downloadFile(asset.browser_download_url, tmpZip);
 
-  // Extract zip — `unzip` is available on macOS and most Linux distros
-  // Extract to a temp dir then move the dist/ subfolder to cacheDir
+  // Extract to a temp dir using pure Node.js (no unzip binary needed)
   const tmpDir = path.join(cacheDir, '..', '_qdrant-ui-extract');
   fs.mkdirSync(tmpDir, { recursive: true });
 
-  const result = spawnSync('unzip', ['-o', tmpZip, '-d', tmpDir], { stdio: 'ignore' });
-  if (result.status !== 0) throw new Error('unzip failed — is unzip installed?');
+  await extractZip(tmpZip, tmpDir);
 
   // Move dist/ contents to cacheDir
   const distDir = path.join(tmpDir, 'dist');

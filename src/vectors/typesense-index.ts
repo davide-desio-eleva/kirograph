@@ -23,10 +23,10 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as http from 'http';
 import * as crypto from 'crypto';
-import * as zlib from 'zlib';
 import { homedir } from 'os';
 import { logDebug, logWarn, logError } from '../errors';
 import type { Node } from '../types';
+import { extractBinaryFromTarGz } from '../bin/installer/archive';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -64,74 +64,12 @@ function getBinPath(): string {
 }
 
 /**
- * Download the Typesense binary tarball and extract it, following redirects.
+ * Download the Typesense binary tarball and extract it using the shared archive utility.
  * The binary is cached at ~/.kirograph/bin/typesense-server-{version}.
  */
-function downloadBinary(url: string, destPath: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    fs.mkdirSync(BIN_CACHE_DIR, { recursive: true });
-
-    function doGet(currentUrl: string) {
-      const mod = currentUrl.startsWith('https') ? https : http;
-      mod.get(currentUrl, res => {
-        if (res.statusCode === 301 || res.statusCode === 302) {
-          return doGet(res.headers.location!);
-        }
-        if (res.statusCode !== 200) {
-          return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
-        }
-
-        // Stream: tar.gz → gunzip → tar extract (find the binary entry)
-        const gunzip = zlib.createGunzip();
-        res.pipe(gunzip);
-
-        let buffer = Buffer.alloc(0);
-        gunzip.on('data', (chunk: Buffer) => {
-          buffer = Buffer.concat([buffer, chunk]);
-          tryExtract();
-        });
-        gunzip.on('end', () => {
-          tryExtract(true);
-          if (!extracted) reject(new Error('typesense-server binary not found in archive'));
-        });
-        gunzip.on('error', reject);
-
-        let extracted = false;
-        let offset = 0;
-
-        function tryExtract(final = false) {
-          // Parse tar format: 512-byte headers + data blocks
-          while (offset + 512 <= buffer.length) {
-            const header = buffer.slice(offset, offset + 512);
-            const name = header.slice(0, 100).toString('utf8').replace(/\0/g, '');
-            const sizeOctal = header.slice(124, 136).toString('utf8').replace(/\0/g, '').trim();
-            const size = parseInt(sizeOctal, 8) || 0;
-            const dataStart = offset + 512;
-            const dataEnd = dataStart + size;
-
-            if (name === '') { offset += 512; continue; } // end-of-archive block
-
-            const isBinary = path.basename(name) === 'typesense-server';
-            if (isBinary) {
-              if (buffer.length >= dataEnd || final) {
-                fs.writeFileSync(destPath, buffer.slice(dataStart, dataEnd));
-                fs.chmodSync(destPath, 0o755);
-                extracted = true;
-                resolve();
-                return;
-              }
-              return; // wait for more data
-            }
-
-            // Skip to next entry (align to 512-byte block)
-            offset = dataStart + Math.ceil(size / 512) * 512;
-          }
-        }
-      }).on('error', reject);
-    }
-
-    doGet(url);
-  });
+async function downloadBinary(url: string, destPath: string): Promise<void> {
+  fs.mkdirSync(BIN_CACHE_DIR, { recursive: true });
+  await extractBinaryFromTarGz(url, 'typesense-server', destPath);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

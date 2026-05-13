@@ -1,10 +1,9 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as http from 'http';
-import * as https from 'https';
-import * as zlib from 'zlib';
 import { spawn } from 'child_process';
 import { dim, reset, violet, bold, green } from '../ui';
+import { extractTarGzFromUrl } from './archive';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -29,79 +28,9 @@ function openBrowser(url: string): void {
 // ── Dashboard download ─────────────────────────────────────────────────────────
 
 function downloadDashboard(cacheDir: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    fs.mkdirSync(cacheDir, { recursive: true });
-
-    function doGet(currentUrl: string) {
-      const mod = currentUrl.startsWith('https') ? https : http;
-      mod.get(currentUrl, res => {
-        if (res.statusCode === 301 || res.statusCode === 302) {
-          return doGet(res.headers.location!);
-        }
-        if (res.statusCode !== 200) {
-          return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
-        }
-
-        const gunzip = zlib.createGunzip();
-        res.pipe(gunzip);
-
-        let tarBuffer = Buffer.alloc(0);
-        let offset = 0;
-
-        function extractAll(final = false) {
-          while (offset + 512 <= tarBuffer.length) {
-            const header    = tarBuffer.slice(offset, offset + 512);
-            const nameRaw   = header.slice(0, 100).toString('utf8').replace(/\0/g, '');
-            const sizeOctal = header.slice(124, 136).toString('utf8').replace(/\0/g, '').trim();
-            const typeFlag  = header[156];
-            const size      = parseInt(sizeOctal, 8) || 0;
-            const dataStart = offset + 512;
-            const dataEnd   = dataStart + size;
-
-            if (nameRaw === '') { offset += 512; continue; }
-
-            // Strip the tarball's leading directory prefix
-            const relName  = nameRaw.startsWith(STRIP_TAR_PREFIX)
-              ? nameRaw.slice(STRIP_TAR_PREFIX.length)
-              : nameRaw;
-            const destPath = path.join(cacheDir, relName);
-
-            // Prevent path traversal
-            if (!destPath.startsWith(cacheDir)) {
-              offset = dataStart + Math.ceil(size / 512) * 512;
-              continue;
-            }
-
-            if (typeFlag === 53 || nameRaw.endsWith('/')) {
-              try { fs.mkdirSync(destPath, { recursive: true }); } catch { /* ignore */ }
-              offset = dataStart;
-              continue;
-            }
-
-            if (tarBuffer.length < dataEnd && !final) return;
-
-            if (relName && !relName.endsWith('/')) {
-              try {
-                fs.mkdirSync(path.dirname(destPath), { recursive: true });
-                fs.writeFileSync(destPath, tarBuffer.slice(dataStart, dataEnd));
-              } catch { /* skip unwritable entries */ }
-            }
-
-            offset = dataStart + Math.ceil(size / 512) * 512;
-          }
-        }
-
-        gunzip.on('data', (chunk: Buffer) => {
-          tarBuffer = Buffer.concat([tarBuffer, chunk]);
-          extractAll();
-        });
-        gunzip.on('end', () => { extractAll(true); resolve(); });
-        gunzip.on('error', reject);
-      }).on('error', reject);
-    }
-
-    doGet(DASHBOARD_TARBALL);
-  });
+  return extractTarGzFromUrl(DASHBOARD_TARBALL, cacheDir, {
+    stripPrefix: STRIP_TAR_PREFIX,
+  }).then(() => {});
 }
 
 // ── Local HTTP server ──────────────────────────────────────────────────────────
