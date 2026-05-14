@@ -4,6 +4,7 @@
 
 import * as readline from 'readline';
 import { KiroGraphConfig } from '../../config';
+type CavemanMode = 'lite' | 'full' | 'ultra';
 import { ask, askBool, arrowSelect, dim, reset, violet } from './prompts';
 export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites' | 'enableArchitecture' | 'cavemanMode'> & { embeddingModel?: string; embeddingDim?: number };
 export type SemanticEngine = KiroGraphConfig['semanticEngine'];
@@ -51,7 +52,7 @@ export async function promptConfigOptions(rl: readline.Interface): Promise<Confi
     'Enables semantic/similarity-based code search. Increases indexing time; the chosen embedding model is downloaded automatically on first use.',
   );
 
-  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, semanticEngine: 'cosine', typesenseDashboard: false, qdrantDashboard: false, extractDocstrings: true, trackCallSites: true, enableArchitecture: false };
+  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, semanticEngine: 'cosine', typesenseDashboard: false, qdrantDashboard: false, extractDocstrings: true, trackCallSites: true, enableArchitecture: false, cavemanMode: 'off' };
 
   if (enableEmbeddings) {
     // ── Model selection ────────────────────────────────────────────────────────

@@ -42,6 +42,11 @@ export interface KiroGraphConfig {
   architectureLayers?: Record<string, string[]>;
   /** Agent communication style injected at agentSpawn. Default: 'off'. */
   cavemanMode: 'off' | 'lite' | 'full' | 'ultra';
+  /**
+   * Number of pending (unindexed) files above which kirograph_status warns the agent.
+   * Set to 0 to disable the warning. Default: 10.
+   */
+  syncWarningThreshold: number;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -54,7 +59,7 @@ const KNOWN_FIELDS = new Set<string>([
   'extractDocstrings', 'trackCallSites', 'enableEmbeddings', 'embeddingModel', 'embeddingDim',
   'useVecIndex', 'semanticEngine', 'typesenseDashboard', 'qdrantDashboard',
   'minLogLevel', 'frameworkHints', 'fuzzyResolutionThreshold',
-  'enableArchitecture', 'architectureLayers', 'cavemanMode',
+  'enableArchitecture', 'architectureLayers', 'cavemanMode', 'syncWarningThreshold',
 ]);
 
 const LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error']);
@@ -97,6 +102,7 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     fuzzyResolutionThreshold: 0.5,
     enableArchitecture: false,
     cavemanMode: 'off',
+    syncWarningThreshold: 10,
   };
 }
 
@@ -174,6 +180,9 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const cavemanMode = typeof raw.cavemanMode === 'string' && CAVEMAN_MODES.has(raw.cavemanMode)
     ? (raw.cavemanMode as KiroGraphConfig['cavemanMode'])
     : defaults.cavemanMode;
+  const syncWarningThreshold = typeof raw.syncWarningThreshold === 'number' && raw.syncWarningThreshold >= 0
+    ? Math.round(raw.syncWarningThreshold)
+    : defaults.syncWarningThreshold;
 
   // Validate glob patterns — exclude unsafe regex patterns
   const include = _validatePatterns(raw.include, defaults.include);
@@ -199,6 +208,7 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     fuzzyResolutionThreshold,
     enableArchitecture,
     cavemanMode,
+    syncWarningThreshold,
     ...(architectureLayers !== undefined ? { architectureLayers } : {}),
   };
 }

@@ -468,6 +468,23 @@ export class ToolHandler {
             ? `  Architecture: enabled — ${stats.architectureStats.packages} packages, ${stats.architectureStats.layers} layers, ${stats.architectureStats.packageDeps} deps`
             : `  Architecture: enabled (not yet analyzed — run kirograph index)`
           : `  Architecture: disabled`;
+
+        // Sync state warning
+        const threshold = stats.syncWarningThreshold ?? 10;
+        const pendingFiles: number = stats.pendingFiles ?? 0;
+        const syncRunning: boolean = stats.syncRunning ?? false;
+        const syncLines: string[] = [];
+        if (syncRunning) {
+          syncLines.push(`  ⚠ Sync is currently running in the background.`);
+        }
+        if (threshold > 0 && pendingFiles >= threshold) {
+          syncLines.push(
+            `  ⚠ Index may be incomplete — ${pendingFiles} file${pendingFiles !== 1 ? 's' : ''} pending sync.` +
+            (syncRunning ? ' Sync is running in background.' : ' Run `kirograph sync` to update.') +
+            ` Would you like to wait before proceeding?`
+          );
+        }
+
         return [
           `KiroGraph Status`,
           `  Project: ${cg.getProjectRoot()}`,
@@ -480,6 +497,7 @@ export class ToolHandler {
           archLine,
           `  DB size: ${dbMb} MB`,
           ...semanticLines,
+          ...syncLines,
         ].filter(Boolean).join('\n');
       }
 

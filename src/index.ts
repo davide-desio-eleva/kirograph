@@ -106,10 +106,44 @@ export default class KiroGraph {
   markDirty(): void { this.lock.markDirty(); }
   clearDirty(): void { this.lock.clearDirty(); }
   isDirty(): boolean { return this.lock.isDirty(); }
+  isIndexLocked(): boolean { return this.lock.isLocked(); }
 
   async syncIfDirty(): Promise<SyncResult | null> {
     if (!this.isDirty()) return null;
     return this.sync();
+  }
+
+  /**
+   * Returns the number of files that have changed on disk but are not yet
+   * reflected in the index. Used by the MCP status tool to warn the agent
+   * when the index may be stale.
+   */
+  async getPendingSyncCount(): Promise<number> {
+    try {
+      const { getChangedFiles, scanDirectory } = await import('./sync/index');
+      const gitChanged = await getChangedFiles(this.projectRoot, this.config);
+      const hasGitChanges =
+        gitChanged.added.length > 0 ||
+        gitChanged.modified.length > 0 ||
+        gitChanged.removed.length > 0;
+
+      if (hasGitChanges) {
+        return gitChanged.added.length + gitChanged.modified.length + gitChanged.removed.length;
+      }
+
+      // Fallback: compare indexed set vs current filesystem set
+      const indexed = new Set(this.db.getAllFiles().map((f: { path: string }) => f.path));
+      const current = new Set(
+        (await scanDirectory(this.projectRoot, this.config))
+          .map(f => require('path').relative(this.projectRoot, f).replace(/\\/g, '/'))
+      );
+      let pending = 0;
+      for (const p of indexed) { if (!current.has(p)) pending++; }
+      for (const p of current) { if (!indexed.has(p)) pending++; }
+      return pending;
+    } catch {
+      return 0;
+    }
   }
 
   // ── Indexing ───────────────────────────────────────────────────────────────
@@ -204,6 +238,8 @@ export default class KiroGraph {
     const embeddingCount = vecIndexCount > 0 ? vecIndexCount : stats.embeddingCount;
     const EMBEDDABLE = ['function', 'method', 'class', 'interface', 'type_alias', 'component', 'module'];
     const embeddableNodeCount = EMBEDDABLE.reduce((sum, k) => sum + (stats.nodesByKind[k] ?? 0), 0);
+    const pendingFiles = await this.getPendingSyncCount();
+    const syncRunning = this.isIndexLocked();
     return {
       ...stats,
       embeddingCount,
@@ -217,6 +253,9 @@ export default class KiroGraph {
       frameworks: this.config.frameworkHints ?? [],
       architectureEnabled: this.config.enableArchitecture ?? false,
       ...(this.config.enableArchitecture ? { architectureStats: this.db.getArchStats() } : {}),
+      pendingFiles,
+      syncRunning,
+      syncWarningThreshold: this.config.syncWarningThreshold ?? 10,
     };
   }
 

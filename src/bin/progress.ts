@@ -114,6 +114,54 @@ export function renderSyncProgress(p: IndexProgress): void {
 }
 
 /**
+ * Verbose sync progress renderer for `sync --progress`.
+ * Prints each file as it is processed, errors inline, and a running count.
+ * Exclude-cleanup removals are shown with a distinct prefix.
+ */
+export function renderSyncProgressVerbose(p: IndexProgress): void {
+  if (p.phase === 'scanning') {
+    if (p.meta?.excludeCleanup && p.meta.file) {
+      // A file is being removed because it now matches an exclude pattern
+      process.stdout.write(`  ${_d}exclude${_r}  ${_d}${p.meta.file}${_r}\n`);
+    } else if (p.current > 0) {
+      process.stdout.write(`  ${_v}✓ scanning${_r}   ${_v}${_num(p.current)}${_r} ${_d}files found${_r}\n`);
+    } else {
+      process.stdout.write(`  ${_v}scanning${_r}    ${_d}detecting changes…${_r}\n`);
+    }
+
+  } else if (p.phase === 'parsing') {
+    if (p.currentFile) {
+      const short = p.currentFile.length > 60
+        ? '…' + p.currentFile.slice(p.currentFile.length - 59)
+        : p.currentFile;
+      process.stdout.write(`  ${_v}parse${_r}  ${_d}[${_num(p.current)}/${_num(p.total)}]${_r}  ${short}\n`);
+    }
+
+  } else if (p.phase === 'resolving') {
+    if (p.current === 0 && p.total <= 1) {
+      process.stdout.write(`  ${_v}resolving${_r}  cross-file references…\n`);
+    } else if (p.total > 0 && p.current === p.total) {
+      process.stdout.write(`  ${_v}✓ resolving${_r}  ${_v}${_num(p.current)}${_r}${_d}/${_num(p.total)} refs${_r}\n`);
+    }
+
+  } else if (p.phase === 'embeddings') {
+    const pct = p.total > 0 ? Math.round((p.current / p.total) * 100) : 0;
+    process.stdout.write(`\r  ${_v}embeddings${_r} [${_bar(pct)}] ${_v}${pct}%${_r}${' '.repeat(10)}`);
+    if (p.current === p.total && p.total > 0) process.stdout.write('\n');
+
+  } else if (p.phase === 'architecture') {
+    if (p.meta?.msg) {
+      process.stdout.write(`  ${_v}architecture${_r}  ${_d}${p.meta.msg}${_r}\n`);
+    } else if (p.current === p.total && p.total > 0) {
+      process.stdout.write(`  ${_v}✓ architecture${_r}\n`);
+    }
+
+  } else {
+    process.stdout.write(`  ${_v}${p.phase}${_r}  ${p.current}/${p.total}\n`);
+  }
+}
+
+/**
  * Renders the final sync summary with before/after counts.
  */
 export function renderSyncSummary(result: SyncResult): void {

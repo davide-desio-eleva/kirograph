@@ -75,4 +75,19 @@ export class LockManager {
   isDirty(): boolean {
     return fs.existsSync(this.dirtyPath);
   }
+
+  /** Returns true if a sync/index is currently running (lock file held by another process). */
+  isLocked(): boolean {
+    if (!fs.existsSync(this.lockPath)) return false;
+    try {
+      const content = fs.readFileSync(this.lockPath, 'utf8').trim();
+      const [pidStr, tsStr] = content.split(':');
+      const pid = parseInt(pidStr, 10);
+      const ts = parseInt(tsStr, 10);
+      if (isNaN(pid) || pid === process.pid) return false;
+      const isStale = !isNaN(ts) && Date.now() - ts > LOCK_STALE_MS;
+      if (isStale) return false;
+      try { process.kill(pid, 0); return true; } catch { return false; }
+    } catch { return false; }
+  }
 }

@@ -14,7 +14,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { GraphDatabase } from '../db/database';
-import { scanDirectory, hashContent, getChangedFiles } from '../sync/index';
+import { scanDirectory, hashContent, getChangedFiles, shouldIncludeFile } from '../sync/index';
 import { extractFile } from '../extraction/extractor';
 import { clearParserCache, initGrammars, hasWasmGrammar } from '../extraction/grammars';
 import { detectFrameworks } from '../frameworks/index';
@@ -238,6 +238,19 @@ export class IndexPipeline {
         this.db.deleteUnresolvedRefsByFile(rel);
         result.removed.push(rel);
       };
+
+      // ── Exclude-rule cleanup ──────────────────────────────────────────────
+      // Remove any indexed files that now match the current exclude patterns.
+      // This handles the case where a user adds a new exclude pattern (e.g.
+      // "**/.vite/**") and expects those files to disappear from the index on
+      // the next sync without needing a full --force re-index.
+      const allIndexed = this.db.getAllFiles();
+      for (const f of allIndexed) {
+        if (!shouldIncludeFile(f.path, this.config)) {
+          onProgress?.({ phase: 'scanning', current: 0, total: 0, meta: { excludeCleanup: true, file: f.path } });
+          await removeFile(f.path);
+        }
+      }
 
       let filesToProcess: string[];
 

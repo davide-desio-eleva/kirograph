@@ -34,6 +34,28 @@ export function register(program: Command): void {
         console.log(renderTable(langEntries.map(([k, v]) => [k, String(v)])));
       }
 
+      // Sync state
+      const threshold = stats.syncWarningThreshold ?? 10;
+      const pendingFiles: number = stats.pendingFiles ?? 0;
+      const syncRunning: boolean = stats.syncRunning ?? false;
+      console.log();
+      console.log(section('  Sync'));
+      if (syncRunning) {
+        console.log(`  ${'\x1b[33m'}⚠ Sync is currently running in the background.${reset}`);
+      } else {
+        console.log(`  ${label('Status')}     ${dim}idle${reset}`);
+      }
+      if (pendingFiles > 0) {
+        const warn = threshold > 0 && pendingFiles >= threshold;
+        const pendingLabel = warn ? `${'\x1b[33m'}${pendingFiles} files pending${reset}` : `${dim}${pendingFiles} files pending${reset}`;
+        console.log(`  ${label('Pending')}    ${pendingLabel}`);
+        if (warn) {
+          console.log(`  ${'\x1b[33m'}⚠ Index may be stale. Run \`kirograph sync\` to update.${reset}`);
+        }
+      } else {
+        console.log(`  ${label('Pending')}    ${green}up to date${reset}`);
+      }
+
       console.log();
       console.log(section('  Semantic Search'));
       if (stats.embeddingsEnabled) {
