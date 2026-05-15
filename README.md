@@ -113,7 +113,9 @@ kirograph uninit [path]                  # Remove .kirograph/ and Kiro integrati
 kirograph uninit --target all --force    # Skip confirmation and clean all supported integration files
 ```
 
-This removes:
+Without `--force`, KiroGraph asks separately whether to remove the selected tool integration files and whether to remove the shared `.kirograph/` data.
+
+This can remove:
 - `.kirograph/` — index database, snapshots, and export directory
 - Kiro target: `.kiro/hooks/kirograph-*.json`, `.kiro/steering/kirograph.md`, `.kiro/agents/kirograph.json`
 - Claude target: `kirograph` from `.mcp.json`, plus the KiroGraph import from `CLAUDE.md`

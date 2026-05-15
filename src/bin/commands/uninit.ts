@@ -21,6 +21,15 @@ type UninitTarget = 'kiro' | 'claude' | 'codex' | 'all';
 
 const UNINIT_TARGETS: UninitTarget[] = ['kiro', 'claude', 'codex', 'all'];
 
+async function confirm(question: string): Promise<boolean> {
+  const readline = await import('readline');
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise<boolean>(resolve => rl.question(question, ans => {
+    rl.close();
+    resolve(ans.toLowerCase() === 'y');
+  }));
+}
+
 async function runUninit(projectPath: string | undefined, opts: { force?: boolean; target?: string }): Promise<void> {
   const target = path.resolve(projectPath ?? process.cwd());
   const integration = (opts.target ?? 'kiro').toLowerCase() as UninitTarget;
@@ -30,28 +39,33 @@ async function runUninit(projectPath: string | undefined, opts: { force?: boolea
   }
   const dir = path.join(target, '.kirograph');
   if (!fs.existsSync(dir)) { console.log('Not initialized.'); return; }
+
+  let removeIntegration = true;
+  let removeGraph = opts.force === true;
+
   if (!opts.force) {
     printBanner();
     const farewell = UNINIT_FAREWELLS[Math.floor(Math.random() * UNINIT_FAREWELLS.length)]!;
     console.log(`  ${violet}${bold}${farewell}${reset}`);
-    console.log(`\n  ${dim}This will remove .kirograph/ and ${integration} integration files.${reset}`);
+    console.log(`\n  ${dim}This can remove ${integration} integration files and, separately, the shared .kirograph/ data.${reset}`);
     console.log(`  ${dim}Your source code is untouched.${reset}\n`);
-    const readline = await import('readline');
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    await new Promise<void>(resolve => rl.question(`  ${violet}Remove KiroGraph from this project?${reset} ${dim}(y/N)${reset} `, ans => {
-      rl.close();
-      if (ans.toLowerCase() !== 'y') {
-        console.log(`\n  ${dim}Cancelled. The graph lives on.${reset}\n`);
-        process.exit(0);
-      }
-      resolve();
-    }));
+
+    removeIntegration = await confirm(`  ${violet}Remove ${integration} integration files?${reset} ${dim}(y/N)${reset} `);
+    removeGraph = await confirm(`  ${violet}Remove shared .kirograph/ data too?${reset} ${dim}(y/N)${reset} `);
+
+    if (!removeIntegration && !removeGraph) {
+      console.log(`\n  ${dim}Cancelled. Nothing removed.${reset}\n`);
+      return;
+    }
     console.log();
   }
-  fs.rmSync(dir, { recursive: true, force: true });
-  console.log(`  ${green}✓${reset} Removed .kirograph/`);
 
-  if (integration === 'kiro' || integration === 'all') {
+  if (removeGraph) {
+    fs.rmSync(dir, { recursive: true, force: true });
+    console.log(`  ${green}✓${reset} Removed .kirograph/`);
+  }
+
+  if (removeIntegration && (integration === 'kiro' || integration === 'all')) {
     // Remove .kiro hooks created by kirograph
     const kiroHooks = [
       'kirograph-mark-dirty-on-save.json',
@@ -84,17 +98,17 @@ async function runUninit(projectPath: string | undefined, opts: { force?: boolea
     }
   }
 
-  if (integration === 'claude' || integration === 'all') {
+  if (removeIntegration && (integration === 'claude' || integration === 'all')) {
     const { uninitClaude } = await import('../installer/targets/claude');
     uninitClaude(target);
   }
 
-  if (integration === 'codex' || integration === 'all') {
+  if (removeIntegration && (integration === 'codex' || integration === 'all')) {
     const { uninitCodex } = await import('../installer/targets/codex');
     uninitCodex(target);
   }
 
-  console.log(`\n  ${dim}Done. Run ${violet}kirograph install${reset}${dim} to come back anytime.${reset}\n`);
+  console.log(`\n  ${dim}Done. Run ${violet}kirograph install --target ${integration === 'all' ? 'kiro' : integration}${reset}${dim} to come back anytime.${reset}\n`);
 }
 
 export function register(program: Command): void {
