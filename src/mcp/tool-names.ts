@@ -1,0 +1,21 @@
+export const KIROGRAPH_TOOL_NAMES = [
+  'kirograph_search',
+  'kirograph_context',
+  'kirograph_callers',
+  'kirograph_callees',
+  'kirograph_impact',
+  'kirograph_node',
+  'kirograph_status',
+  'kirograph_files',
+  'kirograph_dead_code',
+  'kirograph_circular_deps',
+  'kirograph_path',
+  'kirograph_architecture',
+  'kirograph_coupling',
+  'kirograph_package',
+  'kirograph_hotspots',
+  'kirograph_surprising',
+  'kirograph_diff',
+  'kirograph_type_hierarchy',
+];
+

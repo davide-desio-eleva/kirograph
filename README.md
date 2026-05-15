@@ -4,7 +4,7 @@
 
 ![KiroGraph terminal](assets/terminal.png)
 
-Semantic code knowledge graph for [Kiro](https://kiro.dev): fewer tool calls, instant symbol lookups, 100% local.
+Semantic code knowledge graph for [Kiro](https://kiro.dev) and MCP-capable coding agents: fewer tool calls, instant symbol lookups, 100% local.
 
 Inspired by [CodeGraph](https://github.com/colbymchenry/codegraph) by [colbymchenry](https://github.com/colbymchenry) for Claude Code, rebuilt natively for Kiro's MCP and hooks system.
 
@@ -25,7 +25,7 @@ KiroGraph uses [tree-sitter](https://tree-sitter.github.io/tree-sitter/) to pars
 
 Everything is stored in a local SQLite database (`.kirograph/kirograph.db`). **Nothing leaves your machine.** No API keys. No external services.
 
-The index is kept fresh automatically via Kiro hooks — no background watcher process needed.
+The index is kept fresh automatically via Kiro hooks when using the Kiro integration — no background watcher process needed.
 
 ## How Indexing Works
 
@@ -109,15 +109,15 @@ kirograph --version
 ### Remove from a project
 
 ```bash
-kirograph uninit [path]     # Remove .kirograph/, hooks, and steering file from the project
-kirograph uninit --force    # Skip confirmation prompt
+kirograph uninit [path]                  # Remove .kirograph/ and Kiro integration files
+kirograph uninit --target all --force    # Skip confirmation and clean all supported integration files
 ```
 
 This removes:
 - `.kirograph/` — index database, snapshots, and export directory
-- `.kiro/hooks/kirograph-*.json` — all KiroGraph hooks
-- `.kiro/steering/kirograph.md` — the steering file
-- `.kiro/agents/kirograph.json` — the CLI agent config
+- Kiro target: `.kiro/hooks/kirograph-*.json`, `.kiro/steering/kirograph.md`, `.kiro/agents/kirograph.json`
+- Claude target: `kirograph` from `.mcp.json`, plus the KiroGraph import from `CLAUDE.md`
+- Codex target: the generated KiroGraph block from `AGENTS.md`
 
 ### Remove the CLI globally
 
@@ -138,8 +138,12 @@ npm uninstall -g .
 
 ```bash
 # In your project:
-kirograph install    # wire up MCP + hooks + steering + CLI agent in .kiro/
+kirograph install                  # wire up Kiro MCP + hooks + steering + CLI agent
+kirograph install --target claude  # wire up Claude Code MCP + project memory
+kirograph install --target codex   # write Codex instructions and print MCP config
 ```
+
+All targets share the same `.kirograph/` data. If the project is already initialized, installing another target only writes that tool's integration files and reuses the existing graph configuration.
 
 Restart Kiro IDE, or switch to the `kirograph` agent in Kiro CLI. It will now use KiroGraph tools automatically.
 
@@ -176,7 +180,7 @@ Kiro hooks mark the index dirty on every file save or create, then flush on agen
 
 ## Using with Kiro
 
-`kirograph install` sets up four things in your Kiro workspace — all coexist, so you can switch between IDE and CLI freely:
+`kirograph install` or `kirograph install --target kiro` sets up four things in your Kiro workspace — all coexist, so you can switch between IDE and CLI freely:
 
 ### MCP Server (`.kiro/settings/mcp.json`)
 
@@ -193,7 +197,8 @@ Registers the KiroGraph MCP server. Used by both the IDE and the CLI agent:
         "kirograph_callees", "kirograph_impact", "kirograph_node",
         "kirograph_status", "kirograph_files", "kirograph_dead_code",
         "kirograph_circular_deps", "kirograph_path", "kirograph_type_hierarchy",
-        "kirograph_architecture", "kirograph_coupling", "kirograph_package"
+        "kirograph_architecture", "kirograph_coupling", "kirograph_package",
+        "kirograph_hotspots", "kirograph_surprising", "kirograph_diff"
       ]
     }
   }
@@ -243,9 +248,36 @@ Or swap to it inside an active session:
 
 Teaches the Kiro IDE to prefer graph tools over file scanning when `.kirograph/` exists. The CLI agent has the same instructions inlined directly in its `prompt` field.
 
+## Using with Claude Code
+
+```bash
+kirograph install --target claude
+```
+
+This writes:
+
+- `.mcp.json` — project-scoped MCP server config for Claude Code
+- `.kirograph/claude.md` — KiroGraph tool guidance
+- `CLAUDE.md` — an import of `.kirograph/claude.md`
+
+Claude Code prompts for project MCP approval the first time it sees `.mcp.json`.
+
+## Using with Codex
+
+```bash
+kirograph install --target codex
+```
+
+This writes:
+
+- `.kirograph/codex.md` — KiroGraph tool guidance
+- `AGENTS.md` — a generated KiroGraph instruction block
+
+Codex MCP configuration is user-scoped, so the installer prints the exact `codex mcp add ...` command and equivalent `~/.codex/config.toml` snippet instead of editing files outside the project.
+
 ## MCP Tools
 
-All tools are auto-approved and available to Kiro once installed.
+All tools are available to the configured MCP client once installed.
 
 ### `kirograph_context`
 

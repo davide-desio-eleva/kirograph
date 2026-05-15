@@ -21,10 +21,10 @@ export function printColoredHelp(): void {
     {
       title: '🔧 Workspace Setup',
       commands: [
-        { name: 'install',       desc: 'Wire up MCP + hooks + steering for the current Kiro workspace' },
+        { name: 'install',       desc: 'Wire up MCP/instructions for an agent workspace', opts: ['--target <t>  kiro | claude | codex'] },
         { name: 'init',          args: '[path]', desc: 'Initialize KiroGraph in a project', opts: ['-i, --index  Index immediately after init'] },
-        { name: 'uninit',        args: '[path]', desc: 'Remove KiroGraph from a project',   opts: ['--force     Skip confirmation'] },
-        { name: 'uninstall',     args: '[path]', desc: 'Alias for uninit',                  opts: ['--force     Skip confirmation'] },
+        { name: 'uninit',        args: '[path]', desc: 'Remove KiroGraph from a project',   opts: ['--force      Skip confirmation', '--target <t>  kiro | claude | codex | all'] },
+        { name: 'uninstall',     args: '[path]', desc: 'Alias for uninit',                  opts: ['--force      Skip confirmation', '--target <t>  kiro | claude | codex | all'] },
       ],
     },
     {
@@ -126,7 +126,9 @@ export function printColoredHelp(): void {
     {
       title: '🔧 Setup & indexing',
       examples: [
-        ['kirograph install',                              'Wire up MCP + hooks + steering for the current workspace'],
+        ['kirograph install',                              'Wire up Kiro MCP + hooks + steering for the current workspace'],
+        ['kirograph install --target claude',              'Wire up Claude Code MCP + project memory'],
+        ['kirograph install --target codex',               'Install Codex project instructions and print MCP config'],
         ['kirograph init --index',                         'Init and immediately index the project'],
         ['kirograph sync',                                 'Incremental sync of changed files'],
       ],

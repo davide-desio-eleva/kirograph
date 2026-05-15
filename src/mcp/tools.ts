@@ -8,6 +8,7 @@ import * as crypto from 'crypto';
 import KiroGraph, { findNearestKiroGraphRoot } from '../index';
 import type { NodeKind } from '../types';
 import { logError } from '../errors';
+export { KIROGRAPH_TOOL_NAMES } from './tool-names';
 
 const MAX_OUTPUT = 15_000;
 

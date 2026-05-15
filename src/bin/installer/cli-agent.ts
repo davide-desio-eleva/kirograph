@@ -14,29 +14,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-
-const KIROGRAPH_TOOLS = [
-  '@kirograph/kirograph_search',
-  '@kirograph/kirograph_context',
-  '@kirograph/kirograph_callers',
-  '@kirograph/kirograph_callees',
-  '@kirograph/kirograph_impact',
-  '@kirograph/kirograph_node',
-  '@kirograph/kirograph_status',
-  '@kirograph/kirograph_files',
-  '@kirograph/kirograph_dead_code',
-  '@kirograph/kirograph_circular_deps',
-  '@kirograph/kirograph_path',
-  '@kirograph/kirograph_type_hierarchy',
-  '@kirograph/kirograph_architecture',
-  '@kirograph/kirograph_package',
-  '@kirograph/kirograph_coupling',
-  '@kirograph/kirograph_hotspots',
-  '@kirograph/kirograph_surprising',
-  '@kirograph/kirograph_diff',
-];
-
-const SYNC_CMD = 'kirograph sync-if-dirty --quiet 2>/dev/null || true';
+import { KIROGRAPH_SCOPED_TOOLS, KIROGRAPH_SYNC_CMD } from './common';
 
 function buildAgentConfig() {
   return {
@@ -44,12 +22,12 @@ function buildAgentConfig() {
     description: 'KiroGraph-aware agent — uses the semantic code graph for faster, smarter exploration.',
     resources: ['file://.kiro/steering/kirograph.md'],
     tools: ['@builtin', '@kirograph'],
-    allowedTools: KIROGRAPH_TOOLS,
+    allowedTools: KIROGRAPH_SCOPED_TOOLS,
     useLegacyMcpJson: true,
     hooks: {
-      agentSpawn: [{ command: SYNC_CMD }],
-      userPromptSubmit: [{ command: SYNC_CMD }],
-      stop: [{ command: SYNC_CMD }],
+      agentSpawn: [{ command: KIROGRAPH_SYNC_CMD }],
+      userPromptSubmit: [{ command: KIROGRAPH_SYNC_CMD }],
+      stop: [{ command: KIROGRAPH_SYNC_CMD }],
     },
   };
 }

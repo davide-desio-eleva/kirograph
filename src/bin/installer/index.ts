@@ -1,130 +1,140 @@
 /**
- * KiroGraph Installer for Kiro
+ * KiroGraph Installer
  *
- * Wires up:
+ * The default target wires up Kiro:
  *  1. .kiro/settings/mcp.json        — registers the MCP server (IDE + CLI)
  *  2. .kiro/hooks/*.json             — auto-sync hooks for Kiro IDE
  *  3. .kiro/steering/kirograph.md    — teaches Kiro to use the graph tools (IDE + CLI)
  *  4. .kiro/agents/kirograph.json    — custom agent config for Kiro CLI
  */
 
-import * as path from 'path';
 import * as readline from 'readline';
+import * as fs from 'fs';
+import * as path from 'path';
 import { spawnSync } from 'child_process';
-import { updateConfig } from '../../config';
+import { loadConfig, updateConfig } from '../../config';
 import { printBanner } from '../banner';
 import { renderIndexProgress } from '../progress';
 import { dim, reset } from '../ui';
 import { ask } from './prompts';
 import { promptConfigOptions } from './config-prompt';
-import { writeMcpConfig } from './mcp';
-import { writeHooks } from './hooks';
-import { writeSteering } from './steering';
-import { writeCliAgent } from './cli-agent';
 import { openTypesenseDashboard } from './dashboard';
 import { ensureQdrantUI, openQdrantDashboard } from './qdrant-dashboard';
+import type { InstallTarget } from './common';
+import { getTargetInstaller } from './targets';
+import type { CavemanMode } from './caveman';
 
-export async function runInstaller(): Promise<void> {
+export async function runInstaller(target: InstallTarget = 'kiro'): Promise<void> {
   printBanner();
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
   try {
     const cwd = process.cwd();
-    const kiroDir = path.join(cwd, '.kiro');
+    const installer = getTargetInstaller(target);
 
     console.log(`  Workspace: ${cwd}\n`);
 
-    const proceed = await ask(rl, '  Install KiroGraph for this Kiro workspace? (Y/n) ');
+    const proceed = await ask(rl, `  Install KiroGraph for ${installer.label}? (Y/n) `);
     if (proceed.toLowerCase() === 'n') { console.log('  Cancelled.'); rl.close(); return; }
     console.log();
 
-    // 1. MCP config
-    writeMcpConfig(kiroDir);
+    installer.installEarly(cwd);
 
-    // 2. IDE hooks
-    writeHooks(kiroDir);
+    const alreadyInitialized = fs.existsSync(path.join(cwd, '.kirograph'));
+    let cavemanMode: CavemanMode | 'off' = 'off';
+    let shouldOfferIndex = false;
+    let typesenseDashboard = false;
+    let qdrantDashboard = false;
 
-    // 3. Steering written after config prompt (needs cavemanMode) — deferred below
-
-    // 3b. Prompt for config options and persist
-    const patch = await promptConfigOptions(rl);
     try {
-      await updateConfig(cwd, patch);
-      console.log(`\n  Configuration saved to ${cwd}/.kirograph/config.json`);
-      console.log(`  • enableEmbeddings: ${patch.enableEmbeddings}`);
-      if ('embeddingModel' in patch) {
-        console.log(`  • embeddingModel: ${patch.embeddingModel}  ${dim}(${patch.embeddingDim}-dim)${reset}`);
-      }
-      if (patch.enableEmbeddings) {
-        console.log(`  • semanticEngine: ${patch.semanticEngine}`);
-        if (patch.semanticEngine === 'sqlite-vec') {
-          console.log(`\n  Installing sqlite-vec dependencies...`);
-          const result = spawnSync('npm', ['install', 'better-sqlite3', 'sqlite-vec'], { stdio: 'inherit', shell: true });
-          if (result.status === 0) {
-            console.log(`  ✓ better-sqlite3 and sqlite-vec installed`);
-          } else {
-            console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
-            console.warn(`    npm install better-sqlite3 sqlite-vec`);
-          }
-        } else if (patch.semanticEngine === 'orama') {
-          console.log(`\n  Installing Orama dependencies...`);
-          const result = spawnSync('npm', ['install', '@orama/orama', '@orama/plugin-data-persistence'], { stdio: 'inherit', shell: true });
-          if (result.status === 0) {
-            console.log(`  ✓ @orama/orama and @orama/plugin-data-persistence installed`);
-          } else {
-            console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
-            console.warn(`    npm install @orama/orama @orama/plugin-data-persistence`);
-          }
-        } else if (patch.semanticEngine === 'pglite') {
-          console.log(`\n  Installing PGlite dependencies...`);
-          const result = spawnSync('npm', ['install', '@electric-sql/pglite'], { stdio: 'inherit', shell: true });
-          if (result.status === 0) {
-            console.log(`  ✓ @electric-sql/pglite installed`);
-          } else {
-            console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
-            console.warn(`    npm install @electric-sql/pglite`);
-          }
-        } else if (patch.semanticEngine === 'lancedb') {
-          console.log(`\n  Installing LanceDB dependencies...`);
-          const result = spawnSync('npm', ['install', '@lancedb/lancedb'], { stdio: 'inherit', shell: true });
-          if (result.status === 0) {
-            console.log(`  ✓ @lancedb/lancedb installed`);
-          } else {
-            console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
-            console.warn(`    npm install @lancedb/lancedb`);
-          }
-        } else if (patch.semanticEngine === 'qdrant') {
-          console.log(`\n  Installing Qdrant dependencies...`);
-          const result = spawnSync('npm', ['install', 'qdrant-local'], { stdio: 'inherit', shell: true });
-          if (result.status === 0) {
-            console.log(`  ✓ qdrant-local installed`);
-          } else {
-            console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
-            console.warn(`    npm install qdrant-local`);
-          }
-        } else if (patch.semanticEngine === 'typesense') {
-          console.log(`\n  Installing Typesense dependencies...`);
-          const result = spawnSync('npm', ['install', 'typesense'], { stdio: 'inherit', shell: true });
-          if (result.status === 0) {
-            console.log(`  ✓ typesense installed`);
-            console.log(`  ℹ  The Typesense binary (~37MB) will be auto-downloaded on first index run.`);
-          } else {
-            console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
-            console.warn(`    npm install typesense`);
+      if (alreadyInitialized) {
+        const config = await loadConfig(cwd);
+        cavemanMode = config.cavemanMode ?? 'off';
+        console.log(`  ✓ Reusing existing KiroGraph data in ${cwd}/.kirograph/`);
+        console.log(`  • semanticEngine: ${config.semanticEngine}`);
+        console.log(`  • enableEmbeddings: ${config.enableEmbeddings}`);
+        console.log(`  • enableArchitecture: ${config.enableArchitecture}`);
+        console.log(`  • cavemanMode: ${cavemanMode}`);
+      } else {
+        shouldOfferIndex = true;
+        const patch = await promptConfigOptions(rl);
+        await updateConfig(cwd, patch);
+        cavemanMode = patch.cavemanMode ?? 'off';
+        typesenseDashboard = patch.typesenseDashboard;
+        qdrantDashboard = patch.qdrantDashboard;
+
+        console.log(`\n  Configuration saved to ${cwd}/.kirograph/config.json`);
+        console.log(`  • enableEmbeddings: ${patch.enableEmbeddings}`);
+        if ('embeddingModel' in patch) {
+          console.log(`  • embeddingModel: ${patch.embeddingModel}  ${dim}(${patch.embeddingDim}-dim)${reset}`);
+        }
+        if (patch.enableEmbeddings) {
+          console.log(`  • semanticEngine: ${patch.semanticEngine}`);
+          if (patch.semanticEngine === 'sqlite-vec') {
+            console.log(`\n  Installing sqlite-vec dependencies...`);
+            const result = spawnSync('npm', ['install', 'better-sqlite3', 'sqlite-vec'], { stdio: 'inherit', shell: true });
+            if (result.status === 0) {
+              console.log(`  ✓ better-sqlite3 and sqlite-vec installed`);
+            } else {
+              console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
+              console.warn(`    npm install better-sqlite3 sqlite-vec`);
+            }
+          } else if (patch.semanticEngine === 'orama') {
+            console.log(`\n  Installing Orama dependencies...`);
+            const result = spawnSync('npm', ['install', '@orama/orama', '@orama/plugin-data-persistence'], { stdio: 'inherit', shell: true });
+            if (result.status === 0) {
+              console.log(`  ✓ @orama/orama and @orama/plugin-data-persistence installed`);
+            } else {
+              console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
+              console.warn(`    npm install @orama/orama @orama/plugin-data-persistence`);
+            }
+          } else if (patch.semanticEngine === 'pglite') {
+            console.log(`\n  Installing PGlite dependencies...`);
+            const result = spawnSync('npm', ['install', '@electric-sql/pglite'], { stdio: 'inherit', shell: true });
+            if (result.status === 0) {
+              console.log(`  ✓ @electric-sql/pglite installed`);
+            } else {
+              console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
+              console.warn(`    npm install @electric-sql/pglite`);
+            }
+          } else if (patch.semanticEngine === 'lancedb') {
+            console.log(`\n  Installing LanceDB dependencies...`);
+            const result = spawnSync('npm', ['install', '@lancedb/lancedb'], { stdio: 'inherit', shell: true });
+            if (result.status === 0) {
+              console.log(`  ✓ @lancedb/lancedb installed`);
+            } else {
+              console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
+              console.warn(`    npm install @lancedb/lancedb`);
+            }
+          } else if (patch.semanticEngine === 'qdrant') {
+            console.log(`\n  Installing Qdrant dependencies...`);
+            const result = spawnSync('npm', ['install', 'qdrant-local'], { stdio: 'inherit', shell: true });
+            if (result.status === 0) {
+              console.log(`  ✓ qdrant-local installed`);
+            } else {
+              console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
+              console.warn(`    npm install qdrant-local`);
+            }
+          } else if (patch.semanticEngine === 'typesense') {
+            console.log(`\n  Installing Typesense dependencies...`);
+            const result = spawnSync('npm', ['install', 'typesense'], { stdio: 'inherit', shell: true });
+            if (result.status === 0) {
+              console.log(`  ✓ typesense installed`);
+              console.log(`  ℹ  The Typesense binary (~37MB) will be auto-downloaded on first index run.`);
+            } else {
+              console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
+              console.warn(`    npm install typesense`);
+            }
           }
         }
+        console.log(`  • extractDocstrings: ${patch.extractDocstrings}`);
+        console.log(`  • trackCallSites: ${patch.trackCallSites}`);
+        console.log(`  • enableArchitecture: ${patch.enableArchitecture}`);
+        console.log(`  • cavemanMode: ${cavemanMode}`);
       }
-      console.log(`  • extractDocstrings: ${patch.extractDocstrings}`);
-      console.log(`  • trackCallSites: ${patch.trackCallSites}`);
-      console.log(`  • enableArchitecture: ${patch.enableArchitecture}`);
-      console.log(`  • cavemanMode: ${patch.cavemanMode ?? 'off'}`);
 
-    // 3. Steering + CLI agent — written here so they include cavemanMode
-    writeSteering(kiroDir, patch.cavemanMode ?? 'off');
-
-    // 4. CLI agent config
-    writeCliAgent(kiroDir);
+      installer.installLate(cwd, cavemanMode);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       console.error(`\n  ✗ Failed to write configuration: ${reason}`);
@@ -132,13 +142,12 @@ export async function runInstaller(): Promise<void> {
     }
 
     // 5. Pre-download Qdrant UI before indexing so Qdrant starts with static content dir
-    if (patch.qdrantDashboard) {
+    if (qdrantDashboard) {
       await ensureQdrantUI(cwd);
     }
 
     // 6. Optionally init + index
-    const doIndex = await ask(rl, '\n  Initialize and index this project now? (Y/n) ');
-    if (doIndex.toLowerCase() !== 'n') {
+    if (shouldOfferIndex && (await ask(rl, '\n  Initialize and index this project now? (Y/n) ')).toLowerCase() !== 'n') {
       const KiroGraph = (await import('../../index')).default;
 
       const fileBytes = new Map<string, { loaded: number; total: number }>();
@@ -190,7 +199,7 @@ export async function runInstaller(): Promise<void> {
       console.log(`  ✓ Indexed ${result.filesIndexed} files, ${result.nodesCreated} symbols, ${result.edgesCreated} edges`);
       cg.close();
 
-      if (patch.typesenseDashboard) {
+      if (typesenseDashboard) {
         const dashboardServer = await openTypesenseDashboard(cwd);
         console.log(`  ${dim}Press Ctrl+C to stop the dashboard server when done.${reset}`);
         await new Promise<void>(resolve => {
@@ -205,13 +214,12 @@ export async function runInstaller(): Promise<void> {
         return; // rl.close() handled in finally
       }
 
-      if (patch.qdrantDashboard) {
+      if (qdrantDashboard) {
         await openQdrantDashboard(cwd);
       }
     }
 
-    console.log('\n  Done! Restart Kiro IDE for the MCP server to load.');
-    console.log('  For Kiro CLI, use the "kirograph" agent: kiro-cli --agent kirograph\n');
+    installer.printNextSteps(cwd);
   } finally {
     rl.close();
   }

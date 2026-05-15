@@ -1,7 +1,7 @@
 {
   "name": "kirograph",
   "version": "0.12.1",
-  "description": "Semantic code knowledge graph for Kiro — fewer tool calls, instant symbol lookups, 100% local.",
+  "description": "Semantic code knowledge graph for Kiro and MCP-capable coding agents — fewer tool calls, instant symbol lookups, 100% local.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {

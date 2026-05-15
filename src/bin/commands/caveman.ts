@@ -10,6 +10,8 @@ import { loadConfig, updateConfig } from '../../config';
 import { CAVEMAN_RULES, CavemanMode } from '../installer/caveman';
 import { writeSteering } from '../installer/steering';
 import { writeCliAgent } from '../installer/cli-agent';
+import { upsertGeneratedBlock } from '../installer/common';
+import { buildAgentInstructions } from '../installer/instructions';
 import { bold, dim, green, reset, violet } from '../ui';
 
 const JOKES = [
@@ -92,6 +94,17 @@ export function register(program: Command): void {
       const agentPath = path.join(kiroDir, 'agents', 'kirograph.json');
       if (fs.existsSync(agentPath)) {
         writeCliAgent(kiroDir);
+      }
+
+      for (const file of ['claude.md', 'codex.md']) {
+        const instructionsPath = path.join(cwd, '.kirograph', file);
+        if (fs.existsSync(instructionsPath)) {
+          fs.writeFileSync(instructionsPath, buildAgentInstructions(normalized as CavemanMode | 'off'));
+        }
+      }
+      const agentsPath = path.join(cwd, 'AGENTS.md');
+      if (fs.existsSync(agentsPath) && fs.readFileSync(agentsPath, 'utf8').includes('<!-- kirograph:codex:start -->')) {
+        upsertGeneratedBlock(agentsPath, 'codex', '## KiroGraph', buildAgentInstructions(normalized as CavemanMode | 'off'));
       }
 
       console.log();
