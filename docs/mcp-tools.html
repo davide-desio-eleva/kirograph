@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KiroGraph — MCP Tools Reference</title>
+  <meta name="description" content="Full reference for all 17 KiroGraph MCP tools: parameters, types, defaults, and descriptions.">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png">
+</head>
+<body>
+
+<!-- ── Fixed background logo banner ── -->
+<div class="logo-banner" aria-hidden="true">
+  <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png" alt="">
+</div>
+
+<!-- ── Nav ── -->
+<nav class="nav">
+  <a href="index.html" class="nav-brand">
+    KiroGraph
+  </a>
+  <ul class="nav-links">
+    <li><a href="index.html">Home</a></li>
+    <li><a href="docs.html" class="active">Docs</a></li>
+    <li><a href="changelog.html">Changelog</a></li>
+    <li>
+      <a href="https://github.com/davide-desio-eleva/kirograph" class="nav-gh" title="GitHub" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+      </a>
+    </li>
+    <li>
+      <a href="https://www.npmjs.com/package/kirograph" class="nav-gh" title="npm" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M0 0v16h16V0H0zm13 13H8V5h-2v8H3V3h10v10z"/>
+        </svg>
+      </a>
+    </li>
+  </ul>
+</nav>
+
+<!-- ── Layout ── -->
+<div class="docs-layout docs-layout-right">
+
+  <!-- Main content -->
+  <main class="docs-content" id="docs-main">
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="docs.html">Docs</a> <span class="breadcrumb-sep">/</span> <span>MCP Tools</span>
+    </nav>
+
+    <h2 id="mcp-tools" style="border-top: none; margin-top: 0; padding-top: 0;">MCP Tools</h2>
+    <p>All 17 tools are auto-approved and available to Kiro once installed. The MCP server is started by Kiro automatically when needed.</p>
+
+    <!-- kirograph_context -->
+    <div class="tool-card" id="tool-context">
+      <h3>kirograph_context</h3>
+      <p class="tool-desc">Comprehensive context for a task or feature — often sufficient alone without additional tool calls. Uses vector search on every call.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>task</code></td><td>string</td><td><em>required</em></td><td>Task, bug, or feature description</td></tr>
+            <tr><td><code>maxNodes</code></td><td>number</td><td>20</td><td>Max symbols to include</td></tr>
+            <tr><td><code>includeCode</code></td><td>boolean</td><td>true</td><td>Include code snippets</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_search -->
+    <div class="tool-card" id="tool-search">
+      <h3>kirograph_search</h3>
+      <p class="tool-desc">Quick symbol search by name. Returns locations only, no code. Vector search only as last resort.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>query</code></td><td>string</td><td><em>required</em></td><td>Symbol name or partial name</td></tr>
+            <tr><td><code>kind</code></td><td>string</td><td>—</td><td>Filter: <code>function</code>, <code>method</code>, <code>class</code>, <code>interface</code>, <code>type_alias</code>, <code>variable</code>, <code>route</code>, <code>component</code></td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>10</td><td>Max results (1–100)</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_callers -->
+    <div class="tool-card" id="tool-callers">
+      <h3>kirograph_callers</h3>
+      <p class="tool-desc">Find all functions/methods that call a specific symbol. BFS traversal of incoming call edges.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>symbol</code></td><td>string</td><td><em>required</em></td><td>Symbol name</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results (1–100)</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_callees -->
+    <div class="tool-card" id="tool-callees">
+      <h3>kirograph_callees</h3>
+      <p class="tool-desc">Find all functions/methods that a specific symbol calls. BFS traversal of outgoing call edges.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>symbol</code></td><td>string</td><td><em>required</em></td><td>Symbol name</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results (1–100)</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_impact -->
+    <div class="tool-card" id="tool-impact">
+      <h3>kirograph_impact</h3>
+      <p class="tool-desc">Analyze what code would be affected by changing a symbol. Use before making changes. BFS traversal of all incoming edges.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>symbol</code></td><td>string</td><td><em>required</em></td><td>Symbol name</td></tr>
+            <tr><td><code>depth</code></td><td>number</td><td>2</td><td>Traversal depth</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_node -->
+    <div class="tool-card" id="tool-node">
+      <h3>kirograph_node</h3>
+      <p class="tool-desc">Get details about a specific symbol: kind, name, qualified name, file location, signature, docstring, and optionally source code.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>symbol</code></td><td>string</td><td><em>required</em></td><td>Symbol name</td></tr>
+            <tr><td><code>includeCode</code></td><td>boolean</td><td>false</td><td>Include source code</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_type_hierarchy -->
+    <div class="tool-card" id="tool-type-hierarchy">
+      <h3>kirograph_type_hierarchy</h3>
+      <p class="tool-desc">Traverse the type hierarchy of a class or interface. Recursive traversal of extends/implements edges.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>symbol</code></td><td>string</td><td><em>required</em></td><td>Class or interface name</td></tr>
+            <tr><td><code>direction</code></td><td>string</td><td><code>both</code></td><td><code>up</code> (base types), <code>down</code> (derived types), <code>both</code></td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_path -->
+    <div class="tool-card" id="tool-path">
+      <h3>kirograph_path</h3>
+      <p class="tool-desc">Find the shortest path between two symbols in the dependency graph. Undirected BFS across all edge types.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>from</code></td><td>string</td><td><em>required</em></td><td>Source symbol name</td></tr>
+            <tr><td><code>to</code></td><td>string</td><td><em>required</em></td><td>Target symbol name</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_dead_code -->
+    <div class="tool-card" id="tool-dead-code">
+      <h3>kirograph_dead_code</h3>
+      <p class="tool-desc">Find symbols with no incoming references (potential dead code). Only unexported symbols are considered.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>limit</code></td><td>number</td><td>50</td><td>Max results (1–100)</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_circular_deps -->
+    <div class="tool-card" id="tool-circular-deps">
+      <h3>kirograph_circular_deps</h3>
+      <p class="tool-desc">Find circular import dependencies using Tarjan's strongly connected components algorithm over import edges.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_files -->
+    <div class="tool-card" id="tool-files">
+      <h3>kirograph_files</h3>
+      <p class="tool-desc">List the indexed file structure with filtering and format options.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>filterPath</code></td><td>string</td><td>—</td><td>Filter by directory prefix (e.g., <code>src/</code>)</td></tr>
+            <tr><td><code>pattern</code></td><td>string</td><td>—</td><td>Filter by glob pattern (e.g., <code>**/*.ts</code>)</td></tr>
+            <tr><td><code>maxDepth</code></td><td>number</td><td>—</td><td>Limit tree depth</td></tr>
+            <tr><td><code>format</code></td><td>string</td><td><code>tree</code></td><td><code>tree</code>, <code>flat</code>, or <code>grouped</code></td></tr>
+            <tr><td><code>includeMetadata</code></td><td>boolean</td><td>true</td><td>Include language and symbol counts</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_status -->
+    <div class="tool-card" id="tool-status">
+      <h3>kirograph_status</h3>
+      <p class="tool-desc">Check index health and statistics: files indexed, symbol count, edge count, breakdown by kind and language, frameworks detected, database size, semantic search status, and sync state.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_architecture -->
+    <div class="tool-card" id="tool-architecture">
+      <h3>kirograph_architecture <span class="badge badge-orange">requires enableArchitecture</span></h3>
+      <p class="tool-desc">Get the full architecture overview: detected packages, layers, and the dependency graph between them.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_coupling -->
+    <div class="tool-card" id="tool-coupling">
+      <h3>kirograph_coupling <span class="badge badge-orange">requires enableArchitecture</span></h3>
+      <p class="tool-desc">Get coupling metrics for all packages or a specific one: Ca (afferent), Ce (efferent), instability (Ce / (Ca + Ce)).</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>packageId</code></td><td>string</td><td>—</td><td>Package ID (e.g. <code>pkg:npm:src/auth</code>). Omit for all packages.</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_package -->
+    <div class="tool-card" id="tool-package">
+      <h3>kirograph_package <span class="badge badge-orange">requires enableArchitecture</span></h3>
+      <p class="tool-desc">Inspect the files and dependencies of a specific package.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>packageId</code></td><td>string</td><td><em>required</em></td><td>Package ID (e.g. <code>pkg:npm:src/auth</code>)</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_hotspots -->
+    <div class="tool-card" id="tool-hotspots">
+      <h3>kirograph_hotspots</h3>
+      <p class="tool-desc">Find the most-connected symbols by total edge degree (incoming + outgoing). Excludes structural contains edges.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results (1–100)</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_surprising -->
+    <div class="tool-card" id="tool-surprising">
+      <h3>kirograph_surprising</h3>
+      <p class="tool-desc">Find non-obvious cross-file connections scored by path distance × edge-kind weight. The most unexpected coupling in your codebase.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results (1–100)</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_diff -->
+    <div class="tool-card" id="tool-diff">
+      <h3>kirograph_diff</h3>
+      <p class="tool-desc">Compare the current graph state against a saved snapshot. Shows added/removed symbols and edges.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>snapshot</code></td><td>string</td><td>latest</td><td>Snapshot label. Omit to use the most recent saved snapshot.</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Right sidebar TOC -->
+  <aside class="docs-sidebar docs-sidebar-right" id="toc-sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-heading">On this page</div>
+      <a href="#tool-context" class="sidebar-link">kirograph_context</a>
+      <a href="#tool-search" class="sidebar-link">kirograph_search</a>
+      <a href="#tool-callers" class="sidebar-link">kirograph_callers</a>
+      <a href="#tool-callees" class="sidebar-link">kirograph_callees</a>
+      <a href="#tool-impact" class="sidebar-link">kirograph_impact</a>
+      <a href="#tool-node" class="sidebar-link">kirograph_node</a>
+      <a href="#tool-type-hierarchy" class="sidebar-link">kirograph_type_hierarchy</a>
+      <a href="#tool-path" class="sidebar-link">kirograph_path</a>
+      <a href="#tool-dead-code" class="sidebar-link">kirograph_dead_code</a>
+      <a href="#tool-circular-deps" class="sidebar-link">kirograph_circular_deps</a>
+      <a href="#tool-files" class="sidebar-link">kirograph_files</a>
+      <a href="#tool-status" class="sidebar-link">kirograph_status</a>
+      <a href="#tool-architecture" class="sidebar-link">kirograph_architecture</a>
+      <a href="#tool-coupling" class="sidebar-link">kirograph_coupling</a>
+      <a href="#tool-package" class="sidebar-link">kirograph_package</a>
+      <a href="#tool-hotspots" class="sidebar-link">kirograph_hotspots</a>
+      <a href="#tool-surprising" class="sidebar-link">kirograph_surprising</a>
+      <a href="#tool-diff" class="sidebar-link">kirograph_diff</a>
+    </div>
+  </aside>
+
+</div>
+
+<!-- ── Footer ── -->
+<footer class="footer">
+  <p>
+    KiroGraph &mdash;
+    <a href="index.html">Home</a> &mdash;
+    <a href="docs.html">Docs</a> &mdash;
+    <a href="changelog.html">Changelog</a> &mdash;
+    <a href="https://github.com/davide-desio-eleva/kirograph" target="_blank" rel="noopener">GitHub</a>
+  </p>
+</footer>
+
+<script>
+  const headings = document.querySelectorAll('.tool-card[id]');
+  const links = document.querySelectorAll('.docs-sidebar-right .sidebar-link');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.id;
+        links.forEach(l => {
+          l.classList.toggle('active', l.getAttribute('href') === '#' + id);
+        });
+      }
+    });
+  }, { rootMargin: '-60px 0px -70% 0px', threshold: 0 });
+
+  headings.forEach(h => observer.observe(h));
+</script>
+
+</body>
+</html>

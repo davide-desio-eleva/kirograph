@@ -1,8 +1,8 @@
-![KiroGraph terminal](assets/logo.png)
+![KiroGraph terminal](https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png)
 
 # KiroGraph
 
-![KiroGraph terminal](assets/terminal.png)
+![KiroGraph terminal](https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/terminal.png)
 
 Semantic code knowledge graph for [Kiro](https://kiro.dev) and MCP-capable coding agents: fewer tool calls, instant symbol lookups, 100% local.
 
@@ -591,7 +591,7 @@ fi
 
 ### 🪨 Caveman Mode 🪨
 
-![KiroGraph caveman](assets/caveman.png)
+![KiroGraph caveman](https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/caveman.png)
 
 Caveman mode compresses the agent's communication style, cutting token usage on responses without affecting tool calls or code output. Inspired by [caveman](https://github.com/JuliusBrussee/caveman) 🪨 by [JuliusBrussee](https://github.com/JuliusBrussee).
 
@@ -749,7 +749,7 @@ kirograph export build --include-contains # Include structural contains edges (a
 
 Output lands in `.kirograph/export/` by default. Open `index.html` in any browser.
 
-![KiroGraph export](assets/export.gif)
+![KiroGraph export](https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/export.gif)
 
 #### Graph & navigation
 

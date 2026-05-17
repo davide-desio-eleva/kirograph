@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KiroGraph — CLI Reference</title>
+  <meta name="description" content="Full CLI reference for KiroGraph: all commands, flags, and usage examples.">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png">
+</head>
+<body>
+
+<!-- ── Fixed background logo banner ── -->
+<div class="logo-banner" aria-hidden="true">
+  <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png" alt="">
+</div>
+
+<!-- ── Nav ── -->
+<nav class="nav">
+  <a href="index.html" class="nav-brand">
+    KiroGraph
+  </a>
+  <ul class="nav-links">
+    <li><a href="index.html">Home</a></li>
+    <li><a href="docs.html" class="active">Docs</a></li>
+    <li><a href="changelog.html">Changelog</a></li>
+    <li>
+      <a href="https://github.com/davide-desio-eleva/kirograph" class="nav-gh" title="GitHub" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+      </a>
+    </li>
+    <li>
+      <a href="https://www.npmjs.com/package/kirograph" class="nav-gh" title="npm" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M0 0v16h16V0H0zm13 13H8V5h-2v8H3V3h10v10z"/>
+        </svg>
+      </a>
+    </li>
+  </ul>
+</nav>
+
+<!-- ── Layout ── -->
+<div class="docs-layout docs-layout-right">
+
+  <!-- Main content -->
+  <main class="docs-content" id="docs-main">
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="docs.html">Docs</a> <span class="breadcrumb-sep">/</span> <span>CLI Reference</span>
+    </nav>
+
+    <h2 id="cli-reference" style="border-top: none; margin-top: 0; padding-top: 0;">CLI Reference</h2>
+    <p>All commands are available via <code>kirograph</code> or the short alias <code>kg</code>.</p>
+
+    <h3 id="cli-setup">Setup</h3>
+    <pre><code>kirograph install                 # Wire up MCP + hooks + steering + CLI agent in .kiro/
+kirograph init [path]             # Initialize .kirograph/ in a project
+kirograph init --index            # Initialize and index immediately
+kirograph uninit [path]           # Remove .kirograph/, hooks, steering, and agent config
+kirograph uninit --force          # Skip confirmation prompt</code></pre>
+
+    <h3 id="cli-indexing">Indexing</h3>
+    <pre><code>kirograph index [path]            # Full re-index of the project
+kirograph index --force           # Force re-index all files (ignore hash cache)
+kirograph sync [path]             # Incremental sync of changed files
+kirograph sync --progress         # Per-file verbose progress output
+kirograph sync --files a.ts b.ts  # Sync specific files only
+kirograph sync-if-dirty [path]    # Sync only if a dirty marker is present
+kirograph mark-dirty [path]       # Write a dirty marker for deferred sync</code></pre>
+
+    <h3 id="cli-status">Status &amp; Maintenance</h3>
+    <pre><code>kirograph status [path]           # Show index stats (files, symbols, edges, sync state)
+kirograph unlock [path]           # Force-release a stale lock file</code></pre>
+
+    <h3 id="cli-search">Search &amp; Exploration</h3>
+    <pre><code>kirograph query &lt;term&gt;                    # Search symbols by name
+kirograph query &lt;term&gt; --kind class       # Filter by kind
+kirograph query &lt;term&gt; --limit 20         # Limit results (default: 10)</code></pre>
+    <p>Supported kinds: <code>function</code>, <code>method</code>, <code>class</code>, <code>struct</code>, <code>interface</code>, <code>trait</code>, <code>protocol</code>, <code>enum</code>, <code>type_alias</code>, <code>property</code>, <code>field</code>, <code>variable</code>, <code>constant</code>, <code>enum_member</code>, <code>parameter</code>, <code>import</code>, <code>export</code>, <code>route</code>, <code>component</code>, <code>file</code>, <code>module</code>, <code>namespace</code></p>
+
+    <h3 id="cli-files">File Structure</h3>
+    <pre><code>kirograph files [path]                     # Show indexed file tree
+kirograph files --format flat              # Flat list
+kirograph files --format grouped           # Grouped by language
+kirograph files --filter src/components    # Filter by directory prefix
+kirograph files --pattern "**/*.test.ts"   # Filter by glob pattern
+kirograph files --max-depth 2              # Limit tree depth
+kirograph files --no-metadata              # Hide language/symbol counts
+kirograph files --json                     # Output as JSON</code></pre>
+
+    <h3 id="cli-context">Context Building</h3>
+    <pre><code>kirograph context "fix checkout bug"
+kirograph context "add user authentication" --format json
+kirograph context "refactor payment service" --max-nodes 30
+kirograph context "validate token" --no-code</code></pre>
+
+    <h3 id="cli-affected">Affected Tests</h3>
+    <p>Find test files that depend on changed source files — useful in CI or pre-commit hooks.</p>
+    <pre><code>kirograph affected src/utils.ts src/api.ts           # Pass files as arguments
+git diff --name-only | kirograph affected --stdin     # Pipe from git diff
+kirograph affected --stdin --json &lt; changed.txt       # JSON output
+kirograph affected src/auth.ts --filter "e2e/**"      # Custom test file glob
+kirograph affected src/lib.ts --depth 3 --quiet       # Paths only, shallow traversal</code></pre>
+
+    <p>Example CI integration:</p>
+    <pre><code>#!/usr/bin/env bash
+AFFECTED=$(git diff --name-only HEAD | kirograph affected --stdin --quiet)
+if [ -n "$AFFECTED" ]; then
+  npx vitest run $AFFECTED
+fi</code></pre>
+
+    <h3 id="cli-caveman">Caveman Mode</h3>
+    <pre><code>kirograph caveman lite    # compact, still readable
+kirograph caveman full    # fragments, no articles
+kirograph caveman ultra   # maximum compression
+kirograph caveman off     # back to normal
+kirograph caveman         # show current mode</code></pre>
+
+    <h3 id="cli-architecture">Architecture Analysis</h3>
+    <pre><code>kirograph architecture [path]              # Packages + layers + all deps
+kirograph architecture --packages          # Packages section only
+kirograph architecture --layers            # Layers section only
+kirograph architecture --format json       # JSON output
+
+kirograph package &lt;name&gt;                   # Inspect a package by name/path fragment
+kirograph package auth                     # Partial match accepted
+kirograph package src/auth --no-files      # Omit file list
+
+kirograph coupling [path]                  # All packages, sorted by instability
+kirograph coupling --sort ca               # Sort by afferent coupling
+kirograph coupling --sort ce               # Sort by efferent coupling
+kirograph coupling --package auth          # Detail view for one package
+kirograph coupling --format json           # JSON output</code></pre>
+
+    <h3 id="cli-insights">Graph Insights</h3>
+    <pre><code>kirograph hotspots [path]             # Top 20 most-connected symbols
+kirograph hotspots --limit 10         # Limit results
+kirograph hotspots --format json      # JSON output
+
+kirograph surprising [path]           # Top 20 surprising connections
+kirograph surprising --limit 10       # Limit results
+
+kirograph dead-code [path]            # Unexported symbols with zero incoming refs
+kirograph dead-code --limit 20        # Limit results
+kirograph dead-code --format json     # JSON output
+
+kirograph path &lt;from&gt; &lt;to&gt;            # Shortest path between two symbols
+kirograph path LoginController Pool   # Example
+kirograph path A B --format json      # JSON output</code></pre>
+
+    <h3 id="cli-snapshots">Snapshots &amp; Diff</h3>
+    <pre><code>kirograph snapshot save [label]       # Save current graph state
+kirograph snapshot save pre-refactor  # Named snapshot
+kirograph snapshot list               # List all saved snapshots
+kirograph snapshot diff               # Diff current vs latest snapshot
+kirograph snapshot diff pre-refactor  # Diff current vs named snapshot
+kirograph snapshot diff --format full # Full added/removed symbol lists
+kirograph snapshot diff --format json # JSON output</code></pre>
+
+    <h3 id="cli-export">Export Dashboard</h3>
+    <pre><code>kirograph export                      # Generate interactive graph dashboard
+kirograph export --open               # Open in browser immediately
+kirograph export --output ./report    # Custom output directory</code></pre>
+
+  </main>
+
+  <!-- Right sidebar TOC -->
+  <aside class="docs-sidebar docs-sidebar-right" id="toc-sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-heading">On this page</div>
+      <a href="#cli-setup" class="sidebar-link">Setup</a>
+      <a href="#cli-indexing" class="sidebar-link">Indexing</a>
+      <a href="#cli-status" class="sidebar-link">Status &amp; Maintenance</a>
+      <a href="#cli-search" class="sidebar-link">Search &amp; Exploration</a>
+      <a href="#cli-files" class="sidebar-link">File Structure</a>
+      <a href="#cli-context" class="sidebar-link">Context Building</a>
+      <a href="#cli-affected" class="sidebar-link">Affected Tests</a>
+      <a href="#cli-caveman" class="sidebar-link">Caveman Mode</a>
+      <a href="#cli-architecture" class="sidebar-link">Architecture</a>
+      <a href="#cli-insights" class="sidebar-link">Graph Insights</a>
+      <a href="#cli-snapshots" class="sidebar-link">Snapshots &amp; Diff</a>
+      <a href="#cli-export" class="sidebar-link">Export Dashboard</a>
+    </div>
+  </aside>
+
+</div>
+
+<!-- ── Footer ── -->
+<footer class="footer">
+  <p>
+    KiroGraph &mdash;
+    <a href="index.html">Home</a> &mdash;
+    <a href="docs.html">Docs</a> &mdash;
+    <a href="changelog.html">Changelog</a> &mdash;
+    <a href="https://github.com/davide-desio-eleva/kirograph" target="_blank" rel="noopener">GitHub</a>
+  </p>
+</footer>
+
+<script>
+  const headings = document.querySelectorAll('h3[id]');
+  const links = document.querySelectorAll('.docs-sidebar-right .sidebar-link');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.id;
+        links.forEach(l => {
+          l.classList.toggle('active', l.getAttribute('href') === '#' + id);
+        });
+      }
+    });
+  }, { rootMargin: '-60px 0px -70% 0px', threshold: 0 });
+
+  headings.forEach(h => observer.observe(h));
+</script>
+
+</body>
+</html>

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.2] - 2026-05-16
+
+### Added
+
+- **GitHub Pages documentation site** — full static site in `docs/` with home, docs, MCP tools reference, CLI reference, and changelog pages. Dark theme, responsive layout, left/right sidebars with scroll-spy navigation.
+- **npm publication** — package published as `kirograph` on npm. Install globally with `npm install -g kirograph`.
+- **`npm run docs` script** — serves the documentation site locally via `npx serve docs` for development preview.
+
+### Changed
+
+- README images now use absolute URLs (`raw.githubusercontent.com`) instead of relative paths, fixing broken images on npmjs.com.
+
+---
+
 ## [0.12.1] - 2026-05-14
 
 ### Added
@@ -280,6 +294,7 @@
 - MCP tools: `kirograph_context`, `kirograph_search`, `kirograph_callers`, `kirograph_callees`, `kirograph_impact`, `kirograph_node`, `kirograph_type_hierarchy`, `kirograph_path`, `kirograph_dead_code`, `kirograph_circular_deps`, `kirograph_files`, `kirograph_status`
 - CLI: `kirograph index`, `kirograph sync`, `kirograph query`, `kirograph context`, `kirograph files`, `kirograph affected`, `kirograph status`, `kirograph unlock`
 
+[0.12.2]: https://github.com/davide-desio-eleva/kirograph/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/davide-desio-eleva/kirograph/compare/v0.12.0...v0.12.1
 [0.10.0]: https://github.com/davide-desio-eleva/kirograph/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/davide-desio-eleva/kirograph/compare/v0.8.0...v0.9.0

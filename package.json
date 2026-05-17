@@ -1,7 +1,7 @@
 {
   "name": "kirograph",
-  "version": "0.12.1",
-  "description": "Semantic code knowledge graph for Kiro and MCP-capable coding agents — fewer tool calls, instant symbol lookups, 100% local.",
+  "version": "0.12.2",
+  "description": "Semantic code knowledge graph for Kiro — fewer tool calls, instant symbol lookups, 100% local.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -17,7 +17,8 @@
     "dev": "tsx scripts/build.ts --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
-    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "docs": "npx serve docs"
   },
   "keywords": [
     "kiro",

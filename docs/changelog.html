@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KiroGraph Changelog</title>
+  <meta name="description" content="KiroGraph release history and changelog.">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png">
+  <!-- marked.js for client-side Markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+</head>
+<body>
+
+<!-- ── Fixed background logo banner ── -->
+<div class="logo-banner" aria-hidden="true">
+  <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png" alt="">
+</div>
+
+<!-- ── Nav ── -->
+<nav class="nav">
+  <a href="index.html" class="nav-brand">
+    KiroGraph
+  </a>
+  <ul class="nav-links">
+    <li><a href="index.html">Home</a></li>
+    <li><a href="docs.html">Docs</a></li>
+    <li><a href="changelog.html" class="active">Changelog</a></li>
+    <li>
+      <a href="https://github.com/davide-desio-eleva/kirograph" class="nav-gh" title="GitHub" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+      </a>
+    </li>
+    <li>
+      <a href="https://www.npmjs.com/package/kirograph" class="nav-gh" title="npm" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M0 0v16h16V0H0zm13 13H8V5h-2v8H3V3h10v10z"/>
+        </svg>
+      </a>
+    </li>
+  </ul>
+</nav>
+
+<!-- ── Layout with sidebar ── -->
+<div class="docs-layout docs-layout-three">
+
+  <!-- Left sidebar (populated by JS) -->
+  <aside class="docs-sidebar" id="changelog-sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Versions</div>
+      <div id="sidebar-links">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="docs-content changelog-content" id="changelog-root">
+    <!-- Loading spinner shown while fetching -->
+    <div class="spinner" id="changelog-spinner">
+      <div class="spinner-ring"></div>
+      <span>Loading changelog…</span>
+    </div>
+  </main>
+
+  <!-- Right sidebar (sections within current version) -->
+  <aside class="docs-sidebar docs-sidebar-right" id="toc-right" style="display:none">
+    <div class="sidebar-section">
+      <div class="sidebar-heading" id="toc-right-heading">Sections</div>
+      <div id="toc-right-links"></div>
+    </div>
+  </aside>
+
+</div>
+
+<!-- ── Footer ── -->
+<footer class="footer">
+  <p>
+    KiroGraph &mdash;
+    <a href="index.html">Home</a> &mdash;
+    <a href="docs.html">Docs</a> &mdash;
+    <a href="https://github.com/davide-desio-eleva/kirograph" target="_blank" rel="noopener">GitHub</a>
+  </p>
+</footer>
+
+<script>
+(async function () {
+  const CHANGELOG_URL = 'https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/CHANGELOG.md';
+  const root = document.getElementById('changelog-root');
+  const spinner = document.getElementById('changelog-spinner');
+  const sidebarLinks = document.getElementById('sidebar-links');
+
+  const sectionColors = {
+    'added':      'badge-green',
+    'changed':    'badge-blue',
+    'fixed':      'badge-yellow',
+    'removed':    'badge-orange',
+    'security':   'badge-purple',
+    'deprecated': 'badge-orange',
+  };
+
+  function slugify(text) {
+    return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  }
+
+  function enhanceHtml(html) {
+    let h3Counter = 0;
+    // Match any h2 that contains a version number (handles both linked and plain text variants from marked)
+    html = html.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, (full, inner) => {
+      // Try to extract version: could be inside <a> tag or in [brackets]
+      let ver = null, date = null;
+      // Case 1: linked — <a href="...">0.12.1</a> - 2026-05-14
+      const linkedMatch = inner.match(/<a[^>]*>([\d.]+)<\/a>\s*[-–]\s*(\d{4}-\d{2}-\d{2})/);
+      if (linkedMatch) { ver = linkedMatch[1]; date = linkedMatch[2]; }
+      // Case 2: plain text — [0.12.1] - 2026-05-14
+      if (!ver) {
+        const plainMatch = inner.match(/\[([\d.]+)\]\s*[-–]\s*(\d{4}-\d{2}-\d{2})/);
+        if (plainMatch) { ver = plainMatch[1]; date = plainMatch[2]; }
+      }
+      // Case 3: linked without date — <a href="...">0.12.1</a>
+      if (!ver) {
+        const linkedNoDate = inner.match(/<a[^>]*>([\d.]+)<\/a>/);
+        if (linkedNoDate) { ver = linkedNoDate[1]; }
+      }
+      // Case 4: plain without date — [0.12.1]
+      if (!ver) {
+        const plainNoDate = inner.match(/\[([\d.]+)\]/);
+        if (plainNoDate) { ver = plainNoDate[1]; }
+      }
+      if (!ver) return full; // not a version heading, leave as-is
+      const id = 'v' + slugify(ver);
+      let out = `<h2 id="${id}"><span class="version-badge">v${ver}</span>`;
+      if (date) out += ` <span style="color:var(--text-muted);font-size:.85rem;font-weight:400">${date}</span>`;
+      return out + '</h2>';
+    });
+    // h3: "Added" / "Fixed" / etc → colored badge with id
+    html = html.replace(/<h3[^>]*>([^<]+)<\/h3>/gi, (_, text) => {
+      const cls = sectionColors[text.trim().toLowerCase()] || '';
+      const id = 'section-' + slugify(text.trim()) + '-' + (++h3Counter);
+      return `<h3 id="${id}"><span class="badge ${cls}" style="font-size:.75rem">${text.trim()}</span></h3>`;
+    });
+    return html;
+  }
+
+  function buildSidebar(html) {
+    // Extract all version h2 elements with their ids from the enhanced HTML
+    const regex = /<h2 id="([^"]+)"><span class="version-badge">v([^<]+)<\/span>(?:\s*<span[^>]*>(\d{4}-\d{2}-\d{2})<\/span>)?/g;
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+      const [, id, version, date] = match;
+      const link = document.createElement('a');
+      link.href = '#' + id;
+      link.className = 'sidebar-link';
+      link.innerHTML = `<strong>v${version}</strong>` + (date ? `<br><span style="font-size:0.75rem;color:var(--text-muted)">${date}</span>` : '');
+      sidebarLinks.appendChild(link);
+    }
+  }
+
+  function setupScrollSpy() {
+    const links = sidebarLinks.querySelectorAll('.sidebar-link');
+    const headings = root.querySelectorAll('h2[id]');
+    const tocRight = document.getElementById('toc-right');
+    const tocRightLinks = document.getElementById('toc-right-links');
+    const tocRightHeading = document.getElementById('toc-right-heading');
+    if (!headings.length) return;
+
+    let itemCounter = 0;
+
+    // Build map of h2 → grouped items (grouped by h3 section: Added, Fixed, etc.)
+    const sections = {};
+    headings.forEach((h2, i) => {
+      const nextH2 = headings[i + 1];
+      const groups = [];
+      let currentGroup = null;
+      let el = h2.nextElementSibling;
+      while (el && el !== nextH2) {
+        if (el.tagName === 'H3') {
+          currentGroup = { label: el.textContent.trim(), items: [] };
+          groups.push(currentGroup);
+        } else if (el.tagName === 'UL' && currentGroup) {
+          const lis = el.querySelectorAll(':scope > li');
+          lis.forEach(li => {
+            let text = li.textContent.trim().split('\n')[0];
+            // Cut after em-dash
+            const dashIdx = text.indexOf('—');
+            if (dashIdx > 0) text = text.substring(0, dashIdx).trim();
+            if (text.length > 50) text = text.substring(0, 47) + '…';
+            if (!li.id) li.id = 'item-' + (++itemCounter);
+            currentGroup.items.push({ id: li.id, text });
+          });
+        }
+        el = el.nextElementSibling;
+      }
+      sections[h2.id] = groups;
+    });
+
+    let currentH2 = null;
+
+    function updateActive() {
+      let activeH2 = '';
+
+      headings.forEach(h => {
+        if (h.getBoundingClientRect().top <= 120) activeH2 = h.id;
+      });
+
+      // Left sidebar
+      links.forEach(link => {
+        link.classList.toggle('active', link.getAttribute('href') === '#' + activeH2);
+      });
+
+      // Right sidebar — update content when section changes
+      if (activeH2 !== currentH2) {
+        currentH2 = activeH2;
+        tocRightLinks.innerHTML = '';
+
+        const groups = sections[activeH2];
+        if (!groups || groups.length === 0) {
+          tocRight.style.display = 'none';
+        } else {
+          tocRight.style.display = '';
+          tocRightHeading.textContent = 'In this version';
+          groups.forEach(group => {
+            const heading = document.createElement('div');
+            heading.className = 'sidebar-heading';
+            heading.style.marginTop = '0.5rem';
+            const badge = document.createElement('span');
+            const cls = sectionColors[group.label.toLowerCase()] || '';
+            badge.className = 'badge ' + cls;
+            badge.style.fontSize = '0.7rem';
+            badge.textContent = group.label;
+            heading.appendChild(badge);
+            tocRightLinks.appendChild(heading);
+            group.items.forEach(item => {
+              const a = document.createElement('a');
+              a.href = '#' + item.id;
+              a.className = 'sidebar-link';
+              a.textContent = item.text;
+              tocRightLinks.appendChild(a);
+            });
+          });
+        }
+      }
+
+      // Highlight active item in right sidebar
+      let activeItem = '';
+      if (activeH2 && sections[activeH2]) {
+        sections[activeH2].forEach(group => {
+          group.items.forEach(item => {
+            const el = document.getElementById(item.id);
+            if (el && el.getBoundingClientRect().top <= 150) activeItem = item.id;
+          });
+        });
+      }
+      const rightLinks = tocRightLinks.querySelectorAll('.sidebar-link');
+      rightLinks.forEach(l => {
+        l.classList.toggle('active', l.getAttribute('href') === '#' + activeItem);
+      });
+    }
+
+    window.addEventListener('scroll', updateActive, { passive: true });
+    updateActive();
+  }
+
+  try {
+    const response = await fetch(CHANGELOG_URL);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} — ${response.statusText}`);
+    }
+    const md = await response.text();
+
+    // Strip the top-level "# Changelog" heading (we show our own page title)
+    const stripped = md.replace(/^#\s+Changelog\s*\n/, '');
+
+    const html = enhanceHtml(marked.parse(stripped));
+
+    // Replace spinner with rendered content
+    spinner.remove();
+
+    const contentDiv = document.createElement('div');
+    contentDiv.innerHTML = html;
+    root.appendChild(contentDiv);
+
+    // Build sidebar navigation and scroll spy
+    buildSidebar(html);
+    setupScrollSpy();
+
+  } catch (err) {
+    spinner.remove();
+
+    const errDiv = document.createElement('div');
+    errDiv.style.cssText = 'text-align: center; padding: 4rem 2rem;';
+    errDiv.innerHTML = `
+      <div style="font-size: 2.5rem; margin-bottom: 1rem;">⚠️</div>
+      <h3 style="color: var(--text-bright); margin-bottom: 0.5rem;">Could not load changelog</h3>
+      <p style="color: var(--text-muted); margin-bottom: 1.5rem;">${err.message}</p>
+      <p style="color: var(--text-muted); font-size: 0.875rem;">
+        You can view the raw changelog directly on
+        <a href="https://github.com/davide-desio-eleva/kirograph/blob/main/CHANGELOG.md" target="_blank" rel="noopener">GitHub</a>.
+      </p>
+    `;
+    root.appendChild(errDiv);
+  }
+})();
+</script>
+
+</body>
+</html>

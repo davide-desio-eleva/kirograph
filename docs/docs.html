@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KiroGraph Docs — Full Reference</title>
+  <meta name="description" content="Full documentation for KiroGraph: installation, quick start, MCP tools, CLI reference, configuration, and more.">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png">
+</head>
+<body>
+
+<!-- ── Fixed background logo banner ── -->
+<div class="logo-banner" aria-hidden="true">
+  <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png" alt="">
+</div>
+
+<!-- ── Nav ── -->
+<nav class="nav">
+  <a href="index.html" class="nav-brand">
+    KiroGraph
+  </a>
+  <ul class="nav-links">
+    <li><a href="index.html">Home</a></li>
+    <li><a href="docs.html" class="active">Docs</a></li>
+    <li><a href="changelog.html">Changelog</a></li>
+    <li>
+      <a href="https://github.com/davide-desio-eleva/kirograph" class="nav-gh" title="GitHub" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+      </a>
+    </li>
+    <li>
+      <a href="https://www.npmjs.com/package/kirograph" class="nav-gh" title="npm" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M0 0v16h16V0H0zm13 13H8V5h-2v8H3V3h10v10z"/>
+        </svg>
+      </a>
+    </li>
+  </ul>
+</nav>
+
+<!-- ── Docs layout ── -->
+<div class="docs-layout docs-layout-three">
+
+  <!-- Sidebar -->
+  <aside class="docs-sidebar" id="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Getting Started</div>
+      <a href="#installation" class="sidebar-link">Installation</a>
+      <a href="#quick-start" class="sidebar-link">Quick Start</a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Core Concepts</div>
+      <a href="#how-indexing-works" class="sidebar-link">How Indexing Works</a>
+      <a href="#languages" class="sidebar-link">Languages</a>
+      <a href="#frameworks" class="sidebar-link">Frameworks</a>
+      <a href="#using-with-kiro" class="sidebar-link">Using with Kiro</a>
+      <a href="#configuration" class="sidebar-link">Configuration</a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Reference</div>
+      <a href="mcp-tools.html" class="sidebar-link">MCP Tools</a>
+      <a href="cli.html" class="sidebar-link">CLI Reference</a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Advanced</div>
+      <a href="#caveman-mode" class="sidebar-link">Caveman Mode</a>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="docs-content" id="docs-main">
+
+    <!-- ── Installation ── -->
+    <h2 id="installation">Installation</h2>
+
+    <h3 id="install-npm">From npm</h3>
+    <pre><code>npm install -g kirograph</code></pre>
+
+    <h3 id="install-source">From source</h3>
+    <pre><code>git clone https://github.com/davide-desio-eleva/kirograph.git
+cd kirograph
+npm install
+npm run build
+sudo npm install -g .</code></pre>
+    <p>After building, both <code>kirograph</code> and the short alias <code>kg</code> are available globally.</p>
+
+    <h3 id="verify">Verify</h3>
+    <pre><code>kirograph --version</code></pre>
+
+    <h3 id="uninstalling">Uninstalling</h3>
+    <pre><code># Remove from a project
+kirograph uninit [path]      # removes .kirograph/, hooks, steering file, agent config
+kirograph uninit --force     # skip confirmation
+
+# Remove the CLI globally (npm)
+npm uninstall -g kirograph
+
+# Remove the CLI globally (from source)
+cd kirograph && npm uninstall -g .</code></pre>
+
+    <!-- ── Quick Start ── -->
+    <h2 id="quick-start">Quick Start</h2>
+
+    <p>Run this inside any project you want to index:</p>
+
+    <pre><code>kirograph install    # interactive setup — wires MCP + hooks + steering + CLI agent</code></pre>
+
+    <p>The installer prompts you for:</p>
+    <ul>
+      <li>Whether to enable embeddings (semantic search)</li>
+      <li>Embedding model and semantic engine</li>
+      <li>Whether to enable architecture analysis</li>
+      <li>Caveman mode level</li>
+      <li>Whether to run an initial index immediately</li>
+    </ul>
+
+    <p>Then restart Kiro IDE (or run <code>kiro-cli --agent kirograph</code>). Kiro will now use KiroGraph tools automatically whenever you ask it to work on your code.</p>
+
+    <div class="callout callout-tip">
+      <strong>Tip:</strong> You can also use the short alias <code>kg install</code>.
+    </div>
+
+    <!-- ── How Indexing Works ── -->
+    <h2 id="how-indexing-works">How Indexing Works</h2>
+
+    <p>Indexing has three layers: <strong>structural</strong> (always on), <strong>semantic</strong> (opt-in), and <strong>architecture</strong> (opt-in).</p>
+
+    <h3 id="structural-layer">Structural layer</h3>
+    <p>tree-sitter parses every source file into an AST. Nodes and edges are extracted and written to <code>.kirograph/kirograph.db</code>. This powers all graph traversal tools and exact/FTS symbol search. No extra dependencies. Runs on every <code>kirograph index</code> or <code>kirograph sync</code>.</p>
+
+    <p>Extracts <strong>24 node kinds</strong>: <code>function</code>, <code>method</code>, <code>class</code>, <code>interface</code>, <code>struct</code>, <code>trait</code>, <code>protocol</code>, <code>enum</code>, <code>type_alias</code>, <code>property</code>, <code>field</code>, <code>variable</code>, <code>constant</code>, <code>enum_member</code>, <code>parameter</code>, <code>import</code>, <code>export</code>, <code>route</code>, <code>component</code>, <code>file</code>, <code>module</code>, <code>namespace</code>, and more.</p>
+
+    <p><strong>13 edge types</strong>: <code>calls</code>, <code>imports</code>, <code>exports</code>, <code>extends</code>, <code>implements</code>, <code>contains</code>, <code>references</code>, <code>instantiates</code>, <code>overrides</code>, <code>decorates</code>, <code>type_of</code>, <code>returns</code>, <code>uses</code>.</p>
+
+    <h3 id="semantic-layer">Semantic layer (opt-in)</h3>
+    <p>When <code>enableEmbeddings: true</code>, KiroGraph generates 768-dimensional vector embeddings for every embeddable symbol using <code>nomic-ai/nomic-embed-text-v1.5</code> (~130 MB, downloaded once to <code>~/.kirograph/models/</code>). Powers natural-language search in <code>kirograph_context</code>.</p>
+
+    <p>Seven pluggable semantic engines:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Engine</th><th>Store</th><th>Search type</th><th>Extra deps</th></tr></thead>
+        <tbody>
+          <tr><td><code>cosine</code> <em>(default)</em></td><td><code>kirograph.db</code></td><td>Exact cosine, linear scan</td><td>none</td></tr>
+          <tr><td><code>sqlite-vec</code></td><td><code>.kirograph/vec.db</code></td><td>ANN, sub-linear</td><td><code>better-sqlite3</code>, <code>sqlite-vec</code></td></tr>
+          <tr><td><code>orama</code></td><td><code>.kirograph/orama.json</code></td><td>Hybrid (full-text + vector)</td><td><code>@orama/orama</code></td></tr>
+          <tr><td><code>pglite</code></td><td><code>.kirograph/pglite/</code></td><td>Hybrid, exact (WASM pgvector)</td><td><code>@electric-sql/pglite</code></td></tr>
+          <tr><td><code>lancedb</code></td><td><code>.kirograph/lancedb/</code></td><td>ANN, sub-linear</td><td><code>@lancedb/lancedb</code></td></tr>
+          <tr><td><code>qdrant</code></td><td><code>.kirograph/qdrant/</code></td><td>ANN (HNSW), sub-linear</td><td><code>qdrant-local</code></td></tr>
+          <tr><td><code>typesense</code></td><td><code>.kirograph/typesense/</code></td><td>ANN (HNSW), sub-linear</td><td><code>typesense</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="architecture-layer">Architecture layer (opt-in)</h3>
+    <p>When <code>enableArchitecture: true</code>, KiroGraph detects packages and architectural layers (api, service, data, ui, shared) and computes coupling metrics (Ca, Ce, instability) between them. Results stored in <code>arch_*</code> tables in <code>kirograph.db</code>.</p>
+
+    <!-- ── Languages & Frameworks ── -->
+    <h2 id="languages">Supported Languages</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Language</th><th>Extensions</th></tr></thead>
+        <tbody>
+          <tr><td>TypeScript</td><td><code>.ts</code></td></tr>
+          <tr><td>JavaScript</td><td><code>.js</code></td></tr>
+          <tr><td>TSX</td><td><code>.tsx</code></td></tr>
+          <tr><td>JSX</td><td><code>.jsx</code></td></tr>
+          <tr><td>Python</td><td><code>.py</code></td></tr>
+          <tr><td>Go</td><td><code>.go</code></td></tr>
+          <tr><td>Rust</td><td><code>.rs</code></td></tr>
+          <tr><td>Java</td><td><code>.java</code></td></tr>
+          <tr><td>C</td><td><code>.c</code>, <code>.h</code></td></tr>
+          <tr><td>C++</td><td><code>.cpp</code>, <code>.cc</code>, <code>.cxx</code>, <code>.hpp</code></td></tr>
+          <tr><td>C#</td><td><code>.cs</code></td></tr>
+          <tr><td>PHP</td><td><code>.php</code></td></tr>
+          <tr><td>Ruby</td><td><code>.rb</code></td></tr>
+          <tr><td>Swift</td><td><code>.swift</code></td></tr>
+          <tr><td>Kotlin</td><td><code>.kt</code></td></tr>
+          <tr><td>Dart</td><td><code>.dart</code></td></tr>
+          <tr><td>Svelte</td><td><code>.svelte</code></td></tr>
+          <tr><td>Elixir</td><td><code>.ex</code>, <code>.exs</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="frameworks">Framework Detection</h2>
+
+    <p>KiroGraph auto-detects frameworks and enriches the graph with framework-specific semantics (routes, components, lifecycle methods).</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Language</th><th>Frameworks</th></tr></thead>
+        <tbody>
+          <tr><td>JavaScript / TypeScript</td><td>React, Next.js, React Native, Svelte, SvelteKit, Express, Fastify, Koa</td></tr>
+          <tr><td>Python</td><td>Django, Flask, FastAPI</td></tr>
+          <tr><td>Ruby</td><td>Rails</td></tr>
+          <tr><td>Java</td><td>Spring, Spring Boot, Spring MVC</td></tr>
+          <tr><td>Go</td><td>Generic Go resolver</td></tr>
+          <tr><td>Rust</td><td>Generic Rust resolver</td></tr>
+          <tr><td>C#</td><td>ASP.NET Core</td></tr>
+          <tr><td>Swift</td><td>SwiftUI, UIKit, Vapor</td></tr>
+          <tr><td>PHP</td><td>Laravel</td></tr>
+          <tr><td>Elixir</td><td>Phoenix</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Detected frameworks are stored in config and used to improve symbol extraction and resolution. Routes, components, and lifecycle methods are extracted as first-class nodes in the graph.</p>
+
+    <!-- ── Using with Kiro ── -->
+    <h2 id="using-with-kiro">Using with Kiro</h2>
+
+    <p><code>kirograph install</code> sets up four things in your Kiro workspace — all coexist so you can switch between IDE and CLI freely.</p>
+
+    <h3 id="mcp-server">MCP Server (<code>.kiro/settings/mcp.json</code>)</h3>
+    <p>Registers the KiroGraph MCP server with all 17 tools auto-approved. Used by both the IDE and the CLI agent.</p>
+    <pre><code>{
+  "mcpServers": {
+    "kirograph": {
+      "command": "kirograph",
+      "args": ["serve", "--mcp"],
+      "autoApprove": [
+        "kirograph_search", "kirograph_context", "kirograph_callers",
+        "kirograph_callees", "kirograph_impact", "kirograph_node",
+        "kirograph_status", "kirograph_files", "kirograph_dead_code",
+        "kirograph_circular_deps", "kirograph_path", "kirograph_type_hierarchy",
+        "kirograph_architecture", "kirograph_coupling", "kirograph_package",
+        "kirograph_hotspots", "kirograph_surprising", "kirograph_diff"
+      ]
+    }
+  }
+}</code></pre>
+
+    <h3 id="ide-hooks">IDE Auto-Sync Hooks (<code>.kiro/hooks/</code>)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Hook file</th><th>Event</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><code>kirograph-mark-dirty-on-save.json</code></td><td><code>fileEdited</code></td><td><code>kirograph mark-dirty</code></td></tr>
+          <tr><td><code>kirograph-mark-dirty-on-create.json</code></td><td><code>fileCreated</code></td><td><code>kirograph mark-dirty</code></td></tr>
+          <tr><td><code>kirograph-sync-on-delete.json</code></td><td><code>fileDeleted</code></td><td><code>kirograph sync-if-dirty</code></td></tr>
+          <tr><td><code>kirograph-sync-if-dirty.json</code></td><td><code>agentStop</code></td><td><code>kirograph sync-if-dirty --quiet</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Hooks fire for: <code>.ts</code>, <code>.tsx</code>, <code>.js</code>, <code>.jsx</code>, <code>.py</code>, <code>.go</code>, <code>.rs</code>, <code>.java</code>, <code>.cs</code>, <code>.rb</code>, <code>.php</code>, <code>.swift</code>, <code>.kt</code>, <code>.dart</code>, <code>.ex</code>, <code>.exs</code></p>
+
+    <h3 id="cli-agent">CLI Agent Config (<code>.kiro/agents/kirograph.json</code>)</h3>
+    <p>A custom agent for Kiro CLI that wires up the MCP server and inlines steering instructions. Sync is handled at session boundaries:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Event</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><code>agentSpawn</code></td><td><code>kirograph sync-if-dirty --quiet</code> — catches edits made between sessions</td></tr>
+          <tr><td><code>userPromptSubmit</code></td><td><code>kirograph sync-if-dirty --quiet</code> — keeps graph fresh within a session</td></tr>
+          <tr><td><code>stop</code></td><td><code>kirograph sync-if-dirty --quiet</code> — deferred flush, mirrors IDE agentStop</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <pre><code>kiro-cli --agent kirograph
+# or, inside an active session:
+/agent swap kirograph</code></pre>
+
+    <h3 id="steering-file">Steering File (<code>.kiro/steering/kirograph.md</code>)</h3>
+    <p>Teaches the Kiro IDE to prefer graph tools over file scanning when <code>.kirograph/</code> exists. Uses <code>inclusion: always</code> so it's in context on every turn. The CLI agent has the same instructions inlined in its <code>prompt</code> field.</p>
+
+    <!-- ── Configuration ── -->
+    <h2 id="configuration">Configuration</h2>
+
+    <p>All configuration is in <code>.kirograph/config.json</code>. The interactive <code>kirograph install</code> writes this for you.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>enableEmbeddings</code></td><td>boolean</td><td><code>false</code></td><td>Enable semantic (vector) search</td></tr>
+          <tr><td><code>semanticEngine</code></td><td>string</td><td><code>"cosine"</code></td><td>Vector engine: <code>cosine</code>, <code>sqlite-vec</code>, <code>orama</code>, <code>pglite</code>, <code>lancedb</code>, <code>qdrant</code>, <code>typesense</code></td></tr>
+          <tr><td><code>embeddingModel</code></td><td>string</td><td><code>"nomic-ai/nomic-embed-text-v1.5"</code></td><td>HuggingFace model ID</td></tr>
+          <tr><td><code>embeddingDim</code></td><td>number</td><td><code>768</code></td><td>Embedding dimension (auto-corrected on mismatch)</td></tr>
+          <tr><td><code>enableArchitecture</code></td><td>boolean</td><td><code>false</code></td><td>Enable architecture analysis layer</td></tr>
+          <tr><td><code>architectureLayers</code></td><td>object</td><td>—</td><td>Override layer glob patterns</td></tr>
+          <tr><td><code>cavemanMode</code></td><td>string</td><td><code>"off"</code></td><td>Communication compression: <code>off</code>, <code>lite</code>, <code>full</code>, <code>ultra</code></td></tr>
+          <tr><td><code>syncWarningThreshold</code></td><td>number</td><td><code>10</code></td><td>Pending-file count above which <code>kirograph_status</code> warns. Set <code>0</code> to disable.</td></tr>
+          <tr><td><code>extractDocstrings</code></td><td>boolean</td><td><code>true</code></td><td>Extract docstrings/comments during indexing</td></tr>
+          <tr><td><code>trackCallSites</code></td><td>boolean</td><td><code>true</code></td><td>Track precise call-site locations</td></tr>
+          <tr><td><code>exclude</code></td><td>string[]</td><td>—</td><td>Glob patterns to exclude from indexing</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ── Caveman Mode ── -->
+    <h2 id="caveman-mode">Caveman Mode</h2>
+
+    <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/caveman.png" alt="Caveman mode" style="border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 1.5rem; max-width: 100%;">
+
+    <p>Caveman mode compresses the agent's communication style, cutting token usage on responses without affecting tool calls or code output. Inspired by <a href="https://github.com/JuliusBrussee/caveman" target="_blank" rel="noopener">caveman</a> by JuliusBrussee.</p>
+
+    <p>The rules are injected at session start via the steering file (IDE) and the inline agent prompt (kiro-cli), so they're always in context with no extra tool calls.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Mode</th><th>Style</th></tr></thead>
+        <tbody>
+          <tr><td><code>off</code></td><td>Normal responses <em>(default)</em></td></tr>
+          <tr><td><code>lite</code></td><td>Compact, no filler, full sentences</td></tr>
+          <tr><td><code>full</code></td><td>Fragments, no articles, short synonyms</td></tr>
+          <tr><td><code>ultra</code></td><td>Maximum compression, abbreviations, → for causality</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Caveman mode never touches code blocks, file paths, URLs, or technical terms — only prose.</p>
+
+    <p><strong>Auto-clarity exceptions:</strong> the agent temporarily reverts to normal prose for security warnings, confirmations of irreversible actions (delete, overwrite, force-push), and multi-step sequences where fragment order could cause misunderstanding. Compressed style resumes immediately after.</p>
+
+    <pre><code>kirograph caveman lite    # set mode
+kirograph caveman         # show current mode</code></pre>
+
+    <div class="callout">
+      Takes effect on the <strong>next agent session</strong>. The steering file and CLI agent config are regenerated immediately when you run the command.
+    </div>
+
+  </main>
+
+  <!-- Right sidebar (dynamic subtitles) -->
+  <aside class="docs-sidebar docs-sidebar-right" id="toc-right">
+    <div class="sidebar-section">
+      <div class="sidebar-heading" id="toc-right-heading">On this page</div>
+      <div id="toc-right-links"></div>
+    </div>
+  </aside>
+
+</div>
+
+<!-- ── Footer ── -->
+<footer class="footer">
+  <p>
+    KiroGraph &mdash;
+    <a href="index.html">Home</a> &mdash;
+    <a href="changelog.html">Changelog</a> &mdash;
+    <a href="https://github.com/davide-desio-eleva/kirograph" target="_blank" rel="noopener">GitHub</a>
+  </p>
+</footer>
+
+<script>
+(function() {
+  const main = document.getElementById('docs-main');
+  const leftLinks = document.querySelectorAll('#sidebar .sidebar-link[href^="#"]');
+  const tocRight = document.getElementById('toc-right-links');
+  const tocHeading = document.getElementById('toc-right-heading');
+
+  // Build a map of h2 sections → their h3 children
+  const sections = {};
+  const h2s = main.querySelectorAll('h2[id]');
+  h2s.forEach((h2, i) => {
+    const nextH2 = h2s[i + 1];
+    const h3s = [];
+    let el = h2.nextElementSibling;
+    while (el && el !== nextH2) {
+      if (el.tagName === 'H3' && el.id) {
+        h3s.push({ id: el.id, text: el.textContent.trim() });
+      }
+      el = el.nextElementSibling;
+    }
+    sections[h2.id] = { title: h2.textContent.trim(), h3s };
+  });
+
+  // Track current active h2 and update right sidebar
+  let currentH2 = null;
+
+  function updateRightSidebar(h2Id) {
+    if (h2Id === currentH2) return;
+    currentH2 = h2Id;
+
+    const section = sections[h2Id];
+    tocRight.innerHTML = '';
+
+    if (!section || section.h3s.length === 0) {
+      tocHeading.textContent = 'On this page';
+      document.getElementById('toc-right').style.display = 'none';
+      return;
+    }
+
+    document.getElementById('toc-right').style.display = '';
+    tocHeading.textContent = section.title;
+    section.h3s.forEach(h3 => {
+      const a = document.createElement('a');
+      a.href = '#' + h3.id;
+      a.className = 'sidebar-link';
+      a.textContent = h3.text;
+      tocRight.appendChild(a);
+    });
+  }
+
+  // Scroll spy for left sidebar + right sidebar updates
+  function onScroll() {
+    let activeH2 = '';
+    let activeH3 = '';
+
+    h2s.forEach(h2 => {
+      if (h2.getBoundingClientRect().top <= 120) activeH2 = h2.id;
+    });
+
+    // Find active h3 within current section
+    if (activeH2 && sections[activeH2]) {
+      sections[activeH2].h3s.forEach(h3 => {
+        const el = document.getElementById(h3.id);
+        if (el && el.getBoundingClientRect().top <= 120) activeH3 = h3.id;
+      });
+    }
+
+    // Update left sidebar
+    leftLinks.forEach(l => {
+      l.classList.toggle('active', l.getAttribute('href') === '#' + activeH2);
+    });
+
+    // Update right sidebar content
+    updateRightSidebar(activeH2);
+
+    // Highlight active h3 in right sidebar
+    const rightLinks = tocRight.querySelectorAll('.sidebar-link');
+    rightLinks.forEach(l => {
+      l.classList.toggle('active', l.getAttribute('href') === '#' + activeH3);
+    });
+  }
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
+</script>
+
+</body>
+</html>

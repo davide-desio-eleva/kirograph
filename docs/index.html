@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KiroGraph — Semantic Code Knowledge Graph for Kiro</title>
+  <meta name="description" content="KiroGraph gives Kiro a semantic knowledge graph so it queries your codebase instantly instead of doing slow file scans. 100% local, no API keys.">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+
+<!-- ── Fixed background logo banner ── -->
+<div class="logo-banner" aria-hidden="true">
+  <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png" alt="">
+</div>
+
+<!-- ── Nav ── -->
+<nav class="nav">
+  <a href="index.html" class="nav-brand">
+    KiroGraph
+  </a>
+  <ul class="nav-links">
+    <li><a href="index.html" class="active">Home</a></li>
+    <li><a href="docs.html">Docs</a></li>
+    <li><a href="changelog.html">Changelog</a></li>
+    <li>
+      <a href="https://github.com/davide-desio-eleva/kirograph" class="nav-gh" title="GitHub" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+      </a>
+    </li>
+    <li>
+      <a href="https://www.npmjs.com/package/kirograph" class="nav-gh" title="npm" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M0 0v16h16V0H0zm13 13H8V5h-2v8H3V3h10v10z"/>
+        </svg>
+      </a>
+    </li>
+  </ul>
+</nav>
+
+<!-- ── Hero ── -->
+<section class="hero">
+  <div class="container">
+    <h1 class="hero-title">KiroGraph</h1>
+    <p class="hero-tagline">Semantic code knowledge graph for Kiro — fewer tool calls, instant symbol lookups, 100% local.</p>
+
+    <div class="install-block">
+      <span class="prompt">$</span>
+      <span>npm install -g kirograph</span>
+    </div>
+
+    <div class="hero-actions">
+      <a href="docs.html" class="btn btn-primary">Get Started →</a>
+      <a href="https://github.com/davide-desio-eleva/kirograph" class="btn btn-secondary" target="_blank" rel="noopener">View on GitHub</a>
+      <a href="changelog.html" class="btn btn-secondary">Changelog</a>
+    </div>
+
+    <div class="hero-screenshot">
+      <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/terminal.png" alt="KiroGraph terminal output">
+    </div>
+  </div>
+</section>
+
+<!-- ── Why KiroGraph ── -->
+<section class="section" style="background: var(--bg-card); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+  <div class="container">
+    <div class="section-header">
+      <span class="label">Why KiroGraph?</span>
+      <h2>Stop wasting tool calls on file scanning</h2>
+      <p>When Kiro works on complex tasks it reads files, runs grep, and globs your codebase. Every one of those is a tool call that burns context and slows things down.</p>
+    </div>
+    <div class="benefits">
+      <div class="benefit">
+        <div class="benefit-icon"><i data-lucide="zap"></i></div>
+        <div>
+          <h3>Fewer tool calls, faster responses</h3>
+          <p>One <code>kirograph_context</code> call replaces a cascade of file reads, greps, and glob searches. Kiro gets symbol relationships, call graphs, and type hierarchies in a single round trip.</p>
+        </div>
+      </div>
+      <div class="benefit">
+        <div class="benefit-icon"><i data-lucide="lock"></i></div>
+        <div>
+          <h3>100% local — no API keys, no cloud</h3>
+          <p>Everything is stored in a local SQLite database at <code>.kirograph/kirograph.db</code>. No telemetry, no external services, no API keys. Your code stays on your machine.</p>
+        </div>
+      </div>
+      <div class="benefit">
+        <div class="benefit-icon"><i data-lucide="refresh-cw"></i></div>
+        <div>
+          <h3>Always up to date, zero overhead</h3>
+          <p>Kiro hooks mark the index dirty on every save and flush changes when the agent stops. No background watcher process — changes batch efficiently with no overhead during editing.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Features ── -->
+<section class="section">
+  <div class="container">
+    <div class="section-header">
+      <span class="label">Features</span>
+      <h2>Everything you need to supercharge Kiro</h2>
+      <p>A complete semantic index with 24 node kinds, 13 edge types, and three indexing layers.</p>
+    </div>
+    <div class="cards-grid">
+
+      <div class="card">
+        <span class="card-icon"><i data-lucide="wrench"></i></span>
+        <h3>17 MCP Tools</h3>
+        <p>Context building, symbol search, call graphs, type hierarchies, impact analysis, dead code, circular deps, architecture, coupling metrics, snapshots, and more — all auto-approved in Kiro.</p>
+      </div>
+
+      <div class="card">
+        <span class="card-icon"><i data-lucide="terminal"></i></span>
+        <h3>Full CLI Reference</h3>
+        <p>Every capability available from the terminal: <code>kirograph index</code>, <code>sync</code>, <code>query</code>, <code>context</code>, <code>files</code>, <code>affected</code>, <code>path</code>, <code>hotspots</code>, <code>snapshot</code>, <code>export</code>, and more.</p>
+      </div>
+
+      <div class="card">
+        <span class="card-icon"><i data-lucide="webhook"></i></span>
+        <h3>Auto-sync Hooks</h3>
+        <p>Four IDE hooks keep the index fresh automatically: <code>fileEdited</code>, <code>fileCreated</code>, <code>fileDeleted</code>, and <code>agentStop</code>. Changes batch efficiently — no watcher process needed.</p>
+      </div>
+
+      <div class="card">
+        <span class="card-icon"><i data-lucide="building-2"></i></span>
+        <h3>Architecture Analysis</h3>
+        <p>Auto-detects packages and architectural layers (api, service, data, ui, shared). Computes coupling metrics — Ca, Ce, instability — across your entire package graph.</p>
+      </div>
+
+      <div class="card">
+        <span class="card-icon"><i data-lucide="search"></i></span>
+        <h3>Semantic Search</h3>
+        <p>Opt-in embedding-based search with configurable models and seven pluggable engines: cosine, sqlite-vec, orama, pglite, lancedb, qdrant, typesense.</p>
+      </div>
+
+      <div class="card">
+        <span class="card-icon"><i data-lucide="cpu"></i></span>
+        <h3>Embedding Models</h3>
+        <p>Choose from curated models: <code>nomic-embed-text-v1.5</code> (default, 768d), <code>embeddinggemma-300m</code> (multilingual), <code>all-MiniLM-L6-v2</code> (lightweight), <code>bge-base-en-v1.5</code>, or any custom HuggingFace model.</p>
+      </div>
+
+      <div class="card">
+        <span class="card-icon"><i data-lucide="layers"></i></span>
+        <h3>Framework Detection</h3>
+        <p>Auto-detects React, Next.js, Express, Django, Flask, FastAPI, Rails, Spring, ASP.NET, Phoenix, Laravel, SwiftUI, and more. Enriches the graph with routes, components, and lifecycle methods.</p>
+      </div>
+
+      <div class="card">
+        <span class="card-icon"><i data-lucide="bar-chart-3"></i></span>
+        <h3>Export Dashboard</h3>
+        <p>Interactive graph dashboard with search, two-click path finding, cluster view, minimap, heat map, and analytics charts. Run <code>kirograph export</code> to generate it.</p>
+        <div class="card-media">
+          <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/export.gif" alt="Export dashboard demo">
+        </div>
+      </div>
+
+      <div class="card">
+        <span class="card-icon"><i data-lucide="message-square"></i></span>
+        <h3>Caveman Mode</h3>
+        <p>Compresses the agent's communication style to cut token usage on responses. Four levels: <code>lite</code>, <code>full</code>, <code>ultra</code>. Injected via steering file — no extra tool calls.</p>
+        <div class="card-media">
+          <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/caveman.png" alt="Caveman mode screenshot">
+        </div>
+      </div>
+
+      <div class="card">
+        <span class="card-icon"><i data-lucide="camera"></i></span>
+        <h3>Snapshots &amp; Diff</h3>
+        <p>Save lightweight graph snapshots before refactors. Diff the current graph against any snapshot to see added/removed symbols and edges — available as both CLI and MCP tool.</p>
+      </div>
+
+      <div class="card">
+        <span class="card-icon"><i data-lucide="flame"></i></span>
+        <h3>Hotspots &amp; Surprising Links</h3>
+        <p>Find the most-connected symbols and non-obvious cross-file coupling. Useful for identifying load-bearing code and unexpected dependencies before making changes.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── How it works ── -->
+<section class="section" style="background: var(--bg-card); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+  <div class="container">
+    <div class="section-header">
+      <span class="label">How It Works</span>
+      <h2>Three indexing layers, one query interface</h2>
+      <p>KiroGraph parses your codebase with tree-sitter, stores everything in SQLite, and exposes it through MCP tools and CLI commands.</p>
+    </div>
+
+    <div class="how-diagram">
+      <!-- Kiro -->
+      <div class="diagram-box">
+        <h4>Kiro IDE / kiro-cli</h4>
+        <div class="box-content">
+          "Fix the auth bug"<br>
+          &nbsp;&nbsp;↓<br>
+          kirograph_context("auth bug")
+        </div>
+      </div>
+      <div class="diagram-arrow"></div>
+
+      <!-- MCP Server -->
+      <div class="diagram-box" style="border-color: var(--accent-dim);">
+        <h4>KiroGraph MCP Server</h4>
+        <div style="margin-bottom: 0.75rem;">
+          <div class="diagram-row">
+            <span class="diagram-chip">context</span>
+            <span class="diagram-chip">callers</span>
+            <span class="diagram-chip">search</span>
+            <span class="diagram-chip">impact</span>
+          </div>
+          <div class="diagram-row" style="margin-top: 0.5rem;">
+            <span class="diagram-chip">type_hierarchy</span>
+            <span class="diagram-chip">path</span>
+            <span class="diagram-chip">architecture</span>
+          </div>
+        </div>
+        <div class="diagram-sub" style="margin: 0;">SQLite Graph DB (.kirograph/kirograph.db)</div>
+      </div>
+      <div class="diagram-arrow" style="background: linear-gradient(to bottom, var(--accent), var(--border));"></div>
+
+      <!-- Indexing layers -->
+      <div class="diagram-box">
+        <h4>Three Indexing Layers</h4>
+        <div class="box-content" style="display: grid; gap: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span class="badge badge-green">Structural</span>
+            <span style="font-size: 0.85rem; color: var(--text-muted);">tree-sitter AST → nodes + edges · always on</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span class="badge badge-purple">Semantic</span>
+            <span style="font-size: 0.85rem; color: var(--text-muted);">768-dim embeddings · opt-in · 7 engine options</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span class="badge badge-orange">Architecture</span>
+            <span style="font-size: 0.85rem; color: var(--text-muted);">packages + layers + coupling metrics · opt-in</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 2.5rem; text-align: center;">
+      <p style="color: var(--text-muted); font-size: 0.9rem; max-width: 600px; margin: 0 auto 1.25rem;">
+        Kiro hooks mark the index dirty on every file save or create, then flush on agent idle — batching changes efficiently with no overhead during active editing.
+      </p>
+      <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
+        <span class="badge badge-blue">fileEdited → mark-dirty</span>
+        <span class="badge badge-blue">fileCreated → mark-dirty</span>
+        <span class="badge badge-blue">fileDeleted → sync-if-dirty</span>
+        <span class="badge badge-blue">agentStop → sync-if-dirty</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Semantic Engines ── -->
+<section class="section">
+  <div class="container">
+    <div class="section-header">
+      <span class="label">Semantic Search</span>
+      <h2>Seven pluggable vector engines</h2>
+      <p>Enable embeddings for natural-language search. Choose the engine that fits your project size and constraints — all fall back gracefully if deps are missing.</p>
+    </div>
+
+    <div class="table-wrap" style="margin-top: 2rem;">
+      <table>
+        <thead><tr><th>Engine</th><th>Search type</th><th>Native deps?</th><th>Best for</th></tr></thead>
+        <tbody>
+          <tr><td><code>cosine</code> <em>(default)</em></td><td>Exact cosine, linear scan</td><td>None</td><td>Small/medium projects, zero setup</td></tr>
+          <tr><td><code>sqlite-vec</code></td><td>ANN, sub-linear</td><td>Yes</td><td>Large codebases, fast ANN</td></tr>
+          <tr><td><code>orama</code></td><td>Hybrid (full-text + vector)</td><td>No (pure JS)</td><td>Best result quality, no native deps</td></tr>
+          <tr><td><code>pglite</code></td><td>Hybrid, exact (WASM pgvector)</td><td>No (WASM)</td><td>Exact results, PostgreSQL semantics</td></tr>
+          <tr><td><code>lancedb</code></td><td>ANN, sub-linear</td><td>No (pure JS)</td><td>Fast ANN, no native compilation</td></tr>
+          <tr><td><code>qdrant</code></td><td>ANN (HNSW)</td><td>Yes (binary)</td><td>Full Qdrant features, built-in dashboard</td></tr>
+          <tr><td><code>typesense</code></td><td>ANN (HNSW)</td><td>Yes (auto-downloaded)</td><td>Fast ANN, auto-downloaded binary</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div style="margin-top: 2rem; text-align: center;">
+      <p style="color: var(--text-muted); font-size: 0.9rem; max-width: 600px; margin: 0 auto;">
+        Configure via <code>kirograph install</code> (interactive menu) or set <code>semanticEngine</code> in <code>.kirograph/config.json</code>. Each engine owns its embedding store exclusively — switch engines without data conflicts.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ── Languages & Frameworks ── -->
+<section class="section">
+  <div class="container">
+    <div class="section-header">
+      <span class="label">Languages &amp; Frameworks</span>
+      <h2>18 languages, 20+ frameworks</h2>
+      <p>All languages use WASM-compiled tree-sitter grammars. Frameworks are auto-detected and enrich the graph with routes, components, and lifecycle methods.</p>
+    </div>
+    <div class="lang-grid">
+      <span class="lang-badge">TypeScript / TSX</span>
+      <span class="lang-badge">JavaScript / JSX</span>
+      <span class="lang-badge">Python</span>
+      <span class="lang-badge">Go</span>
+      <span class="lang-badge">Rust</span>
+      <span class="lang-badge">Java</span>
+      <span class="lang-badge">C / C++</span>
+      <span class="lang-badge">C#</span>
+      <span class="lang-badge">Ruby</span>
+      <span class="lang-badge">PHP</span>
+      <span class="lang-badge">Swift</span>
+      <span class="lang-badge">Kotlin</span>
+      <span class="lang-badge">Dart</span>
+      <span class="lang-badge">Svelte</span>
+      <span class="lang-badge">Elixir</span>
+    </div>
+
+    <h3 style="text-align: center; margin-top: 2.5rem; margin-bottom: 1rem; color: var(--text-muted); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em;">Detected Frameworks</h3>
+    <div class="lang-grid">
+      <span class="lang-badge">React</span>
+      <span class="lang-badge">Next.js</span>
+      <span class="lang-badge">React Native</span>
+      <span class="lang-badge">Svelte / SvelteKit</span>
+      <span class="lang-badge">Express</span>
+      <span class="lang-badge">Fastify</span>
+      <span class="lang-badge">Koa</span>
+      <span class="lang-badge">Django</span>
+      <span class="lang-badge">Flask</span>
+      <span class="lang-badge">FastAPI</span>
+      <span class="lang-badge">Rails</span>
+      <span class="lang-badge">Spring / Spring Boot</span>
+      <span class="lang-badge">ASP.NET Core</span>
+      <span class="lang-badge">Laravel</span>
+      <span class="lang-badge">Phoenix</span>
+      <span class="lang-badge">SwiftUI</span>
+      <span class="lang-badge">UIKit</span>
+      <span class="lang-badge">Vapor</span>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA ── -->
+<section class="section-sm">
+  <div class="container">
+    <div class="cta-banner">
+      <h2>Ready to supercharge Kiro?</h2>
+      <p>Install in seconds. One command wires up everything: MCP server, hooks, steering file, and CLI agent.</p>
+      <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1.5rem;">
+        <code style="font-size: 1rem; padding: 0.5rem 1.25rem; background: var(--bg-code);">npm install -g kirograph</code>
+        <code style="font-size: 1rem; padding: 0.5rem 1.25rem; background: var(--bg-code);">kirograph install</code>
+      </div>
+      <a href="docs.html" class="btn btn-primary" style="font-size: 1rem; padding: 0.75rem 2rem;">Read the docs →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ── -->
+<footer class="footer">
+  <p>
+    KiroGraph &mdash; Inspired by <a href="https://github.com/colbymchenry/codegraph" target="_blank" rel="noopener">CodeGraph</a> by colbymchenry &mdash;
+    <a href="https://github.com/davide-desio-eleva/kirograph" target="_blank" rel="noopener">GitHub</a> &mdash;
+    <a href="docs.html">Docs</a> &mdash;
+    <a href="changelog.html">Changelog</a>
+  </p>
+</footer>
+
+<script>lucide.createIcons();</script>
+</body>
+</html>
