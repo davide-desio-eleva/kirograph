@@ -48,6 +48,7 @@
   <aside class="docs-sidebar" id="sidebar">
     <div class="sidebar-section">
       <div class="sidebar-heading">Getting Started</div>
+      <a href="#why-kirograph" class="sidebar-link">Why KiroGraph</a>
       <a href="#installation" class="sidebar-link">Installation</a>
       <a href="#quick-start" class="sidebar-link">Quick Start</a>
     </div>
@@ -74,6 +75,31 @@
   <!-- Main content -->
   <main class="docs-content" id="docs-main">
 
+    <!-- ── Why KiroGraph ── -->
+    <h2 id="why-kirograph">Why KiroGraph</h2>
+
+    <p>KiroGraph is a semantic code knowledge graph built specifically for <a href="https://kiro.dev" target="_blank" rel="noopener">Kiro</a>. It gives Kiro a pre-indexed understanding of your codebase — symbol relationships, call graphs, type hierarchies, impact radius — so it can answer complex questions in a single MCP tool call instead of cascading through file reads, greps, and globs.</p>
+
+    <h3>The problem</h3>
+    <p>When an AI coding agent works on a complex task, it explores your codebase one tool call at a time: read a file, grep for a symbol, glob for related files, read another file. Each of those burns context window and adds latency. On large codebases this becomes the bottleneck — not the reasoning, but the exploration.</p>
+
+    <h3>The approach</h3>
+    <p>KiroGraph parses your entire codebase with <a href="https://tree-sitter.github.io/tree-sitter/" target="_blank" rel="noopener">tree-sitter</a>, extracts symbols and their relationships into a local SQLite graph database, and optionally generates vector embeddings for natural-language search. The result is a structured knowledge graph that can answer "who calls this function?", "what breaks if I change this?", or "find code related to authentication" in milliseconds — without reading a single file.</p>
+
+    <h3>Why Kiro</h3>
+    <p>KiroGraph is designed around Kiro's architecture:</p>
+    <ul>
+      <li><strong>MCP integration</strong> — Kiro's native MCP support means KiroGraph tools are auto-approved and always available, no manual configuration needed.</li>
+      <li><strong>Hooks system</strong> — Kiro's file event hooks (<code>fileEdited</code>, <code>fileCreated</code>, <code>fileDeleted</code>, <code>agentStop</code>) keep the index fresh automatically with zero overhead during editing. No background watcher process.</li>
+      <li><strong>Steering files</strong> — Kiro's steering mechanism teaches the agent to prefer graph tools over file scanning, always in context with no extra tool calls.</li>
+      <li><strong>CLI agent</strong> — Kiro CLI's agent system allows a dedicated KiroGraph agent with inlined instructions and session-boundary sync hooks.</li>
+    </ul>
+    <p>This tight integration is why Kiro is the primary and fully supported target. The hooks, steering, and agent config are all Kiro-native concepts that make the experience seamless.</p>
+
+    <h3>Scope and other tools</h3>
+    <p>The core of KiroGraph — the graph database, tree-sitter parsing, MCP server, and CLI — is tool-agnostic. Any MCP-capable client can query the same graph. Experimental integrations for Claude Code and Codex are available via <code>kirograph install --target claude|codex</code>, but they lack the automatic sync hooks and steering that make the Kiro experience seamless.</p>
+    <p>Issues and PRs for non-Kiro targets are welcome, but there is no guarantee they will be supported or merged without active help from the contributor. The project's development focus remains on the Kiro integration.</p>
+
     <!-- ── Installation ── -->
     <h2 id="installation">Installation</h2>
 
@@ -93,8 +119,8 @@ sudo npm install -g .</code></pre>
 
     <h3 id="uninstalling">Uninstalling</h3>
     <pre><code># Remove from a project
-kirograph uninit [path]      # removes .kirograph/, hooks, steering file, agent config
-kirograph uninit --force     # skip confirmation
+kirograph uninit [path]      # prompts to remove integration files and .kirograph/ data
+kirograph uninit --force     # remove everything without confirmation
 
 # Remove the CLI globally (npm)
 npm uninstall -g kirograph
@@ -341,7 +367,7 @@ cd kirograph && npm uninstall -g .</code></pre>
     <p><code>kirograph install</code> sets up four things in your Kiro workspace — all coexist so you can switch between IDE and CLI freely. <strong>Kiro is the primary and fully supported target.</strong></p>
 
     <h3 id="mcp-server">MCP Server (<code>.kiro/settings/mcp.json</code>)</h3>
-    <p>Registers the KiroGraph MCP server with all 17 tools auto-approved. Used by both the IDE and the CLI agent.</p>
+    <p>Registers the KiroGraph MCP server with all 18 tools auto-approved. Used by both the IDE and the CLI agent.</p>
     <pre><code>{
   "mcpServers": {
     "kirograph": {

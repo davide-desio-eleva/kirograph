@@ -111,11 +111,14 @@ kirograph --version
 ### Remove from a project
 
 ```bash
-kirograph uninit [path]                  # Remove .kirograph/ and Kiro integration files
-kirograph uninit --target all --force    # Skip confirmation and clean all supported integration files
+kirograph uninit [path]                  # Prompts to remove Kiro integration files and .kirograph/ data separately
+kirograph uninit --force                 # Remove Kiro integration files + .kirograph/ data without confirmation
+kirograph uninit --target all --force    # Remove all integration files (Kiro + Claude + Codex) + .kirograph/ data
 ```
 
-Without `--force`, KiroGraph asks separately whether to remove the selected tool integration files and whether to remove the shared `.kirograph/` data.
+`kirograph uninstall` is an alias for `kirograph uninit`.
+
+Without `--force`, KiroGraph asks separately whether to remove the selected tool integration files and whether to remove the shared `.kirograph/` data. With `--force`, both are removed unconditionally.
 
 This can remove:
 - `.kirograph/` — index database, snapshots, and export directory
@@ -511,8 +514,8 @@ Use `kirograph snapshot save` (CLI) to save a snapshot before a refactor or PR. 
 kirograph install                 # Wire up MCP + hooks + steering in .kiro/
 kirograph init [path]             # Initialize .kirograph/ in a project
 kirograph init --index            # Initialize and index immediately
-kirograph uninit [path]           # Remove .kirograph/, hooks, and steering file
-kirograph uninit --force          # Skip confirmation prompt
+kirograph uninit [path]           # Prompts to remove integration files and .kirograph/ data
+kirograph uninit --force          # Remove everything without confirmation
 ```
 
 ### Indexing

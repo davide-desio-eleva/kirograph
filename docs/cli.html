@@ -58,8 +58,9 @@
     <pre><code>kirograph install                 # Wire up MCP + hooks + steering + CLI agent in .kiro/
 kirograph init [path]             # Initialize .kirograph/ in a project
 kirograph init --index            # Initialize and index immediately
-kirograph uninit [path]           # Remove .kirograph/, hooks, steering, and agent config
-kirograph uninit --force          # Skip confirmation prompt</code></pre>
+kirograph uninit [path]           # Prompts to remove integration files and .kirograph/ data
+kirograph uninit --force          # Remove everything without confirmation</code></pre>
+    <p><code>kirograph uninstall</code> is an alias for <code>kirograph uninit</code>.</p>
 
     <h3 id="cli-indexing">Indexing</h3>
     <pre><code>kirograph index [path]            # Full re-index of the project
