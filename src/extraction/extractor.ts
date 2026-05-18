@@ -479,6 +479,10 @@ function getLanguageSpecificKind(type: string, lang: Language): NodeKind | null 
       if (type === 'method_declaration') return 'method';
       if (type === 'property_declaration') return 'property';
       break;
+    case 'hcl':
+      if (type === 'block') return 'namespace';
+      if (type === 'attribute') return 'variable';
+      break;
   }
   return null;
 }

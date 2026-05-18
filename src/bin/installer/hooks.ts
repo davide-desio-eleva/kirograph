@@ -18,6 +18,7 @@ const FILE_PATTERNS = [
   '**/*.sh', '**/*.bash', '**/*.ml', '**/*.mli',
   '**/*.elm', '**/*.sol', '**/*.vue', '**/*.m',
   '**/*.yaml', '**/*.yml',
+  '**/*.tf', '**/*.tfvars',
 ];
 
 const HOOKS: Array<{ filename: string; hook: object }> = [

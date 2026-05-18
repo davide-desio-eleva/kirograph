@@ -33,6 +33,7 @@ export { playResolver } from './scala';
 export { nuxtResolver, vueResolver } from './vue';
 export { solidityResolver } from './solidity';
 export { sstResolver, cdkResolver, serverlessResolver, samResolver } from './iac';
+export { terraformResolver } from './terraform';
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ import { playResolver } from './scala';
 import { nuxtResolver, vueResolver } from './vue';
 import { solidityResolver } from './solidity';
 import { sstResolver, cdkResolver, serverlessResolver, samResolver } from './iac';
+import { terraformResolver } from './terraform';
 
 const FRAMEWORK_RESOLVERS: FrameworkResolver[] = [
   // PHP
@@ -92,6 +94,7 @@ const FRAMEWORK_RESOLVERS: FrameworkResolver[] = [
   cdkResolver,
   serverlessResolver,
   samResolver,
+  terraformResolver,
 ];
 
 export function getAllFrameworkResolvers(): FrameworkResolver[] {
