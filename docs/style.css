@@ -713,6 +713,23 @@ td code { background: var(--bg-input); border-color: transparent; }
   font-family: 'JetBrains Mono', monospace;
 }
 
+.version-title {
+  display: inline-block;
+  margin-left: 0.6rem;
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--text-bright, var(--text));
+  letter-spacing: -0.01em;
+}
+
+.version-date {
+  display: inline-block;
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 .changelog-content h3 {
   font-size: 0.9rem;
   text-transform: uppercase;

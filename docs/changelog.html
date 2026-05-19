@@ -109,22 +109,32 @@
     let h3Counter = 0;
     // Match any h2 that contains a version number (handles both linked and plain text variants from marked)
     html = html.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, (full, inner) => {
-      // Try to extract version: could be inside <a> tag or in [brackets]
-      let ver = null, date = null;
-      // Case 1: linked — <a href="...">0.12.1</a> - 2026-05-14
-      const linkedMatch = inner.match(/<a[^>]*>([\d.]+)<\/a>\s*[-–]\s*(\d{4}-\d{2}-\d{2})/);
-      if (linkedMatch) { ver = linkedMatch[1]; date = linkedMatch[2]; }
-      // Case 2: plain text — [0.12.1] - 2026-05-14
+      // Try to extract version, date, and optional title
+      let ver = null, date = null, title = null;
+      // Case 1: linked with date and title — <a href="...">0.12.1</a> - 2026-05-14: Title Here
+      const linkedTitleMatch = inner.match(/<a[^>]*>([\d.]+)<\/a>\s*[-–]\s*(\d{4}-\d{2}-\d{2}):\s*(.+)/);
+      if (linkedTitleMatch) { ver = linkedTitleMatch[1]; date = linkedTitleMatch[2]; title = linkedTitleMatch[3].replace(/<[^>]*>/g, '').trim(); }
+      // Case 2: plain text with date and title — [0.12.1] - 2026-05-14: Title Here
+      if (!ver) {
+        const plainTitleMatch = inner.match(/\[([\d.]+)\]\s*[-–]\s*(\d{4}-\d{2}-\d{2}):\s*(.+)/);
+        if (plainTitleMatch) { ver = plainTitleMatch[1]; date = plainTitleMatch[2]; title = plainTitleMatch[3].replace(/<[^>]*>/g, '').trim(); }
+      }
+      // Case 3: linked with date, no title — <a href="...">0.12.1</a> - 2026-05-14
+      if (!ver) {
+        const linkedMatch = inner.match(/<a[^>]*>([\d.]+)<\/a>\s*[-–]\s*(\d{4}-\d{2}-\d{2})/);
+        if (linkedMatch) { ver = linkedMatch[1]; date = linkedMatch[2]; }
+      }
+      // Case 4: plain text with date, no title — [0.12.1] - 2026-05-14
       if (!ver) {
         const plainMatch = inner.match(/\[([\d.]+)\]\s*[-–]\s*(\d{4}-\d{2}-\d{2})/);
         if (plainMatch) { ver = plainMatch[1]; date = plainMatch[2]; }
       }
-      // Case 3: linked without date — <a href="...">0.12.1</a>
+      // Case 5: linked without date — <a href="...">0.12.1</a>
       if (!ver) {
         const linkedNoDate = inner.match(/<a[^>]*>([\d.]+)<\/a>/);
         if (linkedNoDate) { ver = linkedNoDate[1]; }
       }
-      // Case 4: plain without date — [0.12.1]
+      // Case 6: plain without date — [0.12.1]
       if (!ver) {
         const plainNoDate = inner.match(/\[([\d.]+)\]/);
         if (plainNoDate) { ver = plainNoDate[1]; }
@@ -132,7 +142,8 @@
       if (!ver) return full; // not a version heading, leave as-is
       const id = 'v' + slugify(ver);
       let out = `<h2 id="${id}"><span class="version-badge">v${ver}</span>`;
-      if (date) out += ` <span style="color:var(--text-muted);font-size:.85rem;font-weight:400">${date}</span>`;
+      if (title) out += ` <span class="version-title">${title}</span>`;
+      if (date) out += ` <span class="version-date">${date}</span>`;
       return out + '</h2>';
     });
     // h3: "Added" / "Fixed" / etc → colored badge with id
@@ -145,15 +156,18 @@
   }
 
   function buildSidebar(html) {
-    // Extract all version h2 elements with their ids from the enhanced HTML
-    const regex = /<h2 id="([^"]+)"><span class="version-badge">v([^<]+)<\/span>(?:\s*<span[^>]*>(\d{4}-\d{2}-\d{2})<\/span>)?/g;
+    // Extract all version h2 elements with their ids, titles, and dates from the enhanced HTML
+    const regex = /<h2 id="([^"]+)"><span class="version-badge">v([^<]+)<\/span>(?:\s*<span class="version-title">([^<]+)<\/span>)?(?:\s*<span class="version-date">([^<]+)<\/span>)?/g;
     let match;
     while ((match = regex.exec(html)) !== null) {
-      const [, id, version, date] = match;
+      const [, id, version, title, date] = match;
       const link = document.createElement('a');
       link.href = '#' + id;
       link.className = 'sidebar-link';
-      link.innerHTML = `<strong>v${version}</strong>` + (date ? `<br><span style="font-size:0.75rem;color:var(--text-muted)">${date}</span>` : '');
+      let label = `<strong>v${version}</strong>`;
+      if (title) label += `<br><span style="font-size:0.75rem;color:var(--text)">${title}</span>`;
+      if (date) label += `<br><span style="font-size:0.7rem;color:var(--text-muted)">${date}</span>`;
+      link.innerHTML = label;
       sidebarLinks.appendChild(link);
     }
   }
