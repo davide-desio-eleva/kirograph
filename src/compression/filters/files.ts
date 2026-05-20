@@ -106,7 +106,7 @@ function filterFind(raw: string, level: CompressorOptions['level']): FilterResul
       .slice(0, 5)
       .map(([d, f]) => `${d}/ (${f.length})`)
       .join(', ');
-    return { output: `${lines.length} matches — ${summary}`, strategy: 'find:ultra' };
+    return { output: `${lines.length} matches: ${summary}`, strategy: 'find:ultra' };
   }
 
   if (level === 'aggressive') {

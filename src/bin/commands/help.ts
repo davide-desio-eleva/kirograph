@@ -100,7 +100,7 @@ export function printColoredHelp(): void {
       if (isCaveman) {
         // desc starts at: emoji prefix (3 display cols: 🪨 + space) + nameWidth
         const inspiredPad = ' '.repeat(3 + nameWidth);
-        console.log(`${inspiredPad}${c.dim}Inspired by Caveman — original idea by github.com/JuliusBrussee/caveman${c.reset}`);
+        console.log(`${inspiredPad}${c.dim}Inspired by Caveman , original idea by github.com/JuliusBrussee/caveman${c.reset}`);
         console.log();
       }
       if (cmd.opts) {

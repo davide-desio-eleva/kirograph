@@ -54,6 +54,10 @@
     <h2 id="cli-reference" style="border-top: none; margin-top: 0; padding-top: 0;">CLI Reference</h2>
     <p>All commands are available via <code>kirograph</code> or the short alias <code>kg</code>.</p>
 
+    <div class="search-box" style="margin-bottom: 1.5rem;">
+      <input type="text" id="cli-search-input" placeholder="Search commands..." aria-label="Search commands" style="width: 100%; padding: 0.6rem 1rem; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text); font-size: 0.95rem; outline: none;" />
+    </div>
+
     <h3 id="cli-setup">Setup</h3>
     <pre><code>kirograph install                 # Wire up MCP + hooks + steering + CLI agent in .kiro/
 kirograph init [path]             # Initialize .kirograph/ in a project
@@ -121,9 +125,9 @@ kirograph caveman         # show current mode</code></pre>
 
     <h3 id="cli-compression">Output Compression</h3>
     <pre><code>kirograph compression off        # disable hook (tool still available)
-kirograph compression normal     # balanced — removes noise, keeps structure
-kirograph compression aggressive # more compact — groups by category
-kirograph compression ultra      # maximum compression — counts only
+kirograph compression normal     # balanced: removes noise, keeps structure
+kirograph compression aggressive # more compact: groups by category
+kirograph compression ultra      # maximum compression: counts only
 kirograph compression            # show current level</code></pre>
 
     <h3 id="cli-gain">Token Savings</h3>
@@ -217,6 +221,7 @@ kirograph export --output ./report    # Custom output directory</code></pre>
 </footer>
 
 <script>
+  // Scroll-spy for sidebar
   const headings = document.querySelectorAll('h3[id]');
   const links = document.querySelectorAll('.docs-sidebar-right .sidebar-link');
 
@@ -232,6 +237,31 @@ kirograph export --output ./report    # Custom output directory</code></pre>
   }, { rootMargin: '-60px 0px -70% 0px', threshold: 0 });
 
   headings.forEach(h => observer.observe(h));
+
+  // Search filter for CLI sections
+  const searchInput = document.getElementById('cli-search-input');
+  const sections = document.querySelectorAll('h3[id]');
+
+  searchInput.addEventListener('input', () => {
+    const query = searchInput.value.toLowerCase().trim();
+    sections.forEach(h3 => {
+      // Collect all elements until the next h3
+      const elements = [h3];
+      let sibling = h3.nextElementSibling;
+      while (sibling && sibling.tagName !== 'H3') {
+        elements.push(sibling);
+        sibling = sibling.nextElementSibling;
+      }
+      // Check if the section title or code content matches
+      const text = elements.map(el => el.textContent).join(' ').toLowerCase();
+      const match = !query || text.includes(query);
+      elements.forEach(el => { el.style.display = match ? '' : 'none'; });
+    });
+  });
+
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { searchInput.value = ''; searchInput.dispatchEvent(new Event('input')); }
+  });
 </script>
 
 </body>

@@ -70,6 +70,8 @@
       <div class="sidebar-heading">Advanced</div>
       <a href="#caveman-mode" class="sidebar-link">Caveman Mode</a>
       <a href="#output-compression" class="sidebar-link">Output Compression</a>
+      <a href="#compression-caveman" class="sidebar-link" style="padding-left:2rem">Coexistence with Caveman</a>
+      <a href="#savings-heuristics" class="sidebar-link">Savings Heuristics</a>
       <a href="#credits" class="sidebar-link">Credits</a>
     </div>
   </aside>
@@ -453,13 +455,13 @@ cd kirograph && npm uninstall -g .</code></pre>
           <tr><td><code>embeddingModel</code></td><td>string</td><td><code>"nomic-ai/nomic-embed-text-v1.5"</code></td><td>HuggingFace model ID</td></tr>
           <tr><td><code>embeddingDim</code></td><td>number</td><td><code>768</code></td><td>Embedding dimension (auto-corrected on mismatch)</td></tr>
           <tr><td><code>enableArchitecture</code></td><td>boolean</td><td><code>false</code></td><td>Enable architecture analysis layer</td></tr>
-          <tr><td><code>architectureLayers</code></td><td>object</td><td>—</td><td>Override layer glob patterns</td></tr>
+          <tr><td><code>architectureLayers</code></td><td>object</td><td>-</td><td>Override layer glob patterns</td></tr>
           <tr><td><code>cavemanMode</code></td><td>string</td><td><code>"off"</code></td><td>Communication compression: <code>off</code>, <code>lite</code>, <code>full</code>, <code>ultra</code></td></tr>
           <tr><td><code>compressionLevel</code></td><td>string</td><td><code>"normal"</code></td><td>Output compression level: <code>off</code>, <code>normal</code>, <code>aggressive</code>, <code>ultra</code></td></tr>
           <tr><td><code>syncWarningThreshold</code></td><td>number</td><td><code>10</code></td><td>Pending-file count above which <code>kirograph_status</code> warns. Set <code>0</code> to disable.</td></tr>
           <tr><td><code>extractDocstrings</code></td><td>boolean</td><td><code>true</code></td><td>Extract docstrings/comments during indexing</td></tr>
           <tr><td><code>trackCallSites</code></td><td>boolean</td><td><code>true</code></td><td>Track precise call-site locations</td></tr>
-          <tr><td><code>exclude</code></td><td>string[]</td><td>—</td><td>Glob patterns to exclude from indexing</td></tr>
+          <tr><td><code>exclude</code></td><td>string[]</td><td>-</td><td>Glob patterns to exclude from indexing</td></tr>
         </tbody>
       </table>
     </div>
@@ -501,15 +503,15 @@ kirograph caveman         # show current mode</code></pre>
 
     <p>KiroGraph includes a built-in output compression engine inspired by <a href="https://github.com/rtk-ai/rtk" target="_blank" rel="noopener">rtk</a>. The <code>kirograph_exec</code> MCP tool runs shell commands and returns token-optimized output, saving 60-90% of tokens on verbose commands.</p>
 
-    <p>Supported command families: <strong>git</strong> (status, log, diff, push, pull, commit), <strong>test runners</strong> (jest, vitest, pytest, cargo test, go test, rspec), <strong>linters/build</strong> (eslint, tsc, ruff, clippy, cargo build, prettier, biome), <strong>file listings</strong> (ls, find, tree), <strong>docker/k8s</strong> (docker ps, images, logs, kubectl), <strong>package managers</strong> (npm, pip, bundle).</p>
+    <p>Supported command families: <strong>git</strong> (status, log, diff, push, pull, commit, add, fetch, branch), <strong>GitHub CLI</strong> (gh pr list/view, gh issue list, gh run list), <strong>test runners</strong> (jest, vitest, pytest, cargo test, go test, rspec, minitest, playwright), <strong>linters/build</strong> (eslint, tsc, ruff, clippy, cargo build, prettier, biome, golangci-lint, rubocop, next build), <strong>file listings</strong> (ls, find, tree), <strong>search</strong> (grep, rg, grouped by file), <strong>diff</strong> (condensed context), <strong>docker/k8s</strong> (docker ps, images, logs, compose ps, kubectl pods, logs, services), <strong>package managers</strong> (npm, pip, bundle, prisma generate), <strong>AWS</strong> (sts, ec2, lambda, logs, cloudformation, dynamodb, iam, s3, ecs, sqs, sns), <strong>network</strong> (curl, wget, strips progress).</p>
 
     <div class="table-wrap">
       <table>
         <thead><tr><th>Level</th><th>Style</th></tr></thead>
         <tbody>
-          <tr><td><code>normal</code></td><td>Balanced — removes noise, keeps structure (default)</td></tr>
-          <tr><td><code>aggressive</code></td><td>More compact — groups by category, limits output</td></tr>
-          <tr><td><code>ultra</code></td><td>Maximum compression — counts and summaries only</td></tr>
+          <tr><td><code>normal</code></td><td>Balanced: removes noise, keeps structure (default)</td></tr>
+          <tr><td><code>aggressive</code></td><td>More compact: groups by category, limits output</td></tr>
+          <tr><td><code>ultra</code></td><td>Maximum compression: counts and summaries only</td></tr>
         </tbody>
       </table>
     </div>
@@ -529,6 +531,39 @@ kirograph gain --graph           # ASCII graph (last 30 days)</code></pre>
     <div class="callout">
       Configure in <code>.kirograph/config.json</code>: <code>"compressionLevel": "normal"</code> (default). Set to <code>"off"</code> to disable the hook and steering section. The <code>kirograph_exec</code> tool remains available regardless.
     </div>
+
+    <h3 id="compression-caveman">Coexistence with Caveman Mode</h3>
+    <p>Compression and caveman mode are complementary, they compress different things:</p>
+    <ul>
+      <li><strong>Caveman mode</strong> compresses the agent's <em>prose responses</em> (the text it writes around tool results). It never touches code or tool output.</li>
+      <li><strong>Output compression</strong> compresses <em>command output</em> (the raw data coming back from shell commands). It never touches how the agent communicates.</li>
+    </ul>
+    <p>They stack: with both enabled, shell commands return 60-90% fewer tokens <em>and</em> the agent's explanations around those results are also shorter. Pick both independently during <code>kirograph install</code>. The "ultra + ultra" combo gives maximum token savings on both fronts.</p>
+
+    <h2 id="savings-heuristics">Savings Heuristics</h2>
+    <p><code>kirograph gain</code> tracks two types of savings: compression (measured exactly) and graph tools (estimated via heuristics). For graph tools, the system estimates what the agent <em>would have spent</em> doing the same work without KiroGraph:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>What the agent would do manually</th><th>Estimated naive cost</th></tr></thead>
+        <tbody>
+          <tr><td><code>kirograph_context</code></td><td>Read 5-10 files to orient on a task</td><td>~7,500-15,000 tokens</td></tr>
+          <tr><td><code>kirograph_search</code></td><td>Run grep + read top matches</td><td>~3,300 tokens</td></tr>
+          <tr><td><code>kirograph_callers</code></td><td>Grep for symbol + read each calling file</td><td>~8,300 tokens</td></tr>
+          <tr><td><code>kirograph_callees</code></td><td>Read function body + grep for each call</td><td>~3,900 tokens</td></tr>
+          <tr><td><code>kirograph_impact</code></td><td>Recursive grep + read per depth level</td><td>~6,900 &times; depth</td></tr>
+          <tr><td><code>kirograph_node</code></td><td>Read the full file containing the symbol</td><td>~1,500 tokens</td></tr>
+          <tr><td><code>kirograph_files</code></td><td>Run <code>find</code> or <code>ls -R</code></td><td>~2,000 tokens</td></tr>
+          <tr><td><code>kirograph_path</code></td><td>Trace connections (multiple grep + read)</td><td>~7,700 tokens</td></tr>
+          <tr><td><code>kirograph_type_hierarchy</code></td><td>Grep for extends/implements + read each file</td><td>~5,400 tokens</td></tr>
+          <tr><td><code>kirograph_dead_code</code></td><td>Not feasible manually (read every file)</td><td>5&times; output, min 15,000</td></tr>
+          <tr><td><code>kirograph_hotspots</code></td><td>Not feasible manually (count edges for every symbol)</td><td>5&times; output, min 15,000</td></tr>
+          <tr><td><code>kirograph_architecture</code></td><td>Not feasible manually</td><td>4&times; output, min 7,500</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Constants: 1,500 tokens per average source file (~200 lines), 800 tokens per grep result set, 2,000 tokens per directory listing. These are conservative estimates; in practice agents often read more files, retry failed searches, and explore dead ends.</p>
 
     <!-- ── Credits ── -->
     <h2 id="credits">Credits</h2>

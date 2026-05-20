@@ -80,8 +80,8 @@ export function register(program: Command): void {
       const stats = tracker.getStats(period);
 
       if (stats.totalCommands === 0) {
-        console.log('  No compressed commands recorded yet.');
-        console.log('  Use kirograph_exec (MCP tool) to run commands with compression.');
+        console.log('  No savings recorded yet.');
+        console.log('  Use kirograph tools and kirograph exec . Savings are tracked automatically.');
         return;
       }
 
@@ -91,16 +91,28 @@ export function register(program: Command): void {
       }
 
       console.log(`\n  Token Savings (${period}):`);
-      console.log(`  ${'─'.repeat(40)}`);
-      console.log(`  Commands executed:   ${stats.totalCommands}`);
-      console.log(`  Original tokens:     ${stats.totalOriginal.toLocaleString()}`);
-      console.log(`  Compressed tokens:   ${stats.totalCompressed.toLocaleString()}`);
-      console.log(`  Tokens saved:        ${stats.totalSaved.toLocaleString()} (${stats.savingsPercent}%)`);
+      console.log(`  ${'─'.repeat(50)}`);
+      console.log(`  Total calls:              ${stats.totalCommands}`);
+      console.log(`  Tokens without KiroGraph: ~${stats.totalOriginal.toLocaleString()}`);
+      console.log(`  Tokens with KiroGraph:    ~${stats.totalCompressed.toLocaleString()}`);
+      console.log(`  Saved:                    ~${stats.totalSaved.toLocaleString()} (${stats.savingsPercent}%)`);
+
+      // Source breakdown
+      if (stats.bySource.exec.count > 0 || stats.bySource.graph.count > 0) {
+        console.log(`\n  By source:`);
+        if (stats.bySource.graph.count > 0) {
+          console.log(`    📊 Graph tools:  ${String(stats.bySource.graph.count).padStart(4)} calls  ~${stats.bySource.graph.saved.toLocaleString()} tokens saved (vs file reads/grep)`);
+        }
+        if (stats.bySource.exec.count > 0) {
+          console.log(`    ⚡ Compression:  ${String(stats.bySource.exec.count).padStart(4)} calls  ~${stats.bySource.exec.saved.toLocaleString()} tokens saved (vs raw output)`);
+        }
+      }
 
       if (Object.keys(stats.byFamily).length > 0) {
-        console.log(`\n  By command family:`);
+        console.log(`\n  By family:`);
         for (const [family, data] of Object.entries(stats.byFamily)) {
-          console.log(`    ${family.padEnd(15)} ${String(data.count).padStart(4)} calls  ${data.savings}% avg savings`);
+          const icon = family.startsWith('graph') ? '📊' : '⚡';
+          console.log(`    ${icon} ${family.padEnd(20)} ${String(data.count).padStart(4)} calls  ${data.savings}% avg savings`);
         }
       }
 

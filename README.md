@@ -313,7 +313,7 @@ Quick symbol search by name. Returns locations only, no code.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `query` | string | required | Symbol name or partial name |
-| `kind` | string | — | Filter: `function`, `method`, `class`, `interface`, `type_alias`, `variable`, `route`, `component` |
+| `kind` | string | - | Filter: `function`, `method`, `class`, `interface`, `type_alias`, `variable`, `route`, `component` |
 | `limit` | number | 10 | Max results (1–100) |
 | `projectPath` | string | cwd | Project root path |
 
@@ -420,9 +420,9 @@ List the indexed file structure with filtering and format options.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `filterPath` | string | — | Filter by directory prefix (e.g., `src/`) |
-| `pattern` | string | — | Filter by glob pattern (e.g., `**/*.ts`) |
-| `maxDepth` | number | — | Limit tree depth |
+| `filterPath` | string | - | Filter by directory prefix (e.g., `src/`) |
+| `pattern` | string | - | Filter by glob pattern (e.g., `**/*.ts`) |
+| `maxDepth` | number | - | Limit tree depth |
 | `format` | string | `tree` | `tree`, `flat`, or `grouped` |
 | `includeMetadata` | boolean | true | Include language and symbol counts |
 | `projectPath` | string | cwd | Project root path |
@@ -457,7 +457,7 @@ Get coupling metrics for all packages or a specific one.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `packageId` | string | — | Package ID (e.g. `pkg:npm:src/auth`). Omit for all packages. |
+| `packageId` | string | - | Package ID (e.g. `pkg:npm:src/auth`). Omit for all packages. |
 | `projectPath` | string | cwd | Project root path |
 
 Returns per-package: **Ca** (afferent: how many other packages depend on this one), **Ce** (efferent: how many packages this one depends on), and **instability** (`Ce / (Ca + Ce)`, 0 = maximally stable, 1 = maximally unstable). When `packageId` is given, also returns the full list of incoming and outgoing package dependencies.
@@ -518,7 +518,7 @@ Run a shell command and return token-optimized output. Automatically filters noi
 | `timeout` | number | 60 | Timeout in seconds |
 | `projectPath` | string | cwd | Project root path |
 
-**How it works:** Executes the command, detects the command family (git, test, lint, etc.), applies the appropriate filter strategy, and returns compressed output with a savings footer. Error output is always preserved. Does not require KiroGraph to be initialized — works standalone.
+**How it works:** Executes the command, detects the command family (git, test, lint, etc.), applies the appropriate filter strategy, and returns compressed output with a savings footer. Error output is always preserved. Does not require KiroGraph to be initialized, works standalone.
 
 ### `kirograph_gain`
 
@@ -667,20 +667,105 @@ Supported command families:
 
 | Family | Commands | Typical savings |
 |--------|----------|----------------|
-| Git | status, log, diff, push, pull, commit, add, fetch, branch | 75-96% |
-| Test runners | jest, vitest, pytest, cargo test, go test, rspec, minitest | 80-90% |
-| Linters/build | eslint, tsc, ruff, clippy, cargo build, prettier, biome, next build | 70-85% |
+| Git | status, log, diff, push, pull, commit, add, fetch, branch, stash | 75-96% |
+| GitHub CLI | gh pr list/view, gh issue list, gh run list/view | 60-80% |
+| Test runners | jest, vitest, pytest, cargo test, go test, rspec, minitest, playwright | 80-90% |
+| Linters/build | eslint, tsc, ruff, clippy, cargo build, prettier, biome, golangci-lint, rubocop, next build | 70-85% |
 | File listings | ls, find, tree | 60-80% |
-| Docker/k8s | docker ps, images, logs, kubectl pods, logs, services | 70-80% |
-| Package managers | npm install/list, pip list/install, bundle install | 75-92% |
+| Search | grep, rg/ripgrep (grouped by file) | 60-80% |
+| Diff | diff file1 file2 (condensed context) | 50-70% |
+| Docker/k8s | docker ps, images, logs, compose ps, kubectl pods, logs, services | 70-80% |
+| Package managers | npm/pnpm install/list, pip list/install/outdated, bundle install/list, prisma generate | 75-92% |
+| AWS | sts, ec2, lambda, logs, cloudformation, dynamodb, iam, s3, ecs, sqs, sns | 60-88% |
+| Network | curl (strip progress/headers), wget (strip progress bars) | 50-70% |
+
+**Supported commands (full list):**
+
+```
+# Git
+kirograph exec git status                  # Compact status
+kirograph exec git log -n 10               # One-line commits
+kirograph exec git diff                    # Condensed diff
+kirograph exec git add .                   # → "ok"
+kirograph exec git commit -m "msg"         # → "ok abc1234"
+kirograph exec git push                    # → "ok main → origin/main"
+kirograph exec git pull                    # → "ok 3 files +10 -2"
+
+# GitHub CLI
+kirograph exec gh pr list                  # Compact PR listing
+kirograph exec gh pr view 42               # PR details + checks
+kirograph exec gh issue list               # Compact issue listing
+kirograph exec gh run list                 # Workflow run status
+
+# Test Runners
+kirograph exec jest                        # Failures only
+kirograph exec vitest run                  # Failures only
+kirograph exec playwright test             # E2E results (failures only)
+kirograph exec pytest                      # Python tests (-90%)
+kirograph exec go test ./...               # Go tests (-90%)
+kirograph exec cargo test                  # Cargo tests (-90%)
+kirograph exec rake test                   # Ruby minitest (-90%)
+kirograph exec rspec                       # RSpec tests (-60%+)
+
+# Build & Lint
+kirograph exec eslint .                    # Grouped by rule/file
+kirograph exec tsc --noEmit                # TypeScript errors grouped by file
+kirograph exec next build                  # Next.js build compact
+kirograph exec prettier --check .          # Files needing formatting
+kirograph exec cargo build                 # Cargo build (-80%)
+kirograph exec cargo clippy                # Cargo clippy (-80%)
+kirograph exec ruff check                  # Python linting (-80%)
+kirograph exec golangci-lint run           # Go linting (-85%)
+kirograph exec rubocop                     # Ruby linting (-60%+)
+kirograph exec biome check .               # Biome linting
+
+# Files & Search
+kirograph exec ls -la src/                 # Structured directory listing
+kirograph exec find . -name "*.ts"         # Grouped by directory
+kirograph exec tree                        # Truncated with summary
+kirograph exec grep -r "pattern" .         # Grouped search results
+kirograph exec rg "pattern"                # Grouped search results
+kirograph exec diff file1 file2            # Condensed diff
+
+# Package Managers
+kirograph exec npm install                 # → "ok +5 packages"
+kirograph exec npm list                    # Compact dependency tree
+kirograph exec pip list                    # Python packages
+kirograph exec pip install -r req.txt      # Strip progress bars
+kirograph exec bundle install              # Strip "Using" lines
+kirograph exec prisma generate             # Strip ASCII art
+
+# AWS
+kirograph exec aws sts get-caller-identity # One-line identity
+kirograph exec aws ec2 describe-instances  # Compact instance list
+kirograph exec aws lambda list-functions   # Name/runtime/memory
+kirograph exec aws logs get-log-events ... # Timestamped messages only
+kirograph exec aws cloudformation describe-stack-events ...  # Failures first
+kirograph exec aws dynamodb scan ...       # Unwraps type annotations
+kirograph exec aws iam list-roles          # Strips policy documents
+kirograph exec aws s3 ls s3://bucket       # Truncated listing
+
+# Containers
+kirograph exec docker ps                   # Compact container list
+kirograph exec docker images               # Compact image list
+kirograph exec docker logs container       # Deduplicated logs
+kirograph exec docker compose ps           # Compose services
+kirograph exec kubectl get pods            # Compact pod list
+kirograph exec kubectl logs pod            # Deduplicated logs
+kirograph exec kubectl get svc             # Compact service list
+
+# Network
+kirograph exec curl https://api.example.com/data  # Strip progress/headers
+kirograph exec wget https://example.com/file.zip  # Strip progress bars
+```
 
 Three compression levels:
 
 | Level | Style |
 |-------|-------|
-| `normal` | Balanced — removes noise, keeps structure *(default)* |
-| `aggressive` | More compact — groups by category, limits output |
-| `ultra` | Maximum compression — counts and summaries only |
+| `normal` | Balanced: removes noise, keeps structure *(default)* |
+| `aggressive` | More compact: groups by category, limits output |
+| `ultra` | Maximum compression: counts and summaries only |
 
 ```bash
 kirograph compression normal     # balanced (default)
@@ -705,6 +790,29 @@ kirograph gain --json        # JSON export
 ```
 
 The `kirograph_gain` MCP tool exposes the same stats to the agent.
+
+### Savings Heuristics
+
+`kirograph gain` tracks two types of savings: compression (measured exactly) and graph tools (estimated via heuristics). For graph tools, the system estimates what the agent *would have spent* doing the same work without KiroGraph, based on typical agent behavior:
+
+| Tool | What the agent would do manually | Estimated naive cost |
+|------|----------------------------------|---------------------|
+| `kirograph_context` | Read 5-10 files to orient on a task | ~7,500-15,000 tokens |
+| `kirograph_search` | Run grep + read top matches | ~3,300 tokens |
+| `kirograph_callers` | Grep for symbol + read each calling file | ~8,300 tokens |
+| `kirograph_callees` | Read function body + grep for each call | ~3,900 tokens |
+| `kirograph_impact` | Recursive grep + read per depth level | ~6,900 × depth |
+| `kirograph_node` | Read the full file containing the symbol | ~1,500 tokens |
+| `kirograph_files` | Run `find` or `ls -R` | ~2,000 tokens |
+| `kirograph_path` | Trace connections manually (multiple grep + read) | ~7,700 tokens |
+| `kirograph_type_hierarchy` | Grep for extends/implements + read each file | ~5,400 tokens |
+| `kirograph_dead_code` | Not feasible manually (read every file) | 5× output, min 15,000 |
+| `kirograph_hotspots` | Not feasible manually (count edges for every symbol) | 5× output, min 15,000 |
+| `kirograph_architecture` | Not feasible manually | 4× output, min 7,500 |
+
+Constants used: 1,500 tokens per average source file (~200 lines), 800 tokens per grep result set, 2,000 tokens per directory listing. These are conservative estimates; in practice agents often read more files, retry failed searches, and explore dead ends.
+
+**Coexistence with Caveman Mode:** Compression and caveman mode are complementary, they compress different things. Caveman mode compresses the agent's *prose responses* (the text it writes around tool results); it never touches code or tool output. Output compression compresses *command output* (the raw data coming back from shell commands); it never touches how the agent communicates. They stack: with both enabled, shell commands return 60-90% fewer tokens *and* the agent's explanations around those results are also shorter. Pick both independently during `kirograph install`. The "ultra + ultra" combo gives maximum token savings on both fronts.
 
 ### Architecture Analysis *(requires `enableArchitecture: true`)*
 
@@ -936,7 +1044,7 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `semanticEngine` | string | `cosine` | Search engine: `cosine`, `sqlite-vec`, `orama`, `pglite`, `lancedb`, `qdrant`, or `typesense` |
 | `useVecIndex` | boolean | `false` | Deprecated alias for `semanticEngine: "sqlite-vec"` |
 | `enableArchitecture` | boolean | `false` | Enable architecture analysis (package graph + layer detection, opt-in) |
-| `architectureLayers` | object | — | Custom layer definitions: `{ "layerName": ["glob/**"] }` |
+| `architectureLayers` | object | - | Custom layer definitions: `{ "layerName": ["glob/**"] }` |
 | `minLogLevel` | string | `warn` | Log level: `debug`, `info`, `warn`, `error` |
 | `fuzzyResolutionThreshold` | number | `0.5` | Name matching threshold for cross-file resolution (0.0–1.0) |
 | `cavemanMode` | string | `off` | Agent communication style: `off`, `lite`, `full`, `ultra` |
@@ -968,7 +1076,7 @@ Run `kirograph install` to be guided through model and engine selection interact
 | `onnx-community/embeddinggemma-300m-ONNX` | 768 | ~300MB | Google Gemma-based. Multilingual, 2048-token context window. |
 | `Xenova/all-MiniLM-L6-v2` | 384 | ~23MB | Lightweight, fast. Lower accuracy. |
 | `BAAI/bge-base-en-v1.5` | 768 | ~110MB | Strong general-purpose alternative to nomic. |
-| Custom | any | — | Any HuggingFace `feature-extraction` model. Provide ID + output dimension. |
+| Custom | any | - | Any HuggingFace `feature-extraction` model. Provide ID + output dimension. |
 
 The embedding dimension is stored in `embeddingDim` in `.kirograph/config.json` and used to initialise all vector engines correctly. Switching models requires a full re-index (`kirograph index --force`).
 
@@ -1002,7 +1110,7 @@ The graph store (`kirograph.db`) always holds nodes, edges, files, and all struc
 
 | Engine | Search type | Extra deps | Native? | Best for |
 |--------|-------------|------------|---------|----------|
-| `cosine` *(default)* | Exact cosine, linear scan | none | — | Small / medium projects, zero setup |
+| `cosine` *(default)* | Exact cosine, linear scan | none | - | Small / medium projects, zero setup |
 | `sqlite-vec` | ANN (approximate), sub-linear | `better-sqlite3`, `sqlite-vec` | yes | Large codebases, fast ANN search |
 | `orama` | Hybrid (full-text + vector) | `@orama/orama`, `@orama/plugin-data-persistence` | no (pure JS) | Best result quality, no native deps |
 | `pglite` | Hybrid (full-text + vector), exact | `@electric-sql/pglite` | no (pure WASM) | Exact results, no native deps, PostgreSQL semantics |

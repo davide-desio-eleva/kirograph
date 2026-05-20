@@ -69,11 +69,11 @@ const HOOKS: Array<{ filename: string; hook: object }> = [
     hook: {
       name: 'KiroGraph Compression Hint',
       version: '1.0.0',
-      description: 'Remind the agent to use kirograph_exec for shell commands that benefit from token compression (git, test, lint, build, docker).',
+      description: 'Remind the agent to use kirograph_exec for shell commands that benefit from token compression (git, gh, test, lint, build, docker, aws, grep).',
       when: { type: 'preToolUse', toolTypes: ['shell'] },
       then: {
         type: 'askAgent',
-        prompt: 'If this shell command is a git operation, test runner, linter, build tool, or file listing, consider using the kirograph_exec MCP tool instead for 60-90% token savings. The tool compresses output automatically while preserving error details.',
+        prompt: 'If this shell command is a git operation, GitHub CLI, test runner, linter, build tool, file listing, grep/rg, docker/kubectl, AWS CLI, or package manager command, consider using the kirograph_exec MCP tool instead for 60-90% token savings. The tool compresses output automatically while preserving error details.',
       },
     },
   },

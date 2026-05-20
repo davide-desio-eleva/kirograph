@@ -15,9 +15,9 @@ type CompressionLevel = KiroGraphConfig['compressionLevel'];
 
 const LEVELS: Array<{ name: string; desc: string }> = [
   { name: 'off',        desc: 'no compression hook or steering (tool still available)' },
-  { name: 'normal',     desc: 'balanced — removes noise, keeps structure' },
-  { name: 'aggressive', desc: 'more compact — groups by category, limits output' },
-  { name: 'ultra',      desc: 'maximum compression — counts and summaries only' },
+  { name: 'normal',     desc: 'balanced: removes noise, keeps structure' },
+  { name: 'aggressive', desc: 'more compact: groups by category, limits output' },
+  { name: 'ultra',      desc: 'maximum compression: counts and summaries only' },
 ];
 
 export function register(program: Command): void {

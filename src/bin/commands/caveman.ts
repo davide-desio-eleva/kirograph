@@ -114,7 +114,7 @@ export function register(program: Command): void {
 
       console.log();
       if (normalized === 'off') {
-        console.log(`  ${green}✓${reset} Caveman mode ${violet}${bold}off${reset}${dim} — agent will respond normally from next session.${reset}`);
+        console.log(`  ${green}✓${reset} Caveman mode ${violet}${bold}off${reset}${dim} . Agent will respond normally from next session.${reset}`);
         console.log(joke());
       } else {
         console.log(`  ${green}✓${reset} Caveman mode set to ${violet}${bold}${normalized}${reset}`);

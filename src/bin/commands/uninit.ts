@@ -121,7 +121,7 @@ export function register(program: Command): void {
 
   program
     .command('uninstall [projectPath]')
-    .description('Alias for uninit — remove KiroGraph from a project')
+    .description('Alias for uninit. Remove KiroGraph from a project')
     .option('--force', 'Skip confirmation')
     .option('--target <target>', 'Integration target to clean up: kiro, claude, codex, or all', 'kiro')
     .action(runUninit);

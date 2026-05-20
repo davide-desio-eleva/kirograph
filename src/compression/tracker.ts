@@ -22,7 +22,12 @@ export interface GainStats {
   totalSaved: number;
   savingsPercent: number;
   byFamily: Record<string, { count: number; savings: number }>;
-  recentCommands: Array<{ command: string; savings: number; timestamp: number }>;
+  recentCommands: Array<{ command: string; savings: number; timestamp: number; source?: string }>;
+  /** Breakdown by source type */
+  bySource: {
+    exec: { count: number; saved: number };
+    graph: { count: number; saved: number };
+  };
 }
 
 export class TokenTracker {
@@ -53,7 +58,7 @@ export class TokenTracker {
   /**
    * Record a compression result.
    */
-  record(command: string, originalTokens: number, compressedTokens: number, strategy: string): void {
+  record(command: string, originalTokens: number, compressedTokens: number, strategy: string, source: 'exec' | 'graph' = 'exec'): void {
     const record: TokenSavingsRecord = {
       timestamp: Date.now(),
       command: command.slice(0, 200), // Truncate long commands
@@ -61,6 +66,7 @@ export class TokenTracker {
       compressedTokens,
       strategy,
       sessionId: this.sessionId,
+      source,
     };
 
     try {
@@ -69,6 +75,16 @@ export class TokenTracker {
     } catch {
       // Non-critical — don't crash on tracking failure
     }
+  }
+
+  /**
+   * Record a graph tool saving.
+   * @param toolName - The MCP tool that was called
+   * @param outputTokens - Actual tokens returned by the tool
+   * @param naiveCost - Estimated tokens the agent would have used without the tool
+   */
+  recordGraphSaving(toolName: string, outputTokens: number, naiveCost: number): void {
+    this.record(toolName, naiveCost, outputTokens, `graph:${toolName}`, 'graph');
   }
 
   /**
@@ -86,12 +102,14 @@ export class TokenTracker {
         savingsPercent: 0,
         byFamily: {},
         recentCommands: [],
+        bySource: { exec: { count: 0, saved: 0 }, graph: { count: 0, saved: 0 } },
       };
     }
 
     let totalOriginal = 0;
     let totalCompressed = 0;
     const byFamily = new Map<string, { count: number; totalOriginal: number; totalCompressed: number }>();
+    const bySource = { exec: { count: 0, saved: 0 }, graph: { count: 0, saved: 0 } };
 
     for (const r of records) {
       totalOriginal += r.originalTokens;
@@ -103,6 +121,10 @@ export class TokenTracker {
       existing.totalOriginal += r.originalTokens;
       existing.totalCompressed += r.compressedTokens;
       byFamily.set(family, existing);
+
+      const source = r.source || 'exec';
+      bySource[source].count++;
+      bySource[source].saved += r.originalTokens - r.compressedTokens;
     }
 
     const totalSaved = totalOriginal - totalCompressed;
@@ -124,6 +146,7 @@ export class TokenTracker {
         ? Math.round(((r.originalTokens - r.compressedTokens) / r.originalTokens) * 100)
         : 0,
       timestamp: r.timestamp,
+      source: r.source,
     }));
 
     return {
@@ -134,6 +157,7 @@ export class TokenTracker {
       savingsPercent,
       byFamily: byFamilyObj,
       recentCommands,
+      bySource,
     };
   }
 

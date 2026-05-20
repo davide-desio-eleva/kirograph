@@ -317,7 +317,7 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: 'kirograph_gain',
-    description: 'Show token savings statistics from compressed command outputs via kirograph_exec.',
+    description: 'Show token savings statistics — both from graph tools (vs manual file reads/grep) and from kirograph_exec output compression.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -369,7 +369,24 @@ export class ToolHandler {
   async handle(toolName: string, args: Record<string, unknown>): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
     try {
       const text = await this.dispatch(toolName, args);
-      return { content: [{ type: 'text', text: truncate(text) }] };
+      const truncated = truncate(text);
+
+      // Track graph tool savings (skip exec/gain — they track themselves)
+      if (toolName !== 'kirograph_exec' && toolName !== 'kirograph_gain') {
+        try {
+          const projectRoot = (args.projectPath as string) || this.defaultCg?.getProjectRoot() || process.cwd();
+          const { estimateNaiveCost } = await import('../compression/naive-cost');
+          const { estimateTokens } = await import('../compression/index');
+          const outputTokens = estimateTokens(truncated);
+          const naiveCost = estimateNaiveCost(toolName, outputTokens, args);
+          if (naiveCost !== null && naiveCost > outputTokens) {
+            const tracker = new TokenTracker(projectRoot);
+            tracker.recordGraphSaving(toolName, outputTokens, naiveCost);
+          }
+        } catch { /* non-critical */ }
+      }
+
+      return { content: [{ type: 'text', text: truncated }] };
     } catch (err) {
       logError('MCP tool error', { tool: toolName, error: err });
       const message = err instanceof Error ? err.message : String(err);
@@ -436,27 +453,40 @@ export class ToolHandler {
       const stats = tracker.getStats(period as 'session' | 'today' | 'week' | 'all');
 
       if (stats.totalCommands === 0) {
-        return 'No compressed commands recorded yet. Use kirograph_exec to run commands with compression.';
+        return 'No savings recorded yet. Use kirograph tools and kirograph_exec — savings are tracked automatically.';
       }
 
       const lines = [
         `Token Savings (${period}):`,
-        `  Commands: ${stats.totalCommands}`,
-        `  Original tokens: ${stats.totalOriginal.toLocaleString()}`,
-        `  Compressed tokens: ${stats.totalCompressed.toLocaleString()}`,
+        `  Total calls: ${stats.totalCommands}`,
+        `  Tokens without KiroGraph: ~${stats.totalOriginal.toLocaleString()}`,
+        `  Tokens with KiroGraph:    ~${stats.totalCompressed.toLocaleString()}`,
         `  Saved: ${stats.totalSaved.toLocaleString()} tokens (${stats.savingsPercent}%)`,
-        '',
-        `Top command families:`,
       ];
 
-      for (const [family, data] of Object.entries(stats.byFamily).slice(0, 5)) {
-        lines.push(`  ${family}: ${data.count} calls, ${data.savings}% avg savings`);
+      // Source breakdown
+      if (stats.bySource.exec.count > 0 || stats.bySource.graph.count > 0) {
+        lines.push('', 'By source:');
+        if (stats.bySource.graph.count > 0) {
+          lines.push(`  Graph tools: ${stats.bySource.graph.count} calls, ~${stats.bySource.graph.saved.toLocaleString()} tokens saved (vs file reads/grep)`);
+        }
+        if (stats.bySource.exec.count > 0) {
+          lines.push(`  Compression: ${stats.bySource.exec.count} calls, ~${stats.bySource.exec.saved.toLocaleString()} tokens saved (vs raw output)`);
+        }
+      }
+
+      if (Object.keys(stats.byFamily).length > 0) {
+        lines.push('', 'Top families:');
+        for (const [family, data] of Object.entries(stats.byFamily).slice(0, 7)) {
+          lines.push(`  ${family}: ${data.count} calls, ${data.savings}% avg savings`);
+        }
       }
 
       if (stats.recentCommands.length > 0) {
         lines.push('', 'Recent:');
         for (const cmd of stats.recentCommands.slice(0, 5)) {
-          lines.push(`  ${cmd.command.slice(0, 40)} → ${cmd.savings}% saved`);
+          const tag = cmd.source === 'graph' ? '📊' : '⚡';
+          lines.push(`  ${tag} ${cmd.command.slice(0, 40)} → ${cmd.savings}% saved`);
         }
       }
 

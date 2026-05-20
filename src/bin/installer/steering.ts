@@ -1,5 +1,5 @@
 /**
- * KiroGraph Installer — Kiro steering file
+ * KiroGraph Installer: Kiro steering file
  */
 
 import * as fs from 'fs';
@@ -43,7 +43,7 @@ KiroGraph builds a semantic knowledge graph of your codebase. Use its MCP tools 
 
 ## Tool reference
 
-### \`kirograph_context\` — **start here for any code task**
+### \`kirograph_context\`: **start here for any code task**
 
 Returns entry points, related symbols, and code snippets for a natural-language task description. Usually enough to orient without any additional tool calls.
 
@@ -53,7 +53,7 @@ kirograph_context(task: "add dark mode", maxNodes: 30)
 kirograph_context(task: "refactor payment service", includeCode: false)
 \`\`\`
 
-### \`kirograph_search\` — find symbols by name
+### \`kirograph_search\`: find symbols by name
 
 Exact match → FTS → LIKE fallback → vector (last resort). Use instead of grep.
 
@@ -65,7 +65,7 @@ kirograph_search(query: "auth", limit: 20)
 
 Supported kinds: \`function\`, \`method\`, \`class\`, \`interface\`, \`type_alias\`, \`variable\`, \`route\`, \`component\`
 
-### \`kirograph_node\` — inspect a symbol
+### \`kirograph_node\`: inspect a symbol
 
 Returns kind, file, signature, docstring. Add \`includeCode: true\` to get the full source.
 
@@ -74,7 +74,7 @@ kirograph_node(symbol: "validateToken")
 kirograph_node(symbol: "AuthService", includeCode: true)
 \`\`\`
 
-### \`kirograph_callers\` — who calls this?
+### \`kirograph_callers\`: who calls this?
 
 BFS over incoming \`calls\` edges (depth 1).
 
@@ -82,7 +82,7 @@ BFS over incoming \`calls\` edges (depth 1).
 kirograph_callers(symbol: "processPayment", limit: 30)
 \`\`\`
 
-### \`kirograph_callees\` — what does this call?
+### \`kirograph_callees\`: what does this call?
 
 BFS over outgoing \`calls\` edges (depth 1).
 
@@ -90,7 +90,7 @@ BFS over outgoing \`calls\` edges (depth 1).
 kirograph_callees(symbol: "handleRequest")
 \`\`\`
 
-### \`kirograph_impact\` — blast radius before a change
+### \`kirograph_impact\`: blast radius before a change
 
 Traverses all incoming edges up to \`depth\` hops. Call this before editing a symbol.
 
@@ -98,7 +98,7 @@ Traverses all incoming edges up to \`depth\` hops. Call this before editing a sy
 kirograph_impact(symbol: "UserRepository", depth: 3)
 \`\`\`
 
-### \`kirograph_path\` — how are two symbols connected?
+### \`kirograph_path\`: how are two symbols connected?
 
 BFS shortest path across all edge types.
 
@@ -106,7 +106,7 @@ BFS shortest path across all edge types.
 kirograph_path(from: "LoginController", to: "DatabasePool")
 \`\`\`
 
-### \`kirograph_type_hierarchy\` — class/interface inheritance
+### \`kirograph_type_hierarchy\`: class/interface inheritance
 
 \`\`\`
 kirograph_type_hierarchy(symbol: "BaseRepository", direction: "down")  // derived types
@@ -114,7 +114,7 @@ kirograph_type_hierarchy(symbol: "PaymentService", direction: "up")    // base t
 kirograph_type_hierarchy(symbol: "IUserStore", direction: "both")      // all
 \`\`\`
 
-### \`kirograph_dead_code\` — unreferenced symbols
+### \`kirograph_dead_code\`: unreferenced symbols
 
 Returns unexported symbols with zero incoming edges. Good first step when cleaning up.
 
@@ -122,7 +122,7 @@ Returns unexported symbols with zero incoming edges. Good first step when cleani
 kirograph_dead_code(limit: 50)
 \`\`\`
 
-### \`kirograph_circular_deps\` — import cycles
+### \`kirograph_circular_deps\`: import cycles
 
 Runs Tarjan's SCC over import edges. No parameters needed.
 
@@ -130,7 +130,7 @@ Runs Tarjan's SCC over import edges. No parameters needed.
 kirograph_circular_deps()
 \`\`\`
 
-### \`kirograph_files\` — indexed file structure
+### \`kirograph_files\`: indexed file structure
 
 \`\`\`
 kirograph_files(format: "tree")                          // default
@@ -140,11 +140,11 @@ kirograph_files(filterPath: "src/auth", maxDepth: 2)
 kirograph_files(pattern: "**/*.test.ts")
 \`\`\`
 
-### \`kirograph_status\` — index health
+### \`kirograph_status\`: index health
 
 Returns file count, symbol count, edge count, embedding coverage, DB size. Call when something feels off.
 
-### \`kirograph_hotspots\` — most-connected symbols
+### \`kirograph_hotspots\`: most-connected symbols
 
 Returns the top-N symbols by total edge degree (in + out, excluding structural \`contains\` edges). Use to find core abstractions, identify high blast-radius symbols before a refactor, or understand what the codebase revolves around.
 
@@ -152,7 +152,7 @@ Returns the top-N symbols by total edge degree (in + out, excluding structural \
 kirograph_hotspots(limit: 20)
 \`\`\`
 
-### \`kirograph_surprising\` — unexpected cross-module coupling
+### \`kirograph_surprising\`: unexpected cross-module coupling
 
 Finds direct edges between symbols in structurally distant files, scored by path distance × edge-kind weight. Use before a refactor to discover hidden dependencies that will break. High score = more unexpected.
 
@@ -160,9 +160,9 @@ Finds direct edges between symbols in structurally distant files, scored by path
 kirograph_surprising(limit: 20)
 \`\`\`
 
-### \`kirograph_diff\` — what changed since a snapshot?
+### \`kirograph_diff\`: what changed since a snapshot?
 
-Compares the current graph against a saved snapshot. Shows added/removed symbols and edges. A snapshot must exist — the user saves one with \`kirograph snapshot save <label>\` before making changes.
+Compares the current graph against a saved snapshot. Shows added/removed symbols and edges. A snapshot must exist: the user saves one with \`kirograph snapshot save <label>\` before making changes.
 
 \`\`\`
 kirograph_diff()                              // vs latest snapshot
@@ -173,7 +173,7 @@ kirograph_diff(snapshot: "pre-refactor")     // vs named snapshot
 
 ## Architecture tools *(require \`enableArchitecture: true\` in config)*
 
-### \`kirograph_architecture\` — **start here for architectural questions**
+### \`kirograph_architecture\`: **start here for architectural questions**
 
 Returns the full package graph, detected layers (api/service/data/ui/shared), and their dependency edges.
 
@@ -184,9 +184,9 @@ kirograph_architecture(level: "layers")
 kirograph_architecture(includeFiles: true)  // add file→package assignments
 \`\`\`
 
-### \`kirograph_coupling\` — stability metrics per package
+### \`kirograph_coupling\`: stability metrics per package
 
-Returns Ca (afferent — depended on by), Ce (efferent — depends on), and instability (Ce/(Ca+Ce)).
+Returns Ca (afferent: depended on by), Ce (efferent: depends on), and instability (Ce/(Ca+Ce)).
 - High Ca + low instability = load-bearing, safe to depend on, risky to change interface.
 - High Ce + high instability = depends on many things, safe to refactor internals.
 
@@ -196,7 +196,7 @@ kirograph_coupling(sortBy: "afferent")     // most depended-on first
 kirograph_coupling(sortBy: "efferent")     // most outgoing deps first
 \`\`\`
 
-### \`kirograph_package\` — drill into one package
+### \`kirograph_package\`: drill into one package
 
 Returns metadata, coupling metrics, outgoing deps, incoming dependents, and file list.
 
@@ -210,27 +210,27 @@ kirograph_package(package: "src/services", includeFiles: false)
 ## Workflows
 
 **Bug fix or feature:**
-1. \`kirograph_context\` — orient, find entry points.
-2. \`kirograph_node\` with \`includeCode: true\` — read the relevant symbol.
-3. \`kirograph_callers\` / \`kirograph_callees\` — trace the call flow.
-4. \`kirograph_impact\` — check blast radius before editing.
+1. \`kirograph_context\`: orient, find entry points.
+2. \`kirograph_node\` with \`includeCode: true\`: read the relevant symbol.
+3. \`kirograph_callers\` / \`kirograph_callees\`: trace the call flow.
+4. \`kirograph_impact\`: check blast radius before editing.
 
 **Refactor planning:**
-1. \`kirograph_hotspots\` — identify the most-connected symbols; changing these is risky.
-2. \`kirograph_surprising\` — surface hidden coupling that will break.
-3. \`kirograph_impact\` on specific targets — confirm blast radius.
-4. \`kirograph_diff\` after the refactor — verify the structural change matches intent.
+1. \`kirograph_hotspots\`: identify the most-connected symbols; changing these is risky.
+2. \`kirograph_surprising\`: surface hidden coupling that will break.
+3. \`kirograph_impact\` on specific targets: confirm blast radius.
+4. \`kirograph_diff\` after the refactor: verify the structural change matches intent.
 
 **Architectural review:**
-1. \`kirograph_architecture\` — get the package and layer map.
-2. \`kirograph_coupling\` — find the most stable (high Ca) and most volatile (high instability) packages.
-3. \`kirograph_package\` — drill into any package of interest.
-4. \`kirograph_circular_deps\` — check for import cycles.
+1. \`kirograph_architecture\`: get the package and layer map.
+2. \`kirograph_coupling\`: find the most stable (high Ca) and most volatile (high instability) packages.
+3. \`kirograph_package\`: drill into any package of interest.
+4. \`kirograph_circular_deps\`: check for import cycles.
 
 **Code cleanup:**
-1. \`kirograph_dead_code\` — find unreferenced unexported symbols.
-2. \`kirograph_circular_deps\` — find import cycles to untangle.
-3. \`kirograph_surprising\` — find unexpected coupling to decouple.
+1. \`kirograph_dead_code\`: find unreferenced unexported symbols.
+2. \`kirograph_circular_deps\`: find import cycles to untangle.
+3. \`kirograph_surprising\`: find unexpected coupling to decouple.
 
 ---
 
@@ -242,9 +242,9 @@ Ask the user: "This project doesn't have KiroGraph initialized. Run \`kirograph 
 // ── Compression section builder (level-aware) ─────────────────────────────────
 
 const LEVEL_DESCRIPTIONS: Record<string, string> = {
-  normal: 'Balanced — removes noise, keeps structure.',
-  aggressive: 'Compact — groups by category, limits output.',
-  ultra: 'Maximum compression — counts and summaries only.',
+  normal: 'Balanced: removes noise, keeps structure.',
+  aggressive: 'Compact: groups by category, limits output.',
+  ultra: 'Maximum compression: counts and summaries only.',
 };
 
 const LEVEL_EXAMPLES: Record<string, string> = {
@@ -275,16 +275,21 @@ function buildCompressionSection(level: 'normal' | 'aggressive' | 'ultra'): stri
 ## Output Compression (\\\`kirograph_exec\\\`)
 
 When running shell commands, prefer \\\`kirograph_exec\\\` over raw shell execution for:
-- **git** operations (status, log, diff, push, pull, commit)
-- **test runners** (jest, vitest, pytest, cargo test, go test, rspec)
-- **linters/build** (eslint, tsc, ruff, clippy, cargo build, prettier, biome)
+- **git** operations (status, log, diff, push, pull, commit, add, fetch, branch)
+- **GitHub CLI** (gh pr list/view, gh issue list, gh run list)
+- **test runners** (jest, vitest, pytest, cargo test, go test, rspec, minitest, playwright)
+- **linters/build** (eslint, tsc, ruff, clippy, cargo build, prettier, biome, golangci-lint, rubocop, next build)
 - **file listings** (ls, find, tree)
-- **docker/k8s** (docker ps, images, logs, kubectl pods, logs)
-- **package managers** (npm install/list, pip list, bundle install)
+- **search** (grep, rg/ripgrep: grouped by file)
+- **diff** (diff file1 file2: condensed context)
+- **docker/k8s** (docker ps, images, logs, compose ps, kubectl pods, logs, services)
+- **package managers** (npm/pnpm install/list, pip list/install, bundle install, prisma generate)
+- **AWS CLI** (sts, ec2, lambda, logs, cloudformation, dynamodb, iam, s3, ecs, sqs, sns)
+- **network** (curl, wget: strip progress bars and headers)
 
 This saves 60-90% of tokens compared to raw output.
 
-Compression level: **${level}** — ${LEVEL_DESCRIPTIONS[level]}
+Compression level: **${level}**: ${LEVEL_DESCRIPTIONS[level]}
 
 ${LEVEL_EXAMPLES[level]}
 

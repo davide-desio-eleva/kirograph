@@ -12,6 +12,9 @@ import { lintFilter } from './filters/lint';
 import { filesFilter } from './filters/files';
 import { dockerFilter } from './filters/docker';
 import { packageFilter } from './filters/package';
+import { awsFilter } from './filters/aws';
+import { githubFilter } from './filters/github';
+import { miscFilter } from './filters/misc';
 import { genericFilter } from './filters/generic';
 
 export type { CompressionResult, CompressorOptions, CommandFilter, TokenSavingsRecord } from './types';
@@ -22,10 +25,13 @@ const FILTERS: CommandFilter[] = [
   gitFilter,
   testFilter,
   lintFilter,
+  miscFilter,      // grep, diff, curl, wget, playwright, prisma
   filesFilter,
   dockerFilter,
   packageFilter,
-  genericFilter, // Always last — catches everything
+  awsFilter,
+  githubFilter,
+  genericFilter,   // Always last — catches everything
 ];
 
 // ── Token estimation ──────────────────────────────────────────────────────────

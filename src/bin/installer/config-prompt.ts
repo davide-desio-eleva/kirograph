@@ -136,7 +136,7 @@ export async function promptConfigOptions(rl: readline.Interface): Promise<Confi
     'Detects packages from manifests (package.json, go.mod, Cargo.toml, etc.) and architectural layers (api, service, data, ui, shared) from file structure. Enables kirograph_architecture, kirograph_coupling, and kirograph_package MCP tools.',
   );
 
-  const cavemanChoice = await arrowSelect(rl, 'Caveman mode — agent communication style:', [
+  const cavemanChoice = await arrowSelect(rl, 'Caveman mode: agent communication style:', [
     { value: 'off',   label: 'off',   description: 'Normal responses' },
     { value: 'lite',  label: 'lite',  description: 'Compact, no filler, full sentences' },
     { value: 'full',  label: 'full',  description: 'Fragments, no articles, short synonyms' },
@@ -144,11 +144,11 @@ export async function promptConfigOptions(rl: readline.Interface): Promise<Confi
   ]);
   patch.cavemanMode = cavemanChoice as CavemanMode | 'off';
 
-  const compressionChoice = await arrowSelect(rl, 'Output compression — default level for kirograph_exec:', [
+  const compressionChoice = await arrowSelect(rl, 'Output compression: default level for kirograph_exec:', [
     { value: 'off',        label: 'off',        description: 'No compression hook or steering (tool still available)' },
-    { value: 'normal',     label: 'normal',     description: 'Balanced — removes noise, keeps structure (recommended)' },
-    { value: 'aggressive', label: 'aggressive', description: 'More compact — groups by category, limits output' },
-    { value: 'ultra',      label: 'ultra',      description: 'Maximum compression — counts and summaries only' },
+    { value: 'normal',     label: 'normal',     description: 'Balanced: removes noise, keeps structure (recommended)' },
+    { value: 'aggressive', label: 'aggressive', description: 'More compact: groups by category, limits output' },
+    { value: 'ultra',      label: 'ultra',      description: 'Maximum compression: counts and summaries only' },
   ]);
   patch.compressionLevel = compressionChoice as KiroGraphConfig['compressionLevel'];
 

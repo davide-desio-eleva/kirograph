@@ -51,7 +51,7 @@ function filterDockerPs(raw: string, level: CompressorOptions['level']): FilterR
     return { output: `${containers.length} containers:\n${compact}`, strategy: 'docker-ps:compact' };
   }
 
-  const detailed = containers.map(c => `${c.name} (${c.image}) — ${c.status}`).join('\n');
+  const detailed = containers.map(c => `${c.name} (${c.image}) - ${c.status}`).join('\n');
   return { output: `${containers.length} containers:\n${detailed}`, strategy: 'docker-ps:detailed' };
 }
 

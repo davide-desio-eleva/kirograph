@@ -128,7 +128,7 @@ function filterEslint(raw: string, level: CompressorOptions['level']): FilterRes
       .slice(0, 5)
       .map(([rule, count]) => `${rule}: ${count}`)
       .join(', ');
-    return { output: `${totalProblems} problems — ${topRules}`, strategy: 'eslint:ultra' };
+    return { output: `${totalProblems} problems: ${topRules}`, strategy: 'eslint:ultra' };
   }
 
   if (level === 'aggressive') {
@@ -173,7 +173,7 @@ function filterRuff(raw: string, level: CompressorOptions['level']): FilterResul
   if (level === 'ultra') {
     const top = [...ruleCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
       .map(([r, c]) => `${r}:${c}`).join(' ');
-    return { output: `${total} issues — ${top}`, strategy: 'ruff:ultra' };
+    return { output: `${total} issues: ${top}`, strategy: 'ruff:ultra' };
   }
 
   const byRule = [...ruleCount.entries()]
@@ -283,7 +283,7 @@ function filterGolangciLint(raw: string, level: CompressorOptions['level']): Fil
   if (level === 'ultra') {
     const top = [...byLinter.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
       .map(([l, c]) => `${l}:${c}`).join(' ');
-    return { output: `${total} issues — ${top}`, strategy: 'golangci:ultra' };
+    return { output: `${total} issues: ${top}`, strategy: 'golangci:ultra' };
   }
 
   const grouped = [...byLinter.entries()]

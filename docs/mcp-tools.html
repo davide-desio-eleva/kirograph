@@ -54,6 +54,10 @@
     <h2 id="mcp-tools" style="border-top: none; margin-top: 0; padding-top: 0;">MCP Tools</h2>
     <p>All 20 tools are auto-approved and available to Kiro once installed. The MCP server is started by Kiro automatically when needed.</p>
 
+    <div class="search-box" style="margin-bottom: 1.5rem;">
+      <input type="text" id="tool-search-input" placeholder="Search tools..." aria-label="Search tools" style="width: 100%; padding: 0.6rem 1rem; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text); font-size: 0.95rem; outline: none;" />
+    </div>
+
     <!-- kirograph_context -->
     <div class="tool-card" id="tool-context">
       <h3>kirograph_context</h3>
@@ -80,7 +84,7 @@
           <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
           <tbody>
             <tr><td><code>query</code></td><td>string</td><td><em>required</em></td><td>Symbol name or partial name</td></tr>
-            <tr><td><code>kind</code></td><td>string</td><td>—</td><td>Filter: <code>function</code>, <code>method</code>, <code>class</code>, <code>interface</code>, <code>type_alias</code>, <code>variable</code>, <code>route</code>, <code>component</code></td></tr>
+            <tr><td><code>kind</code></td><td>string</td><td>-</td><td>Filter: <code>function</code>, <code>method</code>, <code>class</code>, <code>interface</code>, <code>type_alias</code>, <code>variable</code>, <code>route</code>, <code>component</code></td></tr>
             <tr><td><code>limit</code></td><td>number</td><td>10</td><td>Max results (1–100)</td></tr>
             <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
           </tbody>
@@ -221,9 +225,9 @@
         <table>
           <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>filterPath</code></td><td>string</td><td>—</td><td>Filter by directory prefix (e.g., <code>src/</code>)</td></tr>
-            <tr><td><code>pattern</code></td><td>string</td><td>—</td><td>Filter by glob pattern (e.g., <code>**/*.ts</code>)</td></tr>
-            <tr><td><code>maxDepth</code></td><td>number</td><td>—</td><td>Limit tree depth</td></tr>
+            <tr><td><code>filterPath</code></td><td>string</td><td>-</td><td>Filter by directory prefix (e.g., <code>src/</code>)</td></tr>
+            <tr><td><code>pattern</code></td><td>string</td><td>-</td><td>Filter by glob pattern (e.g., <code>**/*.ts</code>)</td></tr>
+            <tr><td><code>maxDepth</code></td><td>number</td><td>-</td><td>Limit tree depth</td></tr>
             <tr><td><code>format</code></td><td>string</td><td><code>tree</code></td><td><code>tree</code>, <code>flat</code>, or <code>grouped</code></td></tr>
             <tr><td><code>includeMetadata</code></td><td>boolean</td><td>true</td><td>Include language and symbol counts</td></tr>
             <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
@@ -268,7 +272,7 @@
         <table>
           <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>packageId</code></td><td>string</td><td>—</td><td>Package ID (e.g. <code>pkg:npm:src/auth</code>). Omit for all packages.</td></tr>
+            <tr><td><code>packageId</code></td><td>string</td><td>-</td><td>Package ID (e.g. <code>pkg:npm:src/auth</code>). Omit for all packages.</td></tr>
             <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
           </tbody>
         </table>
@@ -411,6 +415,7 @@
 </footer>
 
 <script>
+  // Scroll-spy for sidebar
   const headings = document.querySelectorAll('.tool-card[id]');
   const links = document.querySelectorAll('.docs-sidebar-right .sidebar-link');
 
@@ -426,6 +431,24 @@
   }, { rootMargin: '-60px 0px -70% 0px', threshold: 0 });
 
   headings.forEach(h => observer.observe(h));
+
+  // Search filter
+  const searchInput = document.getElementById('tool-search-input');
+  const toolCards = document.querySelectorAll('.tool-card');
+
+  searchInput.addEventListener('input', () => {
+    const query = searchInput.value.toLowerCase().trim();
+    toolCards.forEach(card => {
+      const name = card.querySelector('h3')?.textContent?.toLowerCase() || '';
+      const desc = card.querySelector('.tool-desc')?.textContent?.toLowerCase() || '';
+      const match = !query || name.includes(query) || desc.includes(query);
+      card.style.display = match ? '' : 'none';
+    });
+  });
+
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { searchInput.value = ''; searchInput.dispatchEvent(new Event('input')); }
+  });
 </script>
 
 </body>
