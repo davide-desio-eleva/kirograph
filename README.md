@@ -657,9 +657,9 @@ Caveman mode never touches code blocks, file paths, URLs, or technical terms, on
 
 **Auto-clarity exceptions:** the agent temporarily reverts to normal prose for security warnings, confirmations of irreversible actions (delete, overwrite, force-push), and multi-step sequences where fragment order could cause misunderstanding. Compressed style resumes immediately after.
 
-### Output Compression (`kirograph_exec`)
+### Shell Compression (`kirograph_exec`)
 
-KiroGraph includes a built-in output compression engine inspired by [rtk](https://github.com/rtk-ai/rtk). The `kirograph_exec` MCP tool runs shell commands and returns token-optimized output, saving 60-90% of tokens on verbose commands like git, test runners, linters, and build tools.
+KiroGraph includes a built-in shell compression engine inspired by [rtk](https://github.com/rtk-ai/rtk). The `kirograph_exec` MCP tool runs shell commands and returns token-optimized output, saving 60-90% of tokens on verbose commands like git, test runners, linters, and build tools.
 
 **Why it's useful:** LLM context is expensive. A raw `git status` might be 2,000 tokens; compressed it's 200. A passing test suite might be 25,000 tokens of noise; compressed it's a single "PASSED: 42/42 tests" line. The compression engine knows how to extract the signal from each command family.
 
@@ -812,7 +812,7 @@ The `kirograph_gain` MCP tool exposes the same stats to the agent.
 
 Constants used: 1,500 tokens per average source file (~200 lines), 800 tokens per grep result set, 2,000 tokens per directory listing. These are conservative estimates; in practice agents often read more files, retry failed searches, and explore dead ends.
 
-**Coexistence with Caveman Mode:** Compression and caveman mode are complementary, they compress different things. Caveman mode compresses the agent's *prose responses* (the text it writes around tool results); it never touches code or tool output. Output compression compresses *command output* (the raw data coming back from shell commands); it never touches how the agent communicates. They stack: with both enabled, shell commands return 60-90% fewer tokens *and* the agent's explanations around those results are also shorter. Pick both independently during `kirograph install`. The "ultra + ultra" combo gives maximum token savings on both fronts.
+**Coexistence with Caveman Mode:** Compression and caveman mode are complementary, they compress different things. Caveman mode compresses the agent's *prose responses* (the text it writes around tool results); it never touches code or tool output. Shell compression compresses *shell command output* (the raw data coming back from shell commands); it never touches how the agent communicates. They stack: with both enabled, shell commands return 60-90% fewer tokens *and* the agent's explanations around those results are also shorter. Pick both independently during `kirograph install`. The "ultra + ultra" combo gives maximum token savings on both fronts.
 
 ### Architecture Analysis *(requires `enableArchitecture: true`)*
 
@@ -1048,7 +1048,7 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `minLogLevel` | string | `warn` | Log level: `debug`, `info`, `warn`, `error` |
 | `fuzzyResolutionThreshold` | number | `0.5` | Name matching threshold for cross-file resolution (0.0–1.0) |
 | `cavemanMode` | string | `off` | Agent communication style: `off`, `lite`, `full`, `ultra` |
-| `compressionLevel` | string | `normal` | Output compression level: `off`, `normal`, `aggressive`, `ultra` |
+| `compressionLevel` | string | `normal` | Shell command compression level: `off`, `normal`, `aggressive`, `ultra` |
 
 Default exclude patterns: `node_modules/**`, `dist/**`, `build/**`, `.git/**`, `*.min.js`, `.kirograph/**`
 

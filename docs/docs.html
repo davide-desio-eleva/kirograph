@@ -69,7 +69,7 @@
     <div class="sidebar-section">
       <div class="sidebar-heading">Advanced</div>
       <a href="#caveman-mode" class="sidebar-link">Caveman Mode</a>
-      <a href="#output-compression" class="sidebar-link">Output Compression</a>
+      <a href="#shell-compression" class="sidebar-link">Shell Compression</a>
       <a href="#compression-caveman" class="sidebar-link" style="padding-left:2rem">Coexistence with Caveman</a>
       <a href="#savings-heuristics" class="sidebar-link">Savings Heuristics</a>
       <a href="#credits" class="sidebar-link">Credits</a>
@@ -145,7 +145,7 @@ cd kirograph && npm uninstall -g .</code></pre>
       <li>Embedding model and semantic engine</li>
       <li>Whether to enable architecture analysis</li>
       <li>Caveman mode level</li>
-      <li>Output compression (on/off)</li>
+      <li>Shell compression (on/off)</li>
       <li>Whether to run an initial index immediately</li>
     </ul>
 
@@ -457,7 +457,7 @@ cd kirograph && npm uninstall -g .</code></pre>
           <tr><td><code>enableArchitecture</code></td><td>boolean</td><td><code>false</code></td><td>Enable architecture analysis layer</td></tr>
           <tr><td><code>architectureLayers</code></td><td>object</td><td>-</td><td>Override layer glob patterns</td></tr>
           <tr><td><code>cavemanMode</code></td><td>string</td><td><code>"off"</code></td><td>Communication compression: <code>off</code>, <code>lite</code>, <code>full</code>, <code>ultra</code></td></tr>
-          <tr><td><code>compressionLevel</code></td><td>string</td><td><code>"normal"</code></td><td>Output compression level: <code>off</code>, <code>normal</code>, <code>aggressive</code>, <code>ultra</code></td></tr>
+          <tr><td><code>compressionLevel</code></td><td>string</td><td><code>"normal"</code></td><td>Shell command compression level: <code>off</code>, <code>normal</code>, <code>aggressive</code>, <code>ultra</code></td></tr>
           <tr><td><code>syncWarningThreshold</code></td><td>number</td><td><code>10</code></td><td>Pending-file count above which <code>kirograph_status</code> warns. Set <code>0</code> to disable.</td></tr>
           <tr><td><code>extractDocstrings</code></td><td>boolean</td><td><code>true</code></td><td>Extract docstrings/comments during indexing</td></tr>
           <tr><td><code>trackCallSites</code></td><td>boolean</td><td><code>true</code></td><td>Track precise call-site locations</td></tr>
@@ -498,10 +498,10 @@ kirograph caveman         # show current mode</code></pre>
       Takes effect on the <strong>next agent session</strong>. The steering file and CLI agent config are regenerated immediately when you run the command.
     </div>
 
-    <!-- ── Output Compression ── -->
-    <h2 id="output-compression">Output Compression</h2>
+    <!-- ── Shell Compression ── -->
+    <h2 id="shell-compression">Shell Compression</h2>
 
-    <p>KiroGraph includes a built-in output compression engine inspired by <a href="https://github.com/rtk-ai/rtk" target="_blank" rel="noopener">rtk</a>. The <code>kirograph_exec</code> MCP tool runs shell commands and returns token-optimized output, saving 60-90% of tokens on verbose commands.</p>
+    <p>KiroGraph includes a built-in shell compression engine inspired by <a href="https://github.com/rtk-ai/rtk" target="_blank" rel="noopener">rtk</a>. The <code>kirograph_exec</code> MCP tool runs shell commands and returns token-optimized output, saving 60-90% of tokens on verbose commands.</p>
 
     <p>Supported command families: <strong>git</strong> (status, log, diff, push, pull, commit, add, fetch, branch), <strong>GitHub CLI</strong> (gh pr list/view, gh issue list, gh run list), <strong>test runners</strong> (jest, vitest, pytest, cargo test, go test, rspec, minitest, playwright), <strong>linters/build</strong> (eslint, tsc, ruff, clippy, cargo build, prettier, biome, golangci-lint, rubocop, next build), <strong>file listings</strong> (ls, find, tree), <strong>search</strong> (grep, rg, grouped by file), <strong>diff</strong> (condensed context), <strong>docker/k8s</strong> (docker ps, images, logs, compose ps, kubectl pods, logs, services), <strong>package managers</strong> (npm, pip, bundle, prisma generate), <strong>AWS</strong> (sts, ec2, lambda, logs, cloudformation, dynamodb, iam, s3, ecs, sqs, sns), <strong>network</strong> (curl, wget, strips progress).</p>
 
@@ -536,7 +536,7 @@ kirograph gain --graph           # ASCII graph (last 30 days)</code></pre>
     <p>Compression and caveman mode are complementary, they compress different things:</p>
     <ul>
       <li><strong>Caveman mode</strong> compresses the agent's <em>prose responses</em> (the text it writes around tool results). It never touches code or tool output.</li>
-      <li><strong>Output compression</strong> compresses <em>command output</em> (the raw data coming back from shell commands). It never touches how the agent communicates.</li>
+      <li><strong>Shell compression compresses <em>shell command output</em> (the raw data coming back from shell commands). It never touches how the agent communicates.</li>
     </ul>
     <p>They stack: with both enabled, shell commands return 60-90% fewer tokens <em>and</em> the agent's explanations around those results are also shorter. Pick both independently during <code>kirograph install</code>. The "ultra + ultra" combo gives maximum token savings on both fronts.</p>
 
