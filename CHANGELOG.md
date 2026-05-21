@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.1] - 2026-05-21: Hook & Uninit Fixes
+
+### Fixed
+
+- **Hooks**: resolved issue where hooks were not triggering correctly after installation.
+- **`kirograph uninit`**: fixed uninit command failing to fully clean up integration files.
+
+---
+
 ## [0.14.0] - 2026-05-19: Shell Compression
 
 ### Added

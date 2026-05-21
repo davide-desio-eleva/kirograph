@@ -68,12 +68,19 @@ async function runUninit(projectPath: string | undefined, opts: { force?: boolea
   if (removeIntegration && (integration === 'kiro' || integration === 'all')) {
     // Remove .kiro hooks created by kirograph
     const kiroHooks = [
+      'kirograph-mark-dirty-on-save.kiro.hook',
+      'kirograph-mark-dirty-on-create.kiro.hook',
+      'kirograph-sync-on-delete.kiro.hook',
+      'kirograph-sync-if-dirty.kiro.hook',
+      'kirograph-compress-hint.kiro.hook',
+      // Legacy .json filenames
       'kirograph-mark-dirty-on-save.json',
       'kirograph-mark-dirty-on-create.json',
       'kirograph-sync-on-delete.json',
       'kirograph-sync-if-dirty.json',
       'kirograph-sync-on-save.json',
       'kirograph-sync-on-create.json',
+      'kirograph-compress-hint.json',
     ];
     const hooksDir = path.join(target, '.kiro', 'hooks');
     let removedHooks = 0;
@@ -95,6 +102,13 @@ async function runUninit(projectPath: string | undefined, opts: { force?: boolea
     if (fs.existsSync(agentPath)) {
       fs.unlinkSync(agentPath);
       console.log(`  ${green}✓${reset} Removed .kiro/agents/kirograph.json`);
+    }
+
+    // Remove kirograph server from .kiro/settings/mcp.json
+    const { removeMcpServersConfig } = await import('../installer/common');
+    const mcpPath = path.join(target, '.kiro', 'settings', 'mcp.json');
+    if (removeMcpServersConfig(mcpPath)) {
+      console.log(`  ${green}✓${reset} Removed kirograph from .kiro/settings/mcp.json`);
     }
   }
 
