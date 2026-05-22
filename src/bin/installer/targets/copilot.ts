@@ -3,6 +3,9 @@ import * as path from 'path';
 import { CavemanMode } from '../caveman';
 import {
   ensureDir,
+  buildInstructionOpts,
+  readJson,
+  writeJson,
   KIROGRAPH_COMMAND,
   KIROGRAPH_MCP_ARGS,
   removeMcpServersConfig,
@@ -11,9 +14,18 @@ import {
   writeMcpServersConfig,
 } from '../common';
 import { buildAgentInstructions } from '../instructions';
-import { buildInstructionOpts } from '../common';
 
 const COPILOT_BLOCK_ID = 'copilot';
+
+function buildCopilotHooks(): object {
+  return {
+    hooks: {
+      'session-end': [
+        { command: 'kirograph sync --quiet 2>/dev/null || true' },
+      ],
+    },
+  };
+}
 
 export function installCopilotEarly(projectRoot: string): void {
   const mcpPath = path.join(projectRoot, '.github', 'copilot-mcp.json');
@@ -25,17 +37,35 @@ export function installCopilotEarly(projectRoot: string): void {
 }
 
 export function installCopilotLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean): void {
+  const opts = buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, true);
+
   const instructionsPath = path.join(projectRoot, '.kirograph', 'copilot.md');
   ensureDir(path.dirname(instructionsPath));
-  fs.writeFileSync(instructionsPath, buildAgentInstructions(buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory)));
+  fs.writeFileSync(instructionsPath, buildAgentInstructions(opts));
   console.log(`  ✓ Copilot instructions written to ${instructionsPath}`);
 
   const rulesPath = path.join(projectRoot, '.github', 'copilot-instructions.md');
   ensureDir(path.dirname(rulesPath));
-  const changed = upsertGeneratedBlock(rulesPath, COPILOT_BLOCK_ID, '## KiroGraph', buildAgentInstructions(buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory)));
+  const changed = upsertGeneratedBlock(rulesPath, COPILOT_BLOCK_ID, '## KiroGraph', buildAgentInstructions(opts));
   console.log(changed
     ? `  ✓ .github/copilot-instructions.md updated with KiroGraph instructions`
     : `  ✓ .github/copilot-instructions.md already up to date`);
+
+  // Write hooks
+  const hooksPath = path.join(projectRoot, '.github', 'hooks.json');
+  const existing = readJson(hooksPath);
+  const kgHooks = buildCopilotHooks() as any;
+  existing.hooks = existing.hooks ?? {};
+  for (const [event, commands] of Object.entries(kgHooks.hooks)) {
+    existing.hooks[event] = existing.hooks[event] ?? [];
+    for (const cmd of commands as Array<{ command: string }>) {
+      if (!existing.hooks[event].some((h: any) => h.command === cmd.command)) {
+        existing.hooks[event].push(cmd);
+      }
+    }
+  }
+  writeJson(hooksPath, existing);
+  console.log(`  ✓ Copilot hooks written to ${hooksPath}`);
 }
 
 export function uninitCopilot(projectRoot: string): void {
@@ -48,9 +78,28 @@ export function uninitCopilot(projectRoot: string): void {
   if (removeGeneratedBlock(rulesPath, COPILOT_BLOCK_ID)) {
     console.log(`  ✓ Removed KiroGraph block from .github/copilot-instructions.md`);
   }
+
+  const hooksPath = path.join(projectRoot, '.github', 'hooks.json');
+  if (fs.existsSync(hooksPath)) {
+    const config = readJson(hooksPath);
+    if (config.hooks) {
+      let changed = false;
+      for (const event of Object.keys(config.hooks)) {
+        const before = config.hooks[event].length;
+        config.hooks[event] = config.hooks[event].filter((h: any) => !h.command?.includes('kirograph'));
+        if (config.hooks[event].length === 0) delete config.hooks[event];
+        if (config.hooks[event]?.length !== before) changed = true;
+      }
+      if (Object.keys(config.hooks).length === 0) delete config.hooks;
+      if (changed) {
+        writeJson(hooksPath, config);
+        console.log(`  ✓ Removed kirograph hooks from .github/hooks.json`);
+      }
+    }
+  }
 }
 
 export function printCopilotNextSteps(): void {
-  console.log('\n  Done! Restart your editor for the Copilot MCP server to load.');
-  console.log('  KiroGraph instructions are in .github/copilot-instructions.md\n');
+  console.log('\n  Done! Restart your editor for the Copilot MCP server and hooks to load.');
+  console.log('  Auto-sync hook runs on session end.\n');
 }

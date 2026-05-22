@@ -149,8 +149,8 @@ This can remove:
 - Claude target (experimental): `kirograph` from `.mcp.json`, plus the KiroGraph import from `CLAUDE.md`
 - Codex target (experimental): the generated KiroGraph block from `AGENTS.md`
 - Cursor target (experimental): `kirograph` from `.cursor/mcp.json`, plus `.cursor/rules/kirograph.mdc`
-- Antigravity target (experimental): `kirograph` from `.gemini/settings/mcp.json`, plus the KiroGraph block from `GEMINI.md`
-- OpenCode target (experimental): `kirograph` MCP and instructions reference from `.opencode.json`
+- Antigravity target (experimental): KiroGraph block from `GEMINI.md`, hooks from `.agents/hooks.json`
+- OpenCode target (experimental): `kirograph` MCP and instructions from `.opencode.json`, sync plugin from `.opencode/plugins/`
 
 ### Remove the CLI globally
 
@@ -303,10 +303,10 @@ The MCP server exposes 24 tools (search, context, callers, callees, impact, node
 | Roo Code | `--target roo` | `.roo/mcp.json` | `.roorules` |
 | Kilo Code | `--target kilo` | `.kilo/mcp_settings.json` | `.kilorules` |
 | Claude Code | `--target claude` | `.mcp.json` | `CLAUDE.md` (import) |
-| Codex CLI | `--target codex` | Print command | `AGENTS.md` |
-| OpenCode | `--target opencode` | `.opencode.json` | `.opencode.json` (instructions field) |
-| Antigravity | `--target antigravity` | `.gemini/settings/mcp.json` | `GEMINI.md` |
-| Gemini CLI | `--target gemini-cli` | `.gemini/settings/mcp.json` | `GEMINI.md` (alias for antigravity) |
+| Codex CLI | `--target codex` | `.codex/hooks.json` | `AGENTS.md` |
+| OpenCode | `--target opencode` | `.opencode.json` | `.opencode.json` (instructions) + plugin |
+| Antigravity | `--target antigravity` | Print command | `GEMINI.md` + `.agents/hooks.json` |
+| Gemini CLI | `--target gemini-cli` | `.gemini/settings.json` | `GEMINI.md` |
 | JetBrains Junie | `--target junie` | `.junie/mcp.json` | `.junie/guidelines.md` |
 | Continue | `--target continue` | `.continue/config.json` | `.continue/rules/kirograph.md` |
 | Warp | `--target warp` | `.warp/mcp.json` | `.warp/rules/kirograph.md` |
@@ -314,7 +314,7 @@ The MCP server exposes 24 tools (search, context, callers, callees, impact, node
 | Augment Code | `--target augment` | `.augment/mcp.json` | `augment-guidelines.md` |
 | Sourcegraph Amp | `--target amp` | `.amp/config.json` | `.amp/instructions.md` |
 | Tabnine | `--target tabnine` | `.tabnine/mcp.json` | `.tabnine/instructions.md` |
-| Devin | `--target devin` | `devin.json` | `AGENTS.md` |
+| Devin | `--target devin` | `.devin/config.json` | `AGENTS.md` |
 | OpenHands | `--target openhands` | `.openhands/config.json` | `AGENTS.md` |
 | Replit Agent | `--target replit` | Print command | `AGENTS.md` |
 | Block Goose | `--target goose` | Print `goose mcp add` | `AGENTS.md` |
@@ -339,13 +339,33 @@ The MCP server exposes 24 tools (search, context, callers, callees, impact, node
 
 **Pattern D — Print-only** (Codex, Aider, Replit, Goose, Mistral Vibe, IBM Bob, Crush, Droid Factory, ForgeCode, iFlow, Qwen, Rovo, Qoder): The tool's MCP config is user-scoped or cloud-hosted. The installer writes instructions locally and prints the exact command to register the MCP server.
 
+### Auto-Sync Hooks
+
+KiroGraph keeps its index fresh via lifecycle hooks. For tools that support a hook/event system, the installer writes auto-sync hooks that run `kirograph sync` when the agent finishes a task — no manual intervention needed.
+
+| Tool | Hook file | Event trigger | What it does |
+|------|-----------|---------------|--------------|
+| **Kiro** | `.kiro/hooks/*.kiro.hook` | `agentStop` + `preToolUse` | Sync + compression hint + memory capture |
+| **Cursor** | `.cursor/hooks.json` | `stop` | Sync on task completion |
+| **Windsurf** | `.windsurf/hooks.json` | `post_cascade_response` | Sync after each Cascade response |
+| **Claude Code** | `.claude/settings.json` | `Stop` | Sync on session stop |
+| **GitHub Copilot** | `.github/hooks.json` | `session-end` | Sync on session end |
+| **Cline** | `.clinerules/hooks/task_completed` | `task_completed` | Executable script that syncs |
+| **Codex CLI** | `.codex/hooks.json` | `Stop` | Sync on session stop |
+| **Antigravity** | `.agents/hooks.json` | `Stop` | Sync on execution stop |
+| **Gemini CLI** | `.gemini/settings.json` | `SessionEnd` | Sync on session end |
+| **OpenCode** | `.opencode/plugins/kirograph-sync.js` | `session.idle` | JS plugin that syncs |
+| **Devin** | `.devin/hooks.v1.json` | `Stop` | Sync on session stop |
+
+For tools **without** a hook system (22 targets), the generated instructions include a "Session Hygiene" section that tells the agent to manually run `kirograph sync` at the start and end of each session.
+
 ### Uninstalling
 
 Every target supports `uninit`:
 
 ```bash
-kirograph uninit --target cursor       # removes .cursor/mcp.json entry + .cursor/rules/kirograph.mdc
-kirograph uninit --target windsurf     # removes .windsurf/mcp.json entry + .windsurfrules block
+kirograph uninit --target cursor       # removes .cursor/mcp.json + rules + hooks
+kirograph uninit --target windsurf     # removes .windsurf/mcp.json + .windsurfrules + hooks
 kirograph uninit --target all --force  # removes ALL integration files + .kirograph/ data
 ```
 

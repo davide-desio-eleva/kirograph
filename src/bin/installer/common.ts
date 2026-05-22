@@ -105,10 +105,11 @@ function escapeRegExp(s: string): string {
  * Build InstructionOptions from the installLate parameters.
  * Used by all targets to pass full feature config to buildAgentInstructions.
  */
-export function buildInstructionOpts(cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean): InstructionOptions {
+export function buildInstructionOpts(cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, hasHooks?: boolean): InstructionOptions {
   return {
     cavemanMode,
     shellCompressionLevel: (shellCompressionLevel as InstructionOptions['shellCompressionLevel']) ?? undefined,
     enableMemory: enableMemory ?? false,
+    hasHooks: hasHooks ?? false,
   };
 }

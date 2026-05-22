@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.16.6] - 2026-05-22: Antigravity, Gemini CLI & OpenCode Fixes
+
+### Fixed
+
+- **Antigravity IDE target rewritten**: MCP is now correctly documented as user-scoped (`~/.gemini/antigravity/mcp_config.json`) — installer prints setup instructions instead of writing to a wrong path. Hooks now written to `.agents/hooks.json` (workspace-level) with `Stop` event. Passes `hasHooks: true`.
+- **Gemini CLI target rewritten**: No longer an alias for Antigravity. Now a full implementation writing MCP + hooks to `.gemini/settings.json` with `SessionEnd` event. Uses correct Gemini CLI hook format. Passes `hasHooks: true`.
+- **OpenCode target enhanced**: Added `.opencode/plugins/kirograph-sync.js` auto-sync plugin that fires on `session.idle` event. Passes `hasHooks: true`. MCP and instructions config unchanged (already correct).
+
+### Changed
+
+- Hook-enabled targets: 7 → 10 (added Antigravity, Gemini CLI, OpenCode).
+- Targets with Session Hygiene fallback: 26 → 23.
+
+---
+
+## [0.16.5] - 2026-05-22: Hooks & Session Hygiene
+
+> ⚠️ Community-contributed, vibecoded, unverified. PRs welcome for fixes.
+
+### Added
+
+- **Auto-sync hooks for 5 targets** that support lifecycle events:
+  - **Cursor**: `.cursor/hooks.json` — `stop` → `kirograph sync --quiet`. Optional `beforeShellExecution` compression hint.
+  - **Windsurf**: `.windsurf/hooks.json` — `post_cascade_response` → `kirograph sync --quiet`.
+  - **Claude Code**: `.claude/settings.json` hooks — `Stop` → `kirograph sync --quiet`.
+  - **GitHub Copilot**: `.github/hooks.json` — `session-end` → `kirograph sync --quiet`.
+  - **Cline**: `.clinerules/hooks/task_completed` — executable shell script that syncs.
+  - **Codex CLI**: `.codex/hooks.json` — `Stop` → `kirograph sync --quiet`.
+- **"Session Hygiene" section** in agent instructions for all targets without hooks (25+ targets). Tells the agent to manually run `kirograph sync` at session start/end and store observations before ending.
+- **`hasHooks` option** in `InstructionOptions` — targets with hooks pass `true` to suppress the session hygiene section.
+
+### Changed
+
+- Cursor, Windsurf, Claude Code, Copilot, and Cline targets now pass `hasHooks: true` to `buildInstructionOpts`, suppressing the manual sync reminder.
+- `uninit` for all 5 hook-enabled targets now cleans up hook entries/files.
+
+---
+
 ## [0.16.4] - 2026-05-22: Tier 4 — Full Coverage
 
 > ⚠️ Community-contributed, vibecoded, unverified. PRs welcome for fixes.

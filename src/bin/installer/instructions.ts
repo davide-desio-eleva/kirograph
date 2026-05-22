@@ -4,6 +4,7 @@ export interface InstructionOptions {
   cavemanMode?: CavemanMode | 'off';
   shellCompressionLevel?: 'off' | 'normal' | 'aggressive' | 'ultra';
   enableMemory?: boolean;
+  hasHooks?: boolean;
 }
 
 const LEVEL_DESCRIPTIONS: Record<string, string> = {
@@ -145,6 +146,18 @@ linked to code symbols in the graph and surface in \`kirograph_context\` and
 encountering a non-obvious error, or learning something about the codebase that future sessions
 should know. Keep observations concise — one fact per store call.
 `;
+  }
+
+  // Session hygiene for tools without hooks
+  if (!opts.hasHooks) {
+    content += `
+## Session Hygiene
+
+This tool does not have automatic sync hooks. To keep the index fresh:
+- Run \`kirograph sync\` at the **start** of each session if files changed outside the agent.
+- Run \`kirograph sync\` at the **end** of each session after making changes.
+- If results from graph tools seem stale, run \`kirograph sync\` before retrying.
+${enableMemory ? '- Store important observations with `kirograph_mem_store` before ending your session.\n' : ''}`;
   }
 
   // Caveman mode

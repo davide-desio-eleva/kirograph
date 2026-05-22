@@ -442,32 +442,41 @@ cd kirograph && npm uninstall -g .</code></pre>
     <h3 id="supported-targets">Supported Targets (33)</h3>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Target</th><th>Command</th><th>MCP Config</th><th>Instructions</th></tr></thead>
+        <thead><tr><th>Tool</th><th>Target</th><th>MCP Config</th><th>Instructions</th><th>Hooks</th><th>Pattern</th></tr></thead>
         <tbody>
-          <tr><td><strong>Kiro</strong> (full support)</td><td><code>kirograph install</code></td><td><code>.kiro/settings/mcp.json</code></td><td><code>.kiro/steering/kirograph.md</code> + hooks</td></tr>
-          <tr><td>Cursor</td><td><code>--target cursor</code></td><td><code>.cursor/mcp.json</code></td><td><code>.cursor/rules/kirograph.mdc</code></td></tr>
-          <tr><td>Windsurf</td><td><code>--target windsurf</code></td><td><code>.windsurf/mcp.json</code></td><td><code>.windsurfrules</code></td></tr>
-          <tr><td>GitHub Copilot</td><td><code>--target copilot</code></td><td><code>.github/copilot-mcp.json</code></td><td><code>.github/copilot-instructions.md</code></td></tr>
-          <tr><td>Cline</td><td><code>--target cline</code></td><td><code>.cline/mcp_settings.json</code></td><td><code>.clinerules</code></td></tr>
-          <tr><td>Roo Code</td><td><code>--target roo</code></td><td><code>.roo/mcp.json</code></td><td><code>.roorules</code></td></tr>
-          <tr><td>Kilo Code</td><td><code>--target kilo</code></td><td><code>.kilo/mcp_settings.json</code></td><td><code>.kilorules</code></td></tr>
-          <tr><td>Claude Code</td><td><code>--target claude</code></td><td><code>.mcp.json</code></td><td><code>CLAUDE.md</code></td></tr>
-          <tr><td>Codex CLI</td><td><code>--target codex</code></td><td>Print command</td><td><code>AGENTS.md</code></td></tr>
-          <tr><td>OpenCode</td><td><code>--target opencode</code></td><td><code>.opencode.json</code></td><td><code>.opencode.json</code> (instructions field)</td></tr>
-          <tr><td>Antigravity / Gemini CLI</td><td><code>--target antigravity</code></td><td><code>.gemini/settings/mcp.json</code></td><td><code>GEMINI.md</code></td></tr>
-          <tr><td>JetBrains Junie</td><td><code>--target junie</code></td><td><code>.junie/mcp.json</code></td><td><code>.junie/guidelines.md</code></td></tr>
-          <tr><td>Continue</td><td><code>--target continue</code></td><td><code>.continue/config.json</code></td><td><code>.continue/rules/kirograph.md</code></td></tr>
-          <tr><td>Warp</td><td><code>--target warp</code></td><td><code>.warp/mcp.json</code></td><td><code>.warp/rules/kirograph.md</code></td></tr>
-          <tr><td>Trae</td><td><code>--target trae</code></td><td><code>.trae/mcp.json</code></td><td><code>.trae/rules/kirograph.md</code></td></tr>
-          <tr><td>Augment Code</td><td><code>--target augment</code></td><td><code>.augment/mcp.json</code></td><td><code>augment-guidelines.md</code></td></tr>
-          <tr><td>Sourcegraph Amp</td><td><code>--target amp</code></td><td><code>.amp/config.json</code></td><td><code>.amp/instructions.md</code></td></tr>
-          <tr><td>Tabnine</td><td><code>--target tabnine</code></td><td><code>.tabnine/mcp.json</code></td><td><code>.tabnine/instructions.md</code></td></tr>
-          <tr><td>Devin</td><td><code>--target devin</code></td><td><code>devin.json</code></td><td><code>AGENTS.md</code></td></tr>
-          <tr><td>OpenHands</td><td><code>--target openhands</code></td><td><code>.openhands/config.json</code></td><td><code>AGENTS.md</code></td></tr>
-          <tr><td>Replit Agent</td><td><code>--target replit</code></td><td>Print command</td><td><code>AGENTS.md</code></td></tr>
-          <tr><td>Block Goose</td><td><code>--target goose</code></td><td>Print command</td><td><code>AGENTS.md</code></td></tr>
-          <tr><td>Aider</td><td><code>--target aider</code></td><td>Print CLI flag</td><td><code>CONVENTIONS.md</code></td></tr>
-          <tr><td colspan="4"><em>Print-only targets (write <code>.kirograph/&lt;id&gt;.md</code> + print MCP command):</em> mistral-vibe, ibm-bob, crush, droid-factory, forgecode, iflow, qwen, rovo, qoder</td></tr>
+          <tr style="background: rgba(167,139,250,0.08); font-weight: 600;"><td>🎯 Kiro <span style="font-size:0.75rem;font-weight:400;opacity:0.7">(primary)</span></td><td><code>kiro</code></td><td><code>.kiro/settings/mcp.json</code></td><td>Steering + CLI agent</td><td>✅ sync + hint + memory</td><td>Full</td></tr>
+          <tr><td>Cursor</td><td><code>cursor</code></td><td><code>.cursor/mcp.json</code></td><td><code>.cursor/rules/kirograph.mdc</code></td><td>✅ sync on stop</td><td>A</td></tr>
+          <tr><td>Windsurf</td><td><code>windsurf</code></td><td><code>.windsurf/mcp.json</code></td><td><code>.windsurfrules</code></td><td>✅ sync on response</td><td>A</td></tr>
+          <tr><td>GitHub Copilot</td><td><code>copilot</code></td><td><code>.github/copilot-mcp.json</code></td><td><code>.github/copilot-instructions.md</code></td><td>✅ sync on session-end</td><td>A</td></tr>
+          <tr><td>Cline</td><td><code>cline</code></td><td><code>.cline/mcp_settings.json</code></td><td><code>.clinerules</code></td><td>✅ sync script</td><td>A</td></tr>
+          <tr><td>Roo Code</td><td><code>roo</code></td><td><code>.roo/mcp.json</code></td><td><code>.roorules</code></td><td>—</td><td>A</td></tr>
+          <tr><td>Kilo Code</td><td><code>kilo</code></td><td><code>.kilo/mcp_settings.json</code></td><td><code>.kilorules</code></td><td>—</td><td>A</td></tr>
+          <tr><td>JetBrains Junie</td><td><code>junie</code></td><td><code>.junie/mcp.json</code></td><td><code>.junie/guidelines.md</code></td><td>—</td><td>A</td></tr>
+          <tr><td>Continue</td><td><code>continue</code></td><td><code>.continue/config.json</code></td><td><code>.continue/rules/kirograph.md</code></td><td>—</td><td>A</td></tr>
+          <tr><td>Warp</td><td><code>warp</code></td><td><code>.warp/mcp.json</code></td><td><code>.warp/rules/kirograph.md</code></td><td>—</td><td>A</td></tr>
+          <tr><td>Trae</td><td><code>trae</code></td><td><code>.trae/mcp.json</code></td><td><code>.trae/rules/kirograph.md</code></td><td>—</td><td>A</td></tr>
+          <tr><td>Augment Code</td><td><code>augment</code></td><td><code>.augment/mcp.json</code></td><td><code>augment-guidelines.md</code></td><td>—</td><td>A</td></tr>
+          <tr><td>Sourcegraph Amp</td><td><code>amp</code></td><td><code>.amp/config.json</code></td><td><code>.amp/instructions.md</code></td><td>—</td><td>A</td></tr>
+          <tr><td>Tabnine</td><td><code>tabnine</code></td><td><code>.tabnine/mcp.json</code></td><td><code>.tabnine/instructions.md</code></td><td>—</td><td>A</td></tr>
+          <tr><td>Claude Code</td><td><code>claude</code></td><td><code>.mcp.json</code></td><td><code>CLAUDE.md</code></td><td>✅ sync on Stop</td><td>B</td></tr>
+          <tr><td>Codex CLI</td><td><code>codex</code></td><td><code>.codex/hooks.json</code></td><td><code>AGENTS.md</code></td><td>✅ sync on Stop</td><td>B</td></tr>
+          <tr><td>Gemini CLI</td><td><code>gemini-cli</code></td><td><code>.gemini/settings.json</code></td><td><code>GEMINI.md</code></td><td>✅ SessionEnd</td><td>C</td></tr>
+          <tr><td>OpenCode</td><td><code>opencode</code></td><td><code>.opencode.json</code></td><td><code>.opencode.json</code> (instructions)</td><td>✅ plugin</td><td>C</td></tr>
+          <tr><td>Devin</td><td><code>devin</code></td><td><code>.devin/config.json</code></td><td><code>AGENTS.md</code></td><td>✅ .devin/hooks.v1.json</td><td>C</td></tr>
+          <tr><td>OpenHands</td><td><code>openhands</code></td><td><code>.openhands/config.json</code></td><td><code>AGENTS.md</code></td><td>—</td><td>C</td></tr>
+          <tr><td>Antigravity</td><td><code>antigravity</code></td><td>Print command</td><td><code>GEMINI.md</code></td><td>✅ .agents/hooks.json</td><td>D</td></tr>
+          <tr><td>Aider</td><td><code>aider</code></td><td>Print CLI flag</td><td><code>CONVENTIONS.md</code></td><td>—</td><td>D</td></tr>
+          <tr><td>Replit Agent</td><td><code>replit</code></td><td>Print command</td><td><code>AGENTS.md</code></td><td>—</td><td>D</td></tr>
+          <tr><td>Block Goose</td><td><code>goose</code></td><td>Print command</td><td><code>AGENTS.md</code></td><td>—</td><td>D</td></tr>
+          <tr><td>Mistral Vibe</td><td><code>mistral-vibe</code></td><td>Print command</td><td><code>.kirograph/mistral-vibe.md</code></td><td>—</td><td>D</td></tr>
+          <tr><td>IBM Bob</td><td><code>ibm-bob</code></td><td>Print command</td><td><code>.kirograph/ibm-bob.md</code></td><td>—</td><td>D</td></tr>
+          <tr><td>Crush</td><td><code>crush</code></td><td>Print command</td><td><code>.kirograph/crush.md</code></td><td>—</td><td>D</td></tr>
+          <tr><td>Droid Factory</td><td><code>droid-factory</code></td><td>Print command</td><td><code>.kirograph/droid-factory.md</code></td><td>—</td><td>D</td></tr>
+          <tr><td>ForgeCode</td><td><code>forgecode</code></td><td>Print command</td><td><code>.kirograph/forgecode.md</code></td><td>—</td><td>D</td></tr>
+          <tr><td>iFlow CLI</td><td><code>iflow</code></td><td>Print command</td><td><code>.kirograph/iflow.md</code></td><td>—</td><td>D</td></tr>
+          <tr><td>Qwen Code</td><td><code>qwen</code></td><td>Print command</td><td><code>.kirograph/qwen.md</code></td><td>—</td><td>D</td></tr>
+          <tr><td>Atlassian Rovo Dev</td><td><code>rovo</code></td><td>Print command</td><td><code>.kirograph/rovo.md</code></td><td>—</td><td>D</td></tr>
+          <tr><td>Qoder</td><td><code>qoder</code></td><td>Print command</td><td><code>.kirograph/qoder.md</code></td><td>—</td><td>D</td></tr>
         </tbody>
       </table>
     </div>
@@ -477,6 +486,28 @@ cd kirograph && npm uninstall -g .</code></pre>
     <p><strong>Pattern B — Standard mcpServers + project memory file:</strong> Writes a standard <code>mcpServers</code> config plus a generated block in the tool's project memory file (<code>CLAUDE.md</code>, <code>GEMINI.md</code>). The block is idempotent.</p>
     <p><strong>Pattern C — Custom config format:</strong> The tool has its own config schema. The installer merges the kirograph entry without overwriting other settings.</p>
     <p><strong>Pattern D — Print-only:</strong> The tool's MCP config is user-scoped or cloud-hosted. The installer writes instructions locally and prints the exact command to register the MCP server.</p>
+
+    <h3 id="auto-sync-hooks">Auto-Sync Hooks</h3>
+    <p>For tools that support lifecycle hooks, the installer writes auto-sync hooks that run <code>kirograph sync</code> when the agent finishes — no manual intervention needed.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>Hook file</th><th>Event</th><th>Behavior</th></tr></thead>
+        <tbody>
+          <tr style="background: rgba(167,139,250,0.08); font-weight: 600;"><td>Kiro</td><td><code>.kiro/hooks/*.kiro.hook</code></td><td>agentStop + preToolUse</td><td>Sync + compression hint + memory capture</td></tr>
+          <tr><td>Cursor</td><td><code>.cursor/hooks.json</code></td><td>stop</td><td>Sync on task completion</td></tr>
+          <tr><td>Windsurf</td><td><code>.windsurf/hooks.json</code></td><td>post_cascade_response</td><td>Sync after each response</td></tr>
+          <tr><td>Claude Code</td><td><code>.claude/settings.json</code></td><td>Stop</td><td>Sync on session stop</td></tr>
+          <tr><td>GitHub Copilot</td><td><code>.github/hooks.json</code></td><td>session-end</td><td>Sync on session end</td></tr>
+          <tr><td>Cline</td><td><code>.clinerules/hooks/task_completed</code></td><td>task_completed</td><td>Executable script that syncs</td></tr>
+          <tr><td>Codex CLI</td><td><code>.codex/hooks.json</code></td><td>Stop</td><td>Sync on session stop</td></tr>
+          <tr><td>Antigravity</td><td><code>.agents/hooks.json</code></td><td>Stop</td><td>Sync on execution stop</td></tr>
+          <tr><td>Gemini CLI</td><td><code>.gemini/settings.json</code></td><td>SessionEnd</td><td>Sync on session end</td></tr>
+          <tr><td>OpenCode</td><td><code>.opencode/plugins/kirograph-sync.js</code></td><td>session.idle</td><td>JS plugin that syncs</td></tr>
+          <tr><td>Devin</td><td><code>.devin/hooks.v1.json</code></td><td>Stop</td><td>Sync on session stop</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>For tools <strong>without</strong> a hook system (22 targets), the generated instructions include a "Session Hygiene" section that tells the agent to manually run <code>kirograph sync</code> at the start and end of each session.</p>
 
     <h3 id="multiple-targets">Multiple Targets</h3>
     <p>You can install multiple targets in the same project. They all share the same <code>.kirograph/</code> graph data. Multiple targets can write to <code>AGENTS.md</code> simultaneously using unique block IDs.</p>
