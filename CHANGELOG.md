@@ -1,5 +1,104 @@
 # Changelog
 
+## [0.16.4] - 2026-05-22: Tier 4 — Full Coverage
+
+> ⚠️ Community-contributed, vibecoded, unverified. PRs welcome for fixes.
+
+### Added
+
+- **Generic print-only target factory** (`src/bin/installer/targets/generic.ts`): declarative config for tools without a well-known project-level MCP config path. Writes `.kirograph/<target>.md` and prints setup instructions.
+- **9 new print-only targets**: Mistral Vibe (`--target mistral-vibe`), IBM Bob (`--target ibm-bob`), Crush (`--target crush`), Droid Factory (`--target droid-factory`), ForgeCode (`--target forgecode`), iFlow CLI (`--target iflow`), Qwen Code (`--target qwen`), Atlassian Rovo Dev (`--target rovo`), Qoder (`--target qoder`).
+- **Install target count**: 24 → 33.
+
+### Fixed
+
+- **`buildAgentInstructions` now includes all enabled features**: shell compression (`kirograph_exec` section with level-specific examples), memory (`kirograph_mem_search`/`kirograph_mem_store` guidance), and the full decision guide table. Previously non-Kiro targets only got basic tool guidance + caveman rules, missing compression and memory sections entirely.
+- **All 32 non-Kiro targets** now pass `shellCompressionLevel` and `enableMemory` through to `buildAgentInstructions` via the new `buildInstructionOpts` helper. Feature parity with the Kiro steering file.
+
+---
+
+## [0.16.3] - 2026-05-22: Tier 3 IDE Expansion
+
+> ⚠️ Community-contributed, vibecoded, unverified. PRs welcome for fixes.
+
+### Added
+
+- **Augment Code install target** (`--target augment`): `.augment/mcp.json` + generated block in `augment-guidelines.md`.
+- **Kilo Code install target** (`--target kilo`): `.kilo/mcp_settings.json` + generated block in `.kilorules`.
+- **Sourcegraph Amp install target** (`--target amp`): `.amp/config.json` MCP + `.amp/instructions.md`.
+- **Devin install target** (`--target devin`): `devin.json` MCP + generated block in `AGENTS.md`.
+- **Replit Agent install target** (`--target replit`): generated block in `AGENTS.md` + prints MCP setup instructions.
+- **Block Goose install target** (`--target goose`): generated block in `AGENTS.md` + prints `goose mcp add` command.
+- **OpenHands install target** (`--target openhands`): `.openhands/config.json` MCP + generated block in `AGENTS.md`.
+- **Tabnine install target** (`--target tabnine`): `.tabnine/mcp.json` + `.tabnine/instructions.md`.
+- **Install target count**: 16 → 24.
+
+---
+
+## [0.16.2] - 2026-05-22: Tier 2 IDE Expansion
+
+> ⚠️ Community-contributed, vibecoded, unverified. PRs welcome for fixes.
+
+### Added
+
+- **Continue install target** (`--target continue`): `.continue/config.json` MCP + `.continue/rules/kirograph.md`.
+- **Roo Code install target** (`--target roo`): `.roo/mcp.json` + generated block in `.roorules`.
+- **Warp install target** (`--target warp`): `.warp/mcp.json` + `.warp/rules/kirograph.md`.
+- **Aider install target** (`--target aider`): generated block in `CONVENTIONS.md` + prints MCP CLI flag.
+- **Trae install target** (`--target trae`): `.trae/mcp.json` + `.trae/rules/kirograph.md`.
+- **Install target count**: 11 → 16.
+
+---
+
+## [0.16.1] - 2026-05-22: Tier 1 IDE Expansion
+
+> ⚠️ Community-contributed, vibecoded, unverified. PRs welcome for fixes.
+
+### Added
+
+- **Windsurf install target** (`--target windsurf`): `.windsurf/mcp.json` + generated block in `.windsurfrules`.
+- **GitHub Copilot install target** (`--target copilot`): `.github/copilot-mcp.json` + generated block in `.github/copilot-instructions.md`.
+- **Cline install target** (`--target cline`): `.cline/mcp_settings.json` + generated block in `.clinerules`.
+- **JetBrains Junie install target** (`--target junie`): `.junie/mcp.json` + generated block in `.junie/guidelines.md`.
+- **Gemini CLI install target** (`--target gemini-cli`): alias for `antigravity` (shares `.gemini/settings/mcp.json` + `GEMINI.md`).
+- **Install target count**: 6 → 11.
+
+### Changed
+
+- `InstallTarget` type extended with `'windsurf' | 'cline' | 'copilot' | 'junie' | 'gemini-cli'`.
+- `kirograph install --target` now dynamically lists all available targets in help and error messages.
+- README and docs updated with all Tier 1 targets.
+
+---
+
+## [0.16.0] - 2026-05-22: Multi-IDE Expansion
+
+### Added
+
+- **Cursor install target** (`--target cursor`): full integration for Cursor IDE.
+  - `.cursor/mcp.json`: project-scoped MCP server registration (same `mcpServers` format Cursor expects).
+  - `.cursor/rules/kirograph.mdc`: always-active Cursor rule with `alwaysApply: true` frontmatter, teaching the agent to prefer graph tools over grep/glob.
+  - `.kirograph/cursor.md`: reference copy of agent instructions.
+  - `uninit --target cursor`: removes MCP entry and rule file cleanly.
+- **Antigravity install target** (`--target antigravity`): full integration for Google Antigravity IDE.
+  - `.gemini/settings/mcp.json`: project-scoped MCP server registration.
+  - `GEMINI.md`: generated KiroGraph instruction block (upsert pattern, safe to re-run).
+  - `.kirograph/antigravity.md`: reference copy of agent instructions.
+  - `uninit --target antigravity`: removes MCP entry and GEMINI.md block cleanly.
+- **OpenCode install target** (`--target opencode`): full integration for OpenCode (SST terminal agent).
+  - `.opencode.json`: MCP server registration (`mcp.kirograph` with `type: "local"`) + `instructions` array referencing `.kirograph/opencode.md`.
+  - `.kirograph/opencode.md`: reference copy of agent instructions.
+  - `uninit --target opencode`: removes MCP entry and instructions reference from `.opencode.json`.
+- **Install target count**: 3 → 6 (kiro, claude, codex, cursor, antigravity, opencode).
+
+### Changed
+
+- `InstallTarget` type extended: `'kiro' | 'claude' | 'codex'` → `'kiro' | 'claude' | 'codex' | 'cursor' | 'antigravity' | 'opencode'`.
+- `kirograph install --target` help text and error messages updated to include `cursor`, `antigravity`, and `opencode`.
+- README and docs updated with Cursor, Antigravity, and OpenCode usage instructions in the "Other Tools (Experimental)" section.
+
+---
+
 ## [0.15.0] - 2026-05-21: Memory
 
 ### Added

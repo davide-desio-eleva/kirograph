@@ -1,8 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { KIROGRAPH_TOOL_NAMES } from '../../mcp/tool-names';
+import type { InstructionOptions } from './instructions';
+import type { CavemanMode } from './caveman';
 
-export type InstallTarget = 'kiro' | 'claude' | 'codex';
+export type InstallTarget = 'kiro' | 'claude' | 'codex' | 'cursor' | 'antigravity' | 'opencode' | 'windsurf' | 'cline' | 'copilot' | 'junie' | 'gemini-cli' | 'continue' | 'roo' | 'warp' | 'aider' | 'trae' | 'augment' | 'kilo' | 'amp' | 'devin' | 'replit' | 'goose' | 'openhands' | 'tabnine' | 'mistral-vibe' | 'ibm-bob' | 'crush' | 'droid-factory' | 'forgecode' | 'iflow' | 'qwen' | 'rovo' | 'qoder';
 
 export const KIROGRAPH_SERVER_NAME = 'kirograph';
 export const KIROGRAPH_COMMAND = 'kirograph';
@@ -97,4 +99,16 @@ export function removeGeneratedBlock(filePath: string, blockId: string): boolean
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Build InstructionOptions from the installLate parameters.
+ * Used by all targets to pass full feature config to buildAgentInstructions.
+ */
+export function buildInstructionOpts(cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean): InstructionOptions {
+  return {
+    cavemanMode,
+    shellCompressionLevel: (shellCompressionLevel as InstructionOptions['shellCompressionLevel']) ?? undefined,
+    enableMemory: enableMemory ?? false,
+  };
 }

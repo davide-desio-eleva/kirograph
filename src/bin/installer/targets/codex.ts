@@ -3,6 +3,7 @@ import * as path from 'path';
 import { CavemanMode } from '../caveman';
 import { ensureDir, removeGeneratedBlock, upsertGeneratedBlock } from '../common';
 import { buildAgentInstructions } from '../instructions';
+import { buildInstructionOpts } from '../common';
 
 const CODEX_BLOCK_ID = 'codex';
 
@@ -11,14 +12,14 @@ export function installCodexEarly(_projectRoot: string): void {
   // instead of writing outside the project from an installer command.
 }
 
-export function installCodexLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', _shellCompressionLevel?: string, _enableMemory?: boolean): void {
+export function installCodexLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean): void {
   const instructionsPath = path.join(projectRoot, '.kirograph', 'codex.md');
   ensureDir(path.dirname(instructionsPath));
-  fs.writeFileSync(instructionsPath, buildAgentInstructions(cavemanMode));
+  fs.writeFileSync(instructionsPath, buildAgentInstructions(buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory)));
   console.log(`  ✓ Codex instructions written to ${instructionsPath}`);
 
   const agentsPath = path.join(projectRoot, 'AGENTS.md');
-  const changed = upsertGeneratedBlock(agentsPath, CODEX_BLOCK_ID, '## KiroGraph', buildAgentInstructions(cavemanMode));
+  const changed = upsertGeneratedBlock(agentsPath, CODEX_BLOCK_ID, '## KiroGraph', buildAgentInstructions(buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory)));
   console.log(changed
     ? `  ✓ Codex project instructions updated in ${agentsPath}`
     : `  ✓ Codex project instructions already up to date`);

@@ -11,6 +11,7 @@ import {
   writeMcpServersConfig,
 } from '../common';
 import { buildAgentInstructions } from '../instructions';
+import { buildInstructionOpts } from '../common';
 
 const CLAUDE_IMPORT = '@.kirograph/claude.md';
 
@@ -23,10 +24,10 @@ export function installClaudeEarly(projectRoot: string): void {
   console.log(`  ✓ Claude MCP server registered in ${mcpPath}`);
 }
 
-export function installClaudeLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', _shellCompressionLevel?: string, _enableMemory?: boolean): void {
+export function installClaudeLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean): void {
   const instructionsPath = path.join(projectRoot, '.kirograph', 'claude.md');
   ensureDir(path.dirname(instructionsPath));
-  fs.writeFileSync(instructionsPath, buildAgentInstructions(cavemanMode));
+  fs.writeFileSync(instructionsPath, buildAgentInstructions(buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory)));
   console.log(`  ✓ Claude instructions written to ${instructionsPath}`);
 
   const memoryPath = path.join(projectRoot, 'CLAUDE.md');

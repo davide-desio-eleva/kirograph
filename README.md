@@ -8,7 +8,7 @@ Semantic code knowledge graph for [Kiro](https://kiro.dev): fewer tool calls, in
 
 Inspired by [CodeGraph](https://github.com/colbymchenry/codegraph) by [colbymchenry](https://github.com/colbymchenry) for Claude Code, rebuilt natively for Kiro's MCP and hooks system.
 
-> **Full support is for Kiro only.** Experimental integrations for other MCP-capable tools (Claude Code, Codex) are available but not fully tested. See [Other Tools (Experimental)](#other-tools-experimental) for details.
+> **Full support is for Kiro only.** Experimental integrations for 32 other MCP-capable tools are available — community-contributed, vibecoded, and unverified. PRs welcome for fixes. See [Other Tools (Experimental)](#other-tools-experimental) for the full list.
 
 ## Why KiroGraph?
 
@@ -136,7 +136,7 @@ kirograph --version
 ```bash
 kirograph uninit [path]                  # Prompts to remove Kiro integration files and .kirograph/ data separately
 kirograph uninit --force                 # Remove Kiro integration files + .kirograph/ data without confirmation
-kirograph uninit --target all --force    # Remove all integration files (Kiro + Claude + Codex) + .kirograph/ data
+kirograph uninit --target all --force    # Remove all integration files (Kiro + Claude + Codex + Cursor + Antigravity + OpenCode) + .kirograph/ data
 ```
 
 `kirograph uninstall` is an alias for `kirograph uninit`.
@@ -148,6 +148,9 @@ This can remove:
 - Kiro target: `.kiro/hooks/kirograph-*.json`, `.kiro/steering/kirograph.md`, `.kiro/agents/kirograph.json`
 - Claude target (experimental): `kirograph` from `.mcp.json`, plus the KiroGraph import from `CLAUDE.md`
 - Codex target (experimental): the generated KiroGraph block from `AGENTS.md`
+- Cursor target (experimental): `kirograph` from `.cursor/mcp.json`, plus `.cursor/rules/kirograph.mdc`
+- Antigravity target (experimental): `kirograph` from `.gemini/settings/mcp.json`, plus the KiroGraph block from `GEMINI.md`
+- OpenCode target (experimental): `kirograph` MCP and instructions reference from `.opencode.json`
 
 ### Remove the CLI globally
 
@@ -275,41 +278,88 @@ Teaches the Kiro IDE to prefer graph tools over file scanning when `.kirograph/`
 
 ## Other Tools (Experimental)
 
-> **⚠️ Not fully tested, community-contributed.** The integrations below are outside the original scope of KiroGraph. They are provided as-is. Issues and PRs related to these targets are welcome, but there is no guarantee they will be supported or merged without active help from the contributor.
+> **⚠️ Community-contributed, vibecoded, unverified.** These integrations are provided as-is. PRs welcome for fixes and corrections.
 
-KiroGraph can also be installed for other MCP-capable coding agents. All targets share the same `.kirograph/` data; if the project is already initialized, installing another target only writes that tool's integration files and reuses the existing graph.
+KiroGraph can be installed for any MCP-capable coding agent. All targets share the same `.kirograph/` data — installing another target only writes that tool's integration files and reuses the existing graph.
+
+### How It Works
+
+Every target does two things:
+
+1. **Registers the MCP server** — writes a config file that tells the tool to launch `kirograph serve --mcp` as a stdio MCP server.
+2. **Injects agent instructions** — writes a rules/instructions file that teaches the agent to prefer graph tools over grep/glob when `.kirograph/` exists.
+
+The MCP server exposes 24 tools (search, context, callers, callees, impact, node, path, type hierarchy, dead code, circular deps, files, status, architecture, coupling, package, hotspots, surprising, diff, exec, gain, mem_search, mem_store, mem_timeline, mem_status). All tools are read-only except `mem_store`.
+
+### Supported Targets (33)
+
+| Target | Command | MCP Config | Instructions |
+|--------|---------|-----------|--------------|
+| **Kiro** (full support) | `kirograph install` | `.kiro/settings/mcp.json` | `.kiro/steering/kirograph.md` + hooks |
+| Cursor | `--target cursor` | `.cursor/mcp.json` | `.cursor/rules/kirograph.mdc` |
+| Windsurf | `--target windsurf` | `.windsurf/mcp.json` | `.windsurfrules` |
+| GitHub Copilot | `--target copilot` | `.github/copilot-mcp.json` | `.github/copilot-instructions.md` |
+| Cline | `--target cline` | `.cline/mcp_settings.json` | `.clinerules` |
+| Roo Code | `--target roo` | `.roo/mcp.json` | `.roorules` |
+| Kilo Code | `--target kilo` | `.kilo/mcp_settings.json` | `.kilorules` |
+| Claude Code | `--target claude` | `.mcp.json` | `CLAUDE.md` (import) |
+| Codex CLI | `--target codex` | Print command | `AGENTS.md` |
+| OpenCode | `--target opencode` | `.opencode.json` | `.opencode.json` (instructions field) |
+| Antigravity | `--target antigravity` | `.gemini/settings/mcp.json` | `GEMINI.md` |
+| Gemini CLI | `--target gemini-cli` | `.gemini/settings/mcp.json` | `GEMINI.md` (alias for antigravity) |
+| JetBrains Junie | `--target junie` | `.junie/mcp.json` | `.junie/guidelines.md` |
+| Continue | `--target continue` | `.continue/config.json` | `.continue/rules/kirograph.md` |
+| Warp | `--target warp` | `.warp/mcp.json` | `.warp/rules/kirograph.md` |
+| Trae | `--target trae` | `.trae/mcp.json` | `.trae/rules/kirograph.md` |
+| Augment Code | `--target augment` | `.augment/mcp.json` | `augment-guidelines.md` |
+| Sourcegraph Amp | `--target amp` | `.amp/config.json` | `.amp/instructions.md` |
+| Tabnine | `--target tabnine` | `.tabnine/mcp.json` | `.tabnine/instructions.md` |
+| Devin | `--target devin` | `devin.json` | `AGENTS.md` |
+| OpenHands | `--target openhands` | `.openhands/config.json` | `AGENTS.md` |
+| Replit Agent | `--target replit` | Print command | `AGENTS.md` |
+| Block Goose | `--target goose` | Print `goose mcp add` | `AGENTS.md` |
+| Aider | `--target aider` | Print CLI flag | `CONVENTIONS.md` |
+| Mistral Vibe | `--target mistral-vibe` | Print command | `.kirograph/mistral-vibe.md` |
+| IBM Bob | `--target ibm-bob` | Print command | `.kirograph/ibm-bob.md` |
+| Crush | `--target crush` | Print command | `.kirograph/crush.md` |
+| Droid Factory | `--target droid-factory` | Print command | `.kirograph/droid-factory.md` |
+| ForgeCode | `--target forgecode` | Print command | `.kirograph/forgecode.md` |
+| iFlow CLI | `--target iflow` | Print command | `.kirograph/iflow.md` |
+| Qwen Code | `--target qwen` | Print command | `.kirograph/qwen.md` |
+| Atlassian Rovo Dev | `--target rovo` | Print command | `.kirograph/rovo.md` |
+| Qoder | `--target qoder` | Print command | `.kirograph/qoder.md` |
+
+### Integration Patterns
+
+**Pattern A — Project-level MCP config + rules file** (Cursor, Windsurf, Copilot, Cline, Roo, Kilo, Junie, Continue, Warp, Trae, Augment, Amp, Tabnine): The installer writes a JSON config file that the tool reads on startup, plus a rules/instructions file the agent loads into context. Restart the tool after installing.
+
+**Pattern B — Standard mcpServers + project memory file** (Claude Code, Antigravity/Gemini CLI): Writes a standard `mcpServers` config plus a generated block in the tool's project memory file (`CLAUDE.md`, `GEMINI.md`). The block is idempotent — safe to re-run.
+
+**Pattern C — Custom config format** (OpenCode, Devin): The tool has its own config schema. The installer merges the kirograph entry into the existing config without overwriting other settings.
+
+**Pattern D — Print-only** (Codex, Aider, Replit, Goose, Mistral Vibe, IBM Bob, Crush, Droid Factory, ForgeCode, iFlow, Qwen, Rovo, Qoder): The tool's MCP config is user-scoped or cloud-hosted. The installer writes instructions locally and prints the exact command to register the MCP server.
+
+### Uninstalling
+
+Every target supports `uninit`:
 
 ```bash
-kirograph install --target claude  # wire up Claude Code MCP + project memory
-kirograph install --target codex   # write Codex instructions and print MCP config
+kirograph uninit --target cursor       # removes .cursor/mcp.json entry + .cursor/rules/kirograph.mdc
+kirograph uninit --target windsurf     # removes .windsurf/mcp.json entry + .windsurfrules block
+kirograph uninit --target all --force  # removes ALL integration files + .kirograph/ data
 ```
 
-### Using with Claude Code
+### Multiple Targets
+
+You can install multiple targets in the same project. They all share the same `.kirograph/` graph data:
 
 ```bash
-kirograph install --target claude
+kirograph install                      # Kiro (primary)
+kirograph install --target cursor      # also Cursor
+kirograph install --target claude      # also Claude Code
 ```
 
-This writes:
-
-- `.mcp.json`: project-scoped MCP server config for Claude Code
-- `.kirograph/claude.md`: KiroGraph tool guidance
-- `CLAUDE.md`: an import of `.kirograph/claude.md`
-
-Claude Code prompts for project MCP approval the first time it sees `.mcp.json`.
-
-### Using with Codex
-
-```bash
-kirograph install --target codex
-```
-
-This writes:
-
-- `.kirograph/codex.md`: KiroGraph tool guidance
-- `AGENTS.md`: a generated KiroGraph instruction block
-
-Codex MCP configuration is user-scoped, so the installer prints the exact `codex mcp add ...` command and equivalent `~/.codex/config.toml` snippet instead of editing files outside the project.
+Each target writes its own integration files without conflicting with others. Multiple targets can write to `AGENTS.md` simultaneously using unique block IDs (`<!-- kirograph:codex:start -->`, `<!-- kirograph:devin:start -->`, etc.).
 
 ## MCP Tools
 
