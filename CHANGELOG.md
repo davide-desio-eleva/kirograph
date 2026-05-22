@@ -35,11 +35,17 @@
 - `KiroGraph` class exposes `getDatabase()` accessor.
 - Installer `installLate` signature extended with `enableMemory` parameter.
 
-## [0.14.1] - 2026-05-21: Hook & Uninit Fixes
+## [0.14.1] - 2026-05-21: Hook Consolidation & Uninit Fixes
+
+### Changed
+
+- **Hooks consolidated**: Replaced four per-file hooks (`kirograph-mark-dirty-on-save`, `kirograph-mark-dirty-on-create`, `kirograph-sync-on-delete`, `kirograph-sync-if-dirty`) with a single `agentStop` hook (`kirograph-sync-if-dirty.kiro.hook`) that uses `askAgent` to tell the agent to sync if any files changed during the session.
+- **Hook file extension**: Migrated from `.json` to `.kiro.hook` extension. The installer automatically migrates existing `.json` hooks and removes legacy files.
+- **Compression hint hook**: `kirograph-compress-hint.kiro.hook` now uses `.kiro.hook` extension (was `.json`).
+>>>>>>> main
 
 ### Fixed
 
-- **Hooks**: resolved issue where hooks were not triggering correctly after installation.
 - **`kirograph uninit`**: fixed uninit command failing to fully clean up integration files.
 
 ## [0.14.0] - 2026-05-19: Shell Compression

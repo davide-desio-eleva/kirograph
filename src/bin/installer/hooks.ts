@@ -18,7 +18,7 @@ const HOOKS: Array<{ filename: string; hook: object }> = [
       version: '1.0.0',
       description: 'Sync the KiroGraph index when the agent stops, picking up any file edits, creates, or deletes from the session.',
       when: { type: 'agentStop' },
-      then: { type: 'askAgent', prompt: "If any source file was created, edited, or deleted during this session, run kirograph_exec with command 'kirograph sync --quiet' to sync the index. If no files were changed, do nothing. Do not explain, just run the tool silently." },
+      then: { type: 'runCommand', command: 'kirograph sync --quiet 2>&1 > /dev/null' },
     },
   },
   {

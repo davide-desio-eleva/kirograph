@@ -202,7 +202,7 @@ kg install
 └───────────────────────────────────────────┘
 ```
 
-Kiro hooks mark the index dirty on every file save or create, then flush on agent idle, batching changes efficiently with no overhead during active editing.
+A single Kiro hook triggers on `agentStop` and asks the agent to sync the index if any source files were changed during the session. No per-file hooks, no background watcher — zero overhead during active editing.
 
 ## Using with Kiro
 
@@ -225,6 +225,7 @@ Registers the KiroGraph MCP server. Used by both the IDE and the CLI agent:
         "kirograph_circular_deps", "kirograph_path", "kirograph_type_hierarchy",
         "kirograph_architecture", "kirograph_coupling", "kirograph_package",
         "kirograph_hotspots", "kirograph_surprising", "kirograph_diff",
+        "kirograph_exec", "kirograph_gain"
         "kirograph_mem_search", "kirograph_mem_store",
         "kirograph_mem_timeline", "kirograph_mem_status"
       ]
@@ -233,33 +234,26 @@ Registers the KiroGraph MCP server. Used by both the IDE and the CLI agent:
 }
 ```
 
-### IDE Auto-Sync Hooks (`.kiro/hooks/`)
+### IDE Hooks (`.kiro/hooks/`)
 
-Four hooks keep the index fresh automatically in the Kiro IDE:
+Up to two hooks are installed (`.kiro.hook` extension):
 
-| Hook | Event | Action |
-|------|-------|--------|
-| `kirograph-mark-dirty-on-save.json` | `fileEdited` | `kirograph mark-dirty` |
-| `kirograph-mark-dirty-on-create.json` | `fileCreated` | `kirograph mark-dirty` |
-| `kirograph-sync-on-delete.json` | `fileDeleted` | `kirograph sync-if-dirty` |
-| `kirograph-sync-if-dirty.json` | `agentStop` | `kirograph sync-if-dirty --quiet` |
-| `kirograph-mem-capture.json` | `agentStop` | Prompts agent to store observations *(only when `enableMemory: true`)* |
+| Hook file | Event | Type | Behavior |
+|-----------|-------|------|----------|
+| `kirograph-sync-if-dirty.kiro.hook` | `agentStop` | `runCommand` | Runs `kirograph sync --quiet` when the agent stops, syncing any file changes from the session. The sync command skips unchanged files via content hashing, so it's fast even when nothing changed. |
+| `kirograph-compress-hint.kiro.hook` | `preToolUse` (shell) | `askAgent` | Reminds the agent to use `kirograph_exec` for commands that benefit from token compression (git, gh, test, lint, build, docker, aws, grep). Only installed when shell compression is enabled. |
 
-File changes are batched: saves and creates write a dirty marker; the actual sync runs when the agent stops. Deletes sync immediately. This means no overhead during active editing.
-
-When memory is enabled, the `kirograph-mem-capture` hook fires at session end and prompts the agent to review what happened and store any important decisions, errors, or patterns via `kirograph_mem_store`. This is how memory accumulates automatically — the agent decides what's worth remembering, the hook ensures it's always asked.
-
-Hooks fire for: `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.go`, `.rs`, `.java`, `.cs`, `.rb`, `.php`, `.swift`, `.kt`, `.dart`, `.ex`, `.exs`
+The sync hook replaces the previous per-file approach (mark-dirty-on-save, mark-dirty-on-create, sync-on-delete). A single `agentStop` hook handles all file changes in one pass with zero overhead during active editing.
 
 ### CLI Agent Config (`.kiro/agents/kirograph.json`)
 
-A custom agent for Kiro CLI that wires up the MCP server, inlines the steering instructions as a prompt, and handles sync in the CLI's own hook format. The CLI has no file-watch events, so syncing is handled at session boundaries instead:
+A custom agent for Kiro CLI that wires up the MCP server, references the steering file as a resource, and handles sync in the CLI's own hook format. The CLI has no file-watch events, so syncing is handled at session boundaries:
 
-| Hook | Event | Action |
-|------|-------|--------|
-| `agentSpawn` | Agent starts | `kirograph sync-if-dirty --quiet` (catches edits made between sessions) |
-| `userPromptSubmit` | Each prompt | `kirograph sync-if-dirty --quiet` (keeps graph fresh within a session) |
-| `stop` | End of each turn | `kirograph sync-if-dirty --quiet` (deferred flush, mirrors IDE `agentStop`) |
+| Event | Action |
+|-------|--------|
+| `agentSpawn` | `kirograph sync-if-dirty --quiet` (catches edits made between sessions) |
+| `userPromptSubmit` | `kirograph sync-if-dirty --quiet` (keeps graph fresh within a session) |
+| `stop` | `kirograph sync-if-dirty --quiet` (deferred flush, mirrors IDE `agentStop`) |
 
 Use it with:
 
@@ -1176,7 +1170,7 @@ By default, KiroGraph uses exact name lookup and full-text search. Enable semant
 }
 ```
 
-This generates vector embeddings for all functions, methods, classes, interfaces, type aliases, components, and modules using a local embedding model (downloaded automatically to `~/.kirograph/models/` on first use). Embeddings are kept in sync automatically via Kiro hooks. on every file save, create, or delete.
+This generates vector embeddings for all functions, methods, classes, interfaces, type aliases, components, and modules using a local embedding model (downloaded automatically to `~/.kirograph/models/` on first use). Embeddings are kept in sync automatically via the Kiro `agentStop` hook, which syncs the index (including embeddings) whenever files change during a session.
 
 Run `kirograph install` to be guided through model and engine selection interactively with arrow-key menus, or set the fields manually in `.kirograph/config.json`.
 

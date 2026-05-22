@@ -123,7 +123,7 @@
         <div class="benefit-icon"><i data-lucide="refresh-cw"></i></div>
         <div>
           <h3>Always up to date, zero overhead</h3>
-          <p>Kiro hooks mark the index dirty on every save and flush changes when the agent stops. No background watcher process; changes batch efficiently with no overhead during editing.</p>
+          <p>A single Kiro hook triggers on <code>agentStop</code> and syncs the index if any files changed during the session. No background watcher process; zero overhead during editing.</p>
         </div>
       </div>
     </div>
@@ -155,7 +155,7 @@
       <div class="card">
         <span class="card-icon"><i data-lucide="webhook"></i></span>
         <h3>Auto-sync Hooks</h3>
-        <p>Four IDE hooks keep the index fresh automatically: <code>fileEdited</code>, <code>fileCreated</code>, <code>fileDeleted</code>, and <code>agentStop</code>. Changes batch efficiently, no watcher process needed.</p>
+        <p>A single <code>agentStop</code> hook keeps the index fresh automatically. An optional <code>preToolUse</code> hook reminds the agent to use <code>kirograph_exec</code> for shell compression. No watcher process needed.</p>
       </div>
 
       <div class="card">
@@ -279,13 +279,11 @@
 
     <div style="margin-top: 2.5rem; text-align: center;">
       <p style="color: var(--text-muted); font-size: 0.9rem; max-width: 600px; margin: 0 auto 1.25rem;">
-        Kiro hooks mark the index dirty on every file save or create, then flush on agent idle, batching changes efficiently with no overhead during active editing.
+        A single <code>agentStop</code> hook asks the agent to sync the index if any files were changed during the session. Zero overhead during active editing.
       </p>
       <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
-        <span class="badge badge-blue">fileEdited → mark-dirty</span>
-        <span class="badge badge-blue">fileCreated → mark-dirty</span>
-        <span class="badge badge-blue">fileDeleted → sync-if-dirty</span>
-        <span class="badge badge-blue">agentStop → sync-if-dirty</span>
+        <span class="badge badge-blue">agentStop → sync if files changed</span>
+        <span class="badge badge-blue">preToolUse (shell) → suggest kirograph_exec</span>
       </div>
     </div>
   </div>

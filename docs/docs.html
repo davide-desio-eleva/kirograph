@@ -94,9 +94,9 @@
     <p>KiroGraph is designed around Kiro's architecture:</p>
     <ul>
       <li><strong>MCP integration</strong>: Kiro's native MCP support means KiroGraph tools are auto-approved and always available, no manual configuration needed.</li>
-      <li><strong>Hooks system</strong>: Kiro's file event hooks (<code>fileEdited</code>, <code>fileCreated</code>, <code>fileDeleted</code>, <code>agentStop</code>) keep the index fresh automatically with zero overhead during editing. No background watcher process.</li>
+      <li><strong>Hooks system</strong>: A single <code>agentStop</code> hook asks the agent to sync the index if any files changed during the session. Zero overhead during editing, no background watcher process.</li>
       <li><strong>Steering files</strong>: Kiro's steering mechanism teaches the agent to prefer graph tools over file scanning, always in context with no extra tool calls.</li>
-      <li><strong>CLI agent</strong>: Kiro CLI's agent system allows a dedicated KiroGraph agent with inlined instructions and session-boundary sync hooks.</li>
+      <li><strong>CLI agent</strong>: Kiro CLI's agent system allows a dedicated KiroGraph agent with session-boundary sync hooks.</li>
     </ul>
     <p>This tight integration is why Kiro is the primary and fully supported target. The hooks, steering, and agent config are all Kiro-native concepts that make the experience seamless.</p>
 
@@ -391,22 +391,21 @@ cd kirograph && npm uninstall -g .</code></pre>
   }
 }</code></pre>
 
-    <h3 id="ide-hooks">IDE Auto-Sync Hooks (<code>.kiro/hooks/</code>)</h3>
+    <h3 id="ide-hooks">IDE Hooks (<code>.kiro/hooks/</code>)</h3>
+    <p>Up to two hooks are installed (<code>.kiro.hook</code> extension):</p>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Hook file</th><th>Event</th><th>Action</th></tr></thead>
+        <thead><tr><th>Hook file</th><th>Event</th><th>Type</th><th>Behavior</th></tr></thead>
         <tbody>
-          <tr><td><code>kirograph-mark-dirty-on-save.json</code></td><td><code>fileEdited</code></td><td><code>kirograph mark-dirty</code></td></tr>
-          <tr><td><code>kirograph-mark-dirty-on-create.json</code></td><td><code>fileCreated</code></td><td><code>kirograph mark-dirty</code></td></tr>
-          <tr><td><code>kirograph-sync-on-delete.json</code></td><td><code>fileDeleted</code></td><td><code>kirograph sync-if-dirty</code></td></tr>
-          <tr><td><code>kirograph-sync-if-dirty.json</code></td><td><code>agentStop</code></td><td><code>kirograph sync-if-dirty --quiet</code></td></tr>
+          <tr><td><code>kirograph-sync-if-dirty.kiro.hook</code></td><td><code>agentStop</code></td><td><code>runCommand</code></td><td>Runs <code>kirograph sync --quiet</code> when the agent stops. Skips unchanged files via content hashing, so it's fast even when nothing changed.</td></tr>
+          <tr><td><code>kirograph-compress-hint.kiro.hook</code></td><td><code>preToolUse</code> (shell)</td><td><code>askAgent</code></td><td>Reminds the agent to use <code>kirograph_exec</code> for commands that benefit from token compression. Only installed when shell compression is enabled.</td></tr>
         </tbody>
       </table>
     </div>
-    <p>Hooks fire for: <code>.ts</code>, <code>.tsx</code>, <code>.js</code>, <code>.jsx</code>, <code>.py</code>, <code>.go</code>, <code>.rs</code>, <code>.java</code>, <code>.cs</code>, <code>.rb</code>, <code>.php</code>, <code>.swift</code>, <code>.kt</code>, <code>.dart</code>, <code>.ex</code>, <code>.exs</code></p>
+    <p>The sync hook replaces the previous per-file approach (mark-dirty-on-save, mark-dirty-on-create, sync-on-delete). A single <code>agentStop</code> hook handles all file changes in one pass with zero overhead during active editing.</p>
 
     <h3 id="cli-agent">CLI Agent Config (<code>.kiro/agents/kirograph.json</code>)</h3>
-    <p>A custom agent for Kiro CLI that wires up the MCP server and inlines steering instructions. Sync is handled at session boundaries:</p>
+    <p>A custom agent for Kiro CLI that wires up the MCP server and references the steering file as a resource. Sync is handled at session boundaries:</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Event</th><th>Action</th></tr></thead>
