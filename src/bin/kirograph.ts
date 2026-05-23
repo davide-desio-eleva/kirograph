@@ -5,7 +5,7 @@
 
 import { Command } from 'commander';
 import { printBanner } from './banner';
-import { printColoredHelp, register as registerHelp } from './commands/help';
+import { printColoredHelp, printInteractiveHelp, register as registerHelp } from './commands/help';
 import { register as registerInit } from './commands/init';
 import { register as registerUninit } from './commands/uninit';
 import { register as registerIndex } from './commands/index';
@@ -116,13 +116,31 @@ registerCompression(program);
 registerExec(program);
 registerMemory(program);
 
-// Show banner + help when called with no arguments, otherwise parse normally
-if (process.argv.length === 2) {
-  printBanner();
-  printColoredHelp();
-  process.exit(0);
-}
+// Register the help command for `kirograph help`
+program
+  .command('help')
+  .description('Show interactive help')
+  .action(() => {
+    if (process.stdout.isTTY) {
+      printInteractiveHelp();
+    } else {
+      printBanner();
+      printColoredHelp();
+      process.exit(0);
+    }
+  });
 
 registerHelp(program);
 
-program.parse(process.argv);
+// Show interactive help when called with no arguments
+if (process.argv.length === 2) {
+  if (process.stdout.isTTY) {
+    printInteractiveHelp();
+  } else {
+    printBanner();
+    printColoredHelp();
+    process.exit(0);
+  }
+} else {
+  program.parse(process.argv);
+}
