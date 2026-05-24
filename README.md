@@ -82,7 +82,7 @@ See the [Architecture Analysis](#architecture-analysis-opt-in-1) section below f
 
 ### Memory (opt-in)
 
-When `enableMemory: true` is set, KiroGraph stores persistent observations across sessions — decisions, errors, patterns, and architecture notes. Observations are:
+When `enableMemory: true` is set, KiroGraph stores persistent observations across sessions — decisions, errors, patterns, and architecture notes. Inspired by [cavemem](https://github.com/JuliusBrussee/cavemem) by [Julius Brussee](https://www.linkedin.com/in/julius-brussee/). Observations are:
 
 - **Compressed** with the caveman grammar (if caveman mode is enabled) — deterministic, no LLM tokens spent
 - **Linked to code symbols** — identifiers in observation text are matched against the graph and stored as stable `qualified_name` references
@@ -105,7 +105,7 @@ See the [Memory](#memory-requires-enablememory-true) section below for full deta
 
 ### Documentation indexing (opt-in)
 
-When `enableDocs: true` is set, KiroGraph indexes project documentation by heading hierarchy and section structure. Instead of reading entire doc files, agents retrieve exactly the section they need via stable section IDs.
+When `enableDocs: true` is set, KiroGraph indexes project documentation by heading hierarchy and section structure. Instead of reading entire doc files, agents retrieve exactly the section they need via stable section IDs. Inspired by [jDocMunch-MCP](https://github.com/jgravelle/jdocmunch-mcp) by [J. Gravelle](https://www.linkedin.com/in/j-gravelle-2778223/).
 
 - **9 format parsers**: Markdown, MDX, reStructuredText, AsciiDoc, RDoc, Org-mode, HTML, plain text, OpenAPI/Swagger
 - **Code ↔ docs cross-references**: Backtick references, CamelCase identifiers, and snake_case patterns in docs are resolved against the code graph
@@ -1661,6 +1661,11 @@ Detected frameworks are stored in config and used to improve symbol extraction a
 ## Credits
 
 KiroGraph is inspired by [CodeGraph](https://github.com/colbymchenry/codegraph) by [Colby McHenry](https://www.linkedin.com/in/colby-mchenry/). the original concept of building a semantic code graph for AI coding agents comes from his work.
+
+### Inspirations
+
+- [cavemem](https://github.com/JuliusBrussee/cavemem) by [Julius Brussee](https://www.linkedin.com/in/julius-brussee/): the memory module's hook-based observation capture, deterministic compression, and SQLite storage pattern.
+- [jDocMunch-MCP](https://github.com/jgravelle/jdocmunch-mcp) by [J. Gravelle](https://www.linkedin.com/in/j-gravelle-2778223/): the documentation module's section-first retrieval approach, stable section IDs, and byte-offset addressing.
 
 ### Contributors
 

@@ -488,7 +488,7 @@ cd kirograph && npm uninstall -g .</code></pre>
     <!-- ── Memory ── -->
     <h2 id="memory">Memory (opt-in)</h2>
 
-    <p>When <code>enableMemory: true</code> is set in <code>.kirograph/config.json</code>, KiroGraph stores persistent observations across sessions. Decisions, errors, patterns, and architecture notes are captured with <strong>zero LLM tokens on write</strong> (compression is deterministic, symbol linking is programmatic, embedding uses the local model) and minimal tokens on read.</p>
+    <p>When <code>enableMemory: true</code> is set in <code>.kirograph/config.json</code>, KiroGraph stores persistent observations across sessions. Decisions, errors, patterns, and architecture notes are captured with <strong>zero LLM tokens on write</strong> (compression is deterministic, symbol linking is programmatic, embedding uses the local model) and minimal tokens on read. Inspired by <a href="https://github.com/JuliusBrussee/cavemem" target="_blank" rel="noopener">cavemem</a> by <a href="https://www.linkedin.com/in/julius-brussee/" target="_blank" rel="noopener">Julius Brussee</a>.</p>
 
     <h3>How it works</h3>
     <p>The write path runs entirely without LLM involvement:</p>
@@ -560,7 +560,7 @@ kirograph mem export --format jsonl</code></pre>
     <!-- ── Documentation ── -->
     <h2 id="documentation">Documentation (opt-in)</h2>
 
-    <p>When <code>enableDocs: true</code> is set in <code>.kirograph/config.json</code>, KiroGraph indexes project documentation by heading hierarchy and section structure. Instead of reading entire doc files, agents retrieve exactly the section they need via stable section IDs — saving <strong>92–97% of tokens</strong> compared to reading full files.</p>
+    <p>When <code>enableDocs: true</code> is set in <code>.kirograph/config.json</code>, KiroGraph indexes project documentation by heading hierarchy and section structure. Instead of reading entire doc files, agents retrieve exactly the section they need via stable section IDs — saving <strong>92–97% of tokens</strong> compared to reading full files. Inspired by <a href="https://github.com/jgravelle/jdocmunch-mcp" target="_blank" rel="noopener">jDocMunch-MCP</a> by <a href="https://www.linkedin.com/in/j-gravelle-2778223/" target="_blank" rel="noopener">J. Gravelle</a>.</p>
 
     <h3>How it works</h3>
     <p>The indexing pipeline:</p>
@@ -770,6 +770,12 @@ kirograph gain --graph           # ASCII graph (last 30 days)</code></pre>
 
     <h3 id="credits-origin">Original idea</h3>
     <p>KiroGraph is inspired by <a href="https://github.com/colbymchenry/codegraph" target="_blank" rel="noopener">CodeGraph</a> by <a href="https://www.linkedin.com/in/colby-mchenry/" target="_blank" rel="noopener">Colby McHenry</a>. The original concept of building a semantic code graph for AI coding agents comes from his work.</p>
+
+    <h3 id="credits-inspirations">Inspirations</h3>
+    <ul>
+      <li><a href="https://github.com/JuliusBrussee/cavemem" target="_blank" rel="noopener">cavemem</a> by <a href="https://www.linkedin.com/in/julius-brussee/" target="_blank" rel="noopener">Julius Brussee</a>: the memory module's hook-based observation capture, deterministic compression, and SQLite storage pattern.</li>
+      <li><a href="https://github.com/jgravelle/jdocmunch-mcp" target="_blank" rel="noopener">jDocMunch-MCP</a> by <a href="https://www.linkedin.com/in/j-gravelle-2778223/" target="_blank" rel="noopener">J. Gravelle</a>: the documentation module's section-first retrieval approach, stable section IDs, and byte-offset addressing.</li>
+    </ul>
 
     <h3 id="credits-contributors">Contributors</h3>
     <ul>
