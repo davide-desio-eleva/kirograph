@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "release": "./scripts/release.sh",
     "docs": "npx serve docs"
   },
   "keywords": [
