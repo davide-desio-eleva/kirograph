@@ -65,6 +65,40 @@ export interface KiroGraphConfig {
   memoryContextThreshold: number;
   /** Glob patterns for paths to never capture in memory. Default: []. */
   memoryExcludePatterns: string[];
+  /** Enable documentation indexing and navigation. Default: false. */
+  enableDocs: boolean;
+  /** Glob patterns for documentation files to include. */
+  docsInclude: string[];
+  /** Glob patterns for documentation files to exclude. */
+  docsExclude: string[];
+  /** Enable auto-linking of doc sections to code symbols. Default: true. */
+  docsLinkCode: boolean;
+  /** Max doc sections to include in kirograph_context. 0 = disabled. Default: 0. */
+  docsContextLimit: number;
+  /** Min relevance score to include a doc section in context. Default: 0.3. */
+  docsContextThreshold: number;
+  /** Max file size for doc files (bytes). Default: 1MB. */
+  docsMaxFileSize: number;
+  /** Summarization strategy. Default: 'first-sentence'. */
+  docsSummarization: 'embedding' | 'first-sentence' | 'off';
+  /** Enable tabular data indexing and querying. Default: false. */
+  enableData: boolean;
+  /** Glob patterns for data files to include. */
+  dataInclude: string[];
+  /** Glob patterns for data files to exclude. */
+  dataExclude: string[];
+  /** Enable auto-linking of data files to code symbols. Default: true. */
+  dataLinkCode: boolean;
+  /** Max datasets to include in kirograph_context. 0 = disabled. Default: 0. */
+  dataContextLimit: number;
+  /** Max file size for data files (bytes). Default: 50MB. */
+  dataMaxFileSize: number;
+  /** Max rows to index per file. Default: 1,000,000. */
+  dataMaxRows: number;
+  /** Max rows returned per query. Default: 500. */
+  dataQueryLimit: number;
+  /** Max token budget per response. Default: 8000. */
+  dataMaxResponseTokens: number;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -80,6 +114,10 @@ const KNOWN_FIELDS = new Set<string>([
   'enableArchitecture', 'architectureLayers', 'cavemanMode', 'shellCompressionLevel', 'syncWarningThreshold',
   'enableMemory', 'memorySearchAlpha', 'memoryKeepRaw', 'memoryMaxObservations',
   'memorySessionTimeout', 'memoryContextLimit', 'memoryContextThreshold', 'memoryExcludePatterns',
+  'enableDocs', 'docsInclude', 'docsExclude', 'docsLinkCode',
+  'docsContextLimit', 'docsContextThreshold', 'docsMaxFileSize', 'docsSummarization',
+  'enableData', 'dataInclude', 'dataExclude', 'dataLinkCode',
+  'dataContextLimit', 'dataMaxFileSize', 'dataMaxRows', 'dataQueryLimit', 'dataMaxResponseTokens',
   // Legacy aliases (still accepted, mapped during validation)
   'enableCompression', 'compressionLevel',
 ]);
@@ -134,6 +172,23 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     memoryContextLimit: 3,
     memoryContextThreshold: 0.3,
     memoryExcludePatterns: [],
+    enableDocs: false,
+    docsInclude: ['**/*.md', '**/*.mdx', '**/*.rst', '**/*.adoc', '**/*.asciidoc', '**/*.rdoc', '**/*.org', '**/*.cheatmd', 'docs/**/*.txt', 'docs/**/*.html'],
+    docsExclude: ['node_modules/**', '**/CHANGELOG*', '**/LICENSE*', '**/CHANGES*', 'dist/**', 'build/**', 'coverage/**', '.git/**', '**/generated/**', '**/auto-generated/**', '**/vendor/**', '_build/**'],
+    docsLinkCode: true,
+    docsContextLimit: 0,
+    docsContextThreshold: 0.3,
+    docsMaxFileSize: 1_048_576,
+    docsSummarization: 'first-sentence',
+    enableData: false,
+    dataInclude: ['**/*.csv', '**/*.tsv', '**/*.jsonl', '**/*.ndjson', '**/*.xlsx', '**/*.xls', '**/*.parquet', 'data/**/*.json'],
+    dataExclude: ['node_modules/**', 'dist/**', 'build/**', '.git/**', '**/package-lock.json', '**/yarn.lock', '**/pnpm-lock.yaml', '**/tsconfig.json', '**/jsconfig.json', 'coverage/**', '**/generated/**'],
+    dataLinkCode: true,
+    dataContextLimit: 0,
+    dataMaxFileSize: 52_428_800,
+    dataMaxRows: 1_000_000,
+    dataQueryLimit: 500,
+    dataMaxResponseTokens: 8000,
   };
 }
 
@@ -256,6 +311,54 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     ? (raw.memoryExcludePatterns as string[])
     : defaults.memoryExcludePatterns;
 
+  // ── Docs config ───────────────────────────────────────────────────────────
+  const enableDocs = typeof raw.enableDocs === 'boolean'
+    ? raw.enableDocs
+    : defaults.enableDocs;
+  const docsInclude = Array.isArray(raw.docsInclude)
+    && raw.docsInclude.every((p: unknown) => typeof p === 'string')
+    ? (raw.docsInclude as string[])
+    : defaults.docsInclude;
+  const docsExclude = Array.isArray(raw.docsExclude)
+    && raw.docsExclude.every((p: unknown) => typeof p === 'string')
+    ? (raw.docsExclude as string[])
+    : defaults.docsExclude;
+  const docsLinkCode = typeof raw.docsLinkCode === 'boolean'
+    ? raw.docsLinkCode
+    : defaults.docsLinkCode;
+  const docsContextLimit = typeof raw.docsContextLimit === 'number' && raw.docsContextLimit >= 0
+    ? Math.round(raw.docsContextLimit)
+    : defaults.docsContextLimit;
+  const docsContextThreshold = typeof raw.docsContextThreshold === 'number'
+    && raw.docsContextThreshold >= 0 && raw.docsContextThreshold <= 1
+    ? raw.docsContextThreshold
+    : defaults.docsContextThreshold;
+  const docsMaxFileSize = typeof raw.docsMaxFileSize === 'number' && raw.docsMaxFileSize > 0
+    ? raw.docsMaxFileSize
+    : defaults.docsMaxFileSize;
+  const DOCS_SUMMARIZATION_MODES = new Set(['embedding', 'first-sentence', 'off']);
+  const docsSummarization = typeof raw.docsSummarization === 'string' && DOCS_SUMMARIZATION_MODES.has(raw.docsSummarization)
+    ? (raw.docsSummarization as KiroGraphConfig['docsSummarization'])
+    : defaults.docsSummarization;
+
+  // ── Data config ───────────────────────────────────────────────────────────
+  const enableData = typeof raw.enableData === 'boolean' ? raw.enableData : defaults.enableData;
+  const dataInclude = Array.isArray(raw.dataInclude) && raw.dataInclude.every((p: unknown) => typeof p === 'string')
+    ? (raw.dataInclude as string[]) : defaults.dataInclude;
+  const dataExclude = Array.isArray(raw.dataExclude) && raw.dataExclude.every((p: unknown) => typeof p === 'string')
+    ? (raw.dataExclude as string[]) : defaults.dataExclude;
+  const dataLinkCode = typeof raw.dataLinkCode === 'boolean' ? raw.dataLinkCode : defaults.dataLinkCode;
+  const dataContextLimit = typeof raw.dataContextLimit === 'number' && raw.dataContextLimit >= 0
+    ? Math.round(raw.dataContextLimit) : defaults.dataContextLimit;
+  const dataMaxFileSize = typeof raw.dataMaxFileSize === 'number' && raw.dataMaxFileSize > 0
+    ? raw.dataMaxFileSize : defaults.dataMaxFileSize;
+  const dataMaxRows = typeof raw.dataMaxRows === 'number' && raw.dataMaxRows > 0
+    ? Math.round(raw.dataMaxRows) : defaults.dataMaxRows;
+  const dataQueryLimit = typeof raw.dataQueryLimit === 'number' && raw.dataQueryLimit > 0
+    ? Math.min(Math.round(raw.dataQueryLimit), 500) : defaults.dataQueryLimit;
+  const dataMaxResponseTokens = typeof raw.dataMaxResponseTokens === 'number' && raw.dataMaxResponseTokens > 0
+    ? Math.round(raw.dataMaxResponseTokens) : defaults.dataMaxResponseTokens;
+
   // Validate glob patterns — exclude unsafe regex patterns
   const include = _validatePatterns(raw.include, defaults.include);
   const exclude = _validatePatterns(raw.exclude, defaults.exclude);
@@ -290,6 +393,23 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     memoryContextLimit,
     memoryContextThreshold,
     memoryExcludePatterns,
+    enableDocs,
+    docsInclude,
+    docsExclude,
+    docsLinkCode,
+    docsContextLimit,
+    docsContextThreshold,
+    docsMaxFileSize,
+    docsSummarization,
+    enableData,
+    dataInclude,
+    dataExclude,
+    dataLinkCode,
+    dataContextLimit,
+    dataMaxFileSize,
+    dataMaxRows,
+    dataQueryLimit,
+    dataMaxResponseTokens,
     ...(architectureLayers !== undefined ? { architectureLayers } : {}),
   };
 }

@@ -1,6 +1,6 @@
 {
   "name": "kirograph",
-  "version": "0.16.6",
+  "version": "0.18.6",
   "description": "Semantic code knowledge graph for Kiro: fewer tool calls, instant symbol lookups, 100% local.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -33,9 +33,11 @@
     "commander": "^14.0.2",
     "figlet": "^1.11.0",
     "node-sqlite3-wasm": "^0.8.30",
+    "parquetjs-lite": "^0.8.7",
     "picomatch": "^4.0.3",
     "tree-sitter-wasms": "^0.1.11",
-    "web-tree-sitter": "^0.25.3"
+    "web-tree-sitter": "^0.25.3",
+    "xlsx": "^0.18.5"
   },
   "optionalDependencies": {
     "@electric-sql/pglite": "^0.2.17",

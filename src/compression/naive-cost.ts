@@ -150,6 +150,80 @@ export function estimateNaiveCost(toolName: string, outputTokens: number, args?:
       return 500;
     }
 
+    // ── Docs tools ────────────────────────────────────────────────────────────
+
+    case 'kirograph_docs_toc': {
+      // Agent would read all doc files to understand structure.
+      // Conservative: 3-5 doc files fully read.
+      return AVG_FILE_TOKENS * 4 + AVG_FILE_TOKENS; // docs are ~2500 tokens avg
+    }
+
+    case 'kirograph_docs_search': {
+      // Agent would grep across all doc files + read top matches.
+      const limit = (args?.limit as number) || 10;
+      const filesEstimate = Math.min(Math.ceil(limit / 2), 5);
+      return AVG_GREP_TOKENS + filesEstimate * AVG_FILE_TOKENS;
+    }
+
+    case 'kirograph_docs_section': {
+      // Agent would read the full file to find the relevant section.
+      // With context=true, agent would also read parent/child files.
+      const withContext = args?.context as boolean;
+      return withContext ? AVG_FILE_TOKENS * 3 : AVG_FILE_TOKENS * 2;
+    }
+
+    case 'kirograph_docs_outline': {
+      // Agent would read the full file to understand its structure.
+      return AVG_FILE_TOKENS * 2;
+    }
+
+    case 'kirograph_docs_refs': {
+      // Agent would grep for symbol names across docs + read code files.
+      return AVG_GREP_TOKENS * 3 + AVG_FILE_TOKENS * 2;
+    }
+
+    // ── Data tools ────────────────────────────────────────────────────────────
+
+    case 'kirograph_data_list': {
+      // Agent would run ls/find on data files + inspect each
+      return AVG_FIND_TOKENS + AVG_FILE_TOKENS;
+    }
+
+    case 'kirograph_data_describe': {
+      // Agent would read the full data file to understand its schema (~30x a code file)
+      return AVG_FILE_TOKENS * 30;
+    }
+
+    case 'kirograph_data_query': {
+      // Agent would read the full file and scan for matching rows
+      return AVG_FILE_TOKENS * 30;
+    }
+
+    case 'kirograph_data_aggregate': {
+      // Agent would read the full file, then reason about aggregation in context
+      return AVG_FILE_TOKENS * 35;
+    }
+
+    case 'kirograph_data_search': {
+      // Agent would read file headers + grep for values
+      return AVG_GREP_TOKENS * 2 + AVG_FILE_TOKENS * 5;
+    }
+
+    case 'kirograph_data_join': {
+      // Agent would read both files entirely
+      return AVG_FILE_TOKENS * 60;
+    }
+
+    case 'kirograph_data_correlations': {
+      // Not feasible manually — would require reading all numeric data
+      return AVG_FILE_TOKENS * 40;
+    }
+
+    case 'kirograph_data_quality': {
+      // Agent would read the file and manually inspect each column
+      return AVG_FILE_TOKENS * 20;
+    }
+
     // kirograph_exec and kirograph_gain are tracked separately
     default:
       return null;

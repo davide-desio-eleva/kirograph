@@ -220,6 +220,49 @@ export class IndexPipeline {
         opts?.onProgress?.({ phase: 'architecture', current: 1, total: 1 });
       }
 
+      // Index documentation (if enabled)
+      if (this.config.enableDocs) {
+        try {
+          const { DocsIndexer } = await import('../docs/indexer');
+          this.db.applyDocsSchema();
+          const docsIndexer = new DocsIndexer(this.db.getRawDb(), this.config, this.projectRoot);
+          await docsIndexer.indexAll({
+            force: opts?.force,
+            onProgress: msg => opts?.onProgress?.({ phase: 'docs', current: 0, total: 1, meta: { msg } }),
+          });
+        } catch { /* docs indexing is non-critical */ }
+      }
+
+      // Index data files (if enabled)
+      if ((this.config as any).enableData) {
+        try {
+          const { DataIndexer } = await import('../data/indexer');
+          this.db.applyDataSchema();
+          const dataIndexer = new DataIndexer(this.db.getRawDb(), this.config, this.projectRoot);
+          await dataIndexer.indexAll({
+            onProgress: msg => opts?.onProgress?.({ phase: 'data', current: 0, total: 1, meta: { msg } }),
+          });
+
+          // Assign data files to 'data' architecture layer if architecture is enabled
+          if (this.config.enableArchitecture) {
+            try {
+              const rawDb = this.db.getRawDb();
+              // Check if arch_file_layers table exists
+              const tableExists = rawDb.get("SELECT name FROM sqlite_master WHERE type='table' AND name='arch_file_layers'");
+              if (tableExists) {
+                const datasets = rawDb.all('SELECT file_path FROM data_datasets') as Array<{ file_path: string }>;
+                for (const ds of datasets) {
+                  rawDb.run(
+                    `INSERT OR REPLACE INTO arch_file_layers (file_path, layer_id, confidence) VALUES (?, ?, ?)`,
+                    [ds.file_path, 'layer:data', 1.0],
+                  );
+                }
+              }
+            } catch { /* non-critical */ }
+          }
+        } catch { /* data indexing is non-critical */ }
+      }
+
       this.lock.clearDirty();
       return { success: errors.length === 0, filesIndexed, nodesCreated, edgesCreated, errors, duration: Date.now() - start };
     } finally {
@@ -403,6 +446,47 @@ export class IndexPipeline {
           onProgress?.({ phase: 'architecture', current: 0, total: 1, meta: { msg } })
         );
         onProgress?.({ phase: 'architecture', current: 1, total: 1 });
+      }
+
+      // Re-index documentation (if enabled)
+      if (this.config.enableDocs) {
+        try {
+          const { DocsIndexer } = await import('../docs/indexer');
+          this.db.applyDocsSchema();
+          const docsIndexer = new DocsIndexer(this.db.getRawDb(), this.config, this.projectRoot);
+          await docsIndexer.indexAll({
+            onProgress: msg => onProgress?.({ phase: 'docs', current: 0, total: 1, meta: { msg } }),
+          });
+        } catch { /* docs indexing is non-critical */ }
+      }
+
+      // Re-index data files (if enabled)
+      if ((this.config as any).enableData) {
+        try {
+          const { DataIndexer } = await import('../data/indexer');
+          this.db.applyDataSchema();
+          const dataIndexer = new DataIndexer(this.db.getRawDb(), this.config, this.projectRoot);
+          await dataIndexer.indexAll({
+            onProgress: msg => onProgress?.({ phase: 'data', current: 0, total: 1, meta: { msg } }),
+          });
+
+          // Assign data files to 'data' architecture layer if architecture is enabled
+          if (this.config.enableArchitecture) {
+            try {
+              const rawDb = this.db.getRawDb();
+              const tableExists = rawDb.get("SELECT name FROM sqlite_master WHERE type='table' AND name='arch_file_layers'");
+              if (tableExists) {
+                const datasets = rawDb.all('SELECT file_path FROM data_datasets') as Array<{ file_path: string }>;
+                for (const ds of datasets) {
+                  rawDb.run(
+                    `INSERT OR REPLACE INTO arch_file_layers (file_path, layer_id, confidence) VALUES (?, ?, ?)`,
+                    [ds.file_path, 'layer:data', 1.0],
+                  );
+                }
+              }
+            } catch { /* non-critical */ }
+          }
+        } catch { /* data indexing is non-critical */ }
       }
 
       this.lock.clearDirty();

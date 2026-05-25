@@ -73,6 +73,18 @@ export function renderIndexProgress(p: IndexProgress): void {
       if (p.current === p.total && p.total > 0) process.stdout.write('\n');
     }
 
+  } else if (p.phase === 'docs') {
+    if (p.meta?.msg) {
+      process.stdout.write(`\r  ${_v}docs${_r}       ${_d}${p.meta.msg}${_r}${' '.repeat(20)}`);
+      if (String(p.meta.msg).startsWith('docs:')) process.stdout.write('\n');
+    }
+
+  } else if (p.phase === 'data') {
+    if (p.meta?.msg) {
+      process.stdout.write(`\r  ${_v}data${_r}       ${_d}${p.meta.msg}${_r}${' '.repeat(20)}`);
+      if (String(p.meta.msg).startsWith('data:')) process.stdout.write('\n');
+    }
+
   } else {
     process.stdout.write(`\r  ${_v}${p.phase}${_r}  ${p.current}/${p.total}${' '.repeat(20)}`);
   }
@@ -119,6 +131,18 @@ export function renderSyncProgress(p: IndexProgress): void {
     } else {
       process.stdout.write(`\r  ${_v}embeddings${_r} [${_bar(pct)}] ${_v}${pct}%${_r}${' '.repeat(10)}`);
       if (p.current === p.total && p.total > 0) process.stdout.write('\n');
+    }
+
+  } else if (p.phase === 'docs') {
+    if (p.meta?.msg) {
+      process.stdout.write(`\r  ${_v}docs${_r}       ${_d}${p.meta.msg}${_r}${' '.repeat(20)}`);
+      if (String(p.meta.msg).startsWith('docs:')) process.stdout.write('\n');
+    }
+
+  } else if (p.phase === 'data') {
+    if (p.meta?.msg) {
+      process.stdout.write(`\r  ${_v}data${_r}       ${_d}${p.meta.msg}${_r}${' '.repeat(20)}`);
+      if (String(p.meta.msg).startsWith('data:')) process.stdout.write('\n');
     }
 
   } else {
@@ -173,6 +197,16 @@ export function renderSyncProgressVerbose(p: IndexProgress): void {
       process.stdout.write(`  ${_v}architecture${_r}  ${_d}${p.meta.msg}${_r}\n`);
     } else if (p.current === p.total && p.total > 0) {
       process.stdout.write(`  ${_v}✓ architecture${_r}\n`);
+    }
+
+  } else if (p.phase === 'docs') {
+    if (p.meta?.msg) {
+      process.stdout.write(`  ${_v}docs${_r}          ${_d}${p.meta.msg}${_r}\n`);
+    }
+
+  } else if (p.phase === 'data') {
+    if (p.meta?.msg) {
+      process.stdout.write(`  ${_v}data${_r}          ${_d}${p.meta.msg}${_r}\n`);
     }
 
   } else {

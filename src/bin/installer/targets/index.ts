@@ -29,7 +29,7 @@ import { mistralVibe, ibmBob, crush, droidFactory, forgeCode, iflowCli, qwenCode
 export interface TargetInstaller {
   label: string;
   installEarly(projectRoot: string): void;
-  installLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean): void;
+  installLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean): void;
   printNextSteps(projectRoot: string): void;
   uninit?(projectRoot: string): void;
 }

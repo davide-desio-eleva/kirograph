@@ -23,5 +23,18 @@ export const KIROGRAPH_TOOL_NAMES = [
   'kirograph_mem_store',
   'kirograph_mem_timeline',
   'kirograph_mem_status',
+  'kirograph_docs_toc',
+  'kirograph_docs_search',
+  'kirograph_docs_section',
+  'kirograph_docs_outline',
+  'kirograph_docs_refs',
+  'kirograph_data_list',
+  'kirograph_data_describe',
+  'kirograph_data_query',
+  'kirograph_data_aggregate',
+  'kirograph_data_search',
+  'kirograph_data_join',
+  'kirograph_data_correlations',
+  'kirograph_data_quality',
 ];
 

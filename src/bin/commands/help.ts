@@ -234,22 +234,29 @@ export function printInteractiveHelp(): void {
   }
 
   function onData(key: string) {
-    if (key === '\x1b[C') { // right arrow — next tab
-      selectedTab = (selectedTab + 1) % GROUPS.length;
-      selectedCmd = 0;
-      render(false);
-    } else if (key === '\x1b[D') { // left arrow — prev tab
-      selectedTab = (selectedTab - 1 + GROUPS.length) % GROUPS.length;
-      selectedCmd = 0;
-      render(false);
-    } else if (key === '\x1b[B') { // down arrow — next command
-      const maxCmd = GROUPS[selectedTab]!.commands.length - 1;
-      selectedCmd = Math.min(selectedCmd + 1, maxCmd);
-      render(false);
-    } else if (key === '\x1b[A') { // up arrow — prev command
-      selectedCmd = Math.max(selectedCmd - 1, 0);
-      render(false);
-    } else if (key === '\r' || key === '\n') { // enter — copy command to terminal
+    // Arrow keys and other escape sequences start with \x1b[
+    if (key.startsWith('\x1b[')) {
+      if (key === '\x1b[C') { // right arrow — next tab
+        selectedTab = (selectedTab + 1) % GROUPS.length;
+        selectedCmd = 0;
+        render(false);
+      } else if (key === '\x1b[D') { // left arrow — prev tab
+        selectedTab = (selectedTab - 1 + GROUPS.length) % GROUPS.length;
+        selectedCmd = 0;
+        render(false);
+      } else if (key === '\x1b[B') { // down arrow — next command
+        const maxCmd = GROUPS[selectedTab]!.commands.length - 1;
+        selectedCmd = Math.min(selectedCmd + 1, maxCmd);
+        render(false);
+      } else if (key === '\x1b[A') { // up arrow — prev command
+        selectedCmd = Math.max(selectedCmd - 1, 0);
+        render(false);
+      }
+      // Ignore other escape sequences
+      return;
+    }
+
+    if (key === '\r' || key === '\n') { // enter — copy command to terminal
       cleanup();
       const cmd = GROUPS[selectedTab]!.commands[selectedCmd]!;
       const fullCmd = `kirograph ${cmd.name}${cmd.args ? ' ' + cmd.args : ''}`;
@@ -261,7 +268,7 @@ export function printInteractiveHelp(): void {
       process.stdout.write(`\x1b[${prevLineCount}A`);
       console.log(`\n  ${c.green}${c.bold}$${c.reset} ${fullCmd}\n`);
       process.exit(0);
-    } else if (key === 'q' || key === '\x03' || key === '\x1b') { // q, ctrl+c, esc
+    } else if (key === 'q' || key === '\x03') { // q, ctrl+c
       cleanup();
       console.log();
       process.exit(0);
@@ -275,6 +282,7 @@ export function printInteractiveHelp(): void {
  * Non-interactive full help (for piping, --help flag).
  */
 export function printColoredHelp(): void {
+
   console.log(`\n${c.bold}${c.paleLavender}USAGE${c.reset}`);
   console.log(`  ${c.lavender}kirograph${c.reset} ${c.gray}<command>${c.reset} ${c.dim}[options]${c.reset}\n`);
 
@@ -299,21 +307,87 @@ export function printColoredHelp(): void {
   console.log(`${c.bold}${c.paleLavender}GLOBAL FLAGS${c.reset}\n`);
   console.log(`  ${c.purple}-h, --help${c.reset}     ${c.gray}Show this help${c.reset}`);
   console.log(`  ${c.purple}-V, --version${c.reset}  ${c.gray}Show version number${c.reset}\n`);
+
+
+  console.log(`${c.bold}${c.paleLavender}EXAMPLES${c.reset}\n`);
+
+  const exampleGroups: Array<{ title: string; examples: [string, string][] }> = [
+    {
+      title: '🔧 Setup & indexing',
+      examples: [
+        ['kirograph install',                              'Wire up Kiro MCP + hooks + steering for the current workspace'],
+        ['kirograph install --target claude',              'Wire up Claude Code MCP + project memory'],
+        ['kirograph install --target codex',               'Install Codex project instructions and print MCP config'],
+        ['kirograph init --index',                         'Init and immediately index the project'],
+        ['kirograph sync',                                 'Incremental sync of changed files'],
+      ],
+    },
+    {
+      title: '🔍 Search & exploration',
+      examples: [
+        ['kirograph query useState',                       'Find all symbols named useState'],
+        ['kirograph context "add dark mode"',              'Get relevant code context for a task'],
+        ['kirograph files --format grouped',               'Show files grouped by directory'],
+        ['kirograph path LoginController DatabasePool',     'Find how two symbols are connected'],
+        ['kirograph affected src/auth.ts',                 'Find tests affected by a change'],
+        ['git diff --name-only | kirograph affected --stdin', 'Affected tests from a git diff'],
+        ['kirograph export start',                         'Open the interactive graph dashboard in the browser'],
+        ['kirograph export build -o /tmp/graph',           'Export the dashboard to a custom directory'],
+      ],
+    },
+    {
+      title: '📊 Graph insights',
+      examples: [
+        ['kirograph hotspots --limit 10',                  'Top 10 most-connected symbols'],
+        ['kirograph surprising',                           'Find unexpected cross-module connections'],
+        ['kirograph dead-code',                            'Find unreferenced unexported symbols'],
+        ['kirograph snapshot save pre-refactor',           'Save a named snapshot before a refactor'],
+        ['kirograph snapshot diff pre-refactor',           'Diff current graph vs the named snapshot'],
+      ],
+    },
+    {
+      title: '🏛️ Architecture',
+      examples: [
+        ['kirograph architecture --packages',              'List all detected packages'],
+        ['kirograph coupling --sort instability',          'Show packages ranked by instability'],
+        ['kirograph package src/auth',                     'Inspect the auth package'],
+      ],
+    },
+    {
+      title: '⚙️ Agent',
+      examples: [
+        ['kirograph caveman full',                         'Enable full caveman mode for the agent'],
+        ['kirograph caveman off',                          'Disable caveman mode'],
+        ['kirograph compression aggressive',              'Set compression to aggressive level'],
+        ['kirograph compression off',                      'Disable compression hook (tool still available)'],
+        ['kirograph exec git status',                      'Run git status with compression'],
+        ['kirograph exec --level ultra npm test',          'Run tests with ultra compression'],
+        ['kirograph exec --raw cargo build',               'Show raw vs compressed comparison'],
+        ['kirograph gain --graph',                         'Show token savings graph'],
+        ['kirograph mem search "auth decision"',            'Search memory for past decisions'],
+        ['kirograph mem store "use idempotency keys" --kind decision', 'Store a decision'],
+        ['kirograph data list',                             'List all indexed datasets'],
+        ['kirograph data describe tests-fixtures-users',    'Show schema and column profiles'],
+        ['kirograph data query orders --filter status:eq:shipped --limit 10', 'Query rows with filters'],
+        ['kirograph data aggregate orders --group-by region --metric sum:amount', 'Server-side aggregation'],
+        ['kirograph serve --mcp',                          'Start the MCP server'],
+      ],
+    },
+  ];
+
+  for (const eg of exampleGroups) {
+    console.log(`  ${c.dim}${eg.title}${c.reset}`);
+    for (const [ex, desc] of eg.examples) {
+      console.log(`  ${c.violet}$${c.reset} ${c.lavender}${ex}${c.reset}`);
+      console.log(`    ${c.dim}${desc}${c.reset}`);
+    }
+    console.log();
+  }
 }
 
 export function register(program: Command): void {
   program.configureHelp({ formatHelp: () => '' });
   program.addHelpText('afterAll', '');
-
-  // Override --help to use interactive mode in TTY
-  program.option('-h, --help', 'Show interactive help');
-  program.on('option:help', () => {
-    if (process.stdout.isTTY) {
-      printInteractiveHelp();
-    } else {
-      printBanner();
-      printColoredHelp();
-      process.exit(0);
-    }
-  });
+  // Disable Commander's built-in --help to prevent process.exit
+  program.helpOption(false);
 }

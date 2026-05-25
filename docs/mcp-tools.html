@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KiroGraph: MCP Tools Reference</title>
-  <meta name="description" content="Full reference for all 24 KiroGraph MCP tools: parameters, types, defaults, and descriptions.">
+  <meta name="description" content="Full reference for all 37 KiroGraph MCP tools: parameters, types, defaults, and descriptions.">
   <link rel="stylesheet" href="style.css">
   <link rel="icon" href="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png">
 </head>
@@ -436,6 +436,224 @@
       </div>
     </div>
 
+    <!-- ── Documentation Tools ── -->
+    <h2 id="docs-tools" style="margin-top: 3rem;">Documentation Tools <span class="badge badge-blue">enableDocs</span></h2>
+
+    <!-- kirograph_docs_toc -->
+    <div class="tool-card" id="tool-docs-toc">
+      <h3>kirograph_docs_toc <span class="badge badge-blue">enableDocs</span></h3>
+      <p class="tool-desc">Get table of contents for a documentation file or the whole project. Returns section IDs, titles, levels, and summaries.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>file</code></td><td>string</td><td>-</td><td>Filter to a specific doc file (relative path)</td></tr>
+            <tr><td><code>tree</code></td><td>boolean</td><td>false</td><td>Return nested tree structure</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_docs_search -->
+    <div class="tool-card" id="tool-docs-search">
+      <h3>kirograph_docs_search <span class="badge badge-blue">enableDocs</span></h3>
+      <p class="tool-desc">Search documentation sections by query. Returns matching sections ranked by relevance. Independent from kirograph_search (code-only).</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>query</code></td><td>string</td><td><em>required</em></td><td>Search query (natural language or keywords)</td></tr>
+            <tr><td><code>file</code></td><td>string</td><td>-</td><td>Narrow search to a specific doc file</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>10</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_docs_section -->
+    <div class="tool-card" id="tool-docs-section">
+      <h3>kirograph_docs_section <span class="badge badge-blue">enableDocs</span></h3>
+      <p class="tool-desc">Retrieve full content of a documentation section by its stable ID. Use context=true to also get ancestor headings and child summaries.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>id</code></td><td>string</td><td><em>required</em></td><td>Section ID (from TOC or search results)</td></tr>
+            <tr><td><code>context</code></td><td>boolean</td><td>false</td><td>Include ancestor heading chain and child summaries</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_docs_outline -->
+    <div class="tool-card" id="tool-docs-outline">
+      <h3>kirograph_docs_outline <span class="badge badge-blue">enableDocs</span></h3>
+      <p class="tool-desc">Get the heading hierarchy for a single documentation file. Lighter than full TOC when you know which file is relevant.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>file</code></td><td>string</td><td><em>required</em></td><td>Relative path to the doc file</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_docs_refs -->
+    <div class="tool-card" id="tool-docs-refs">
+      <h3>kirograph_docs_refs <span class="badge badge-blue">enableDocs</span></h3>
+      <p class="tool-desc">Find code symbols referenced by a doc section, or doc sections that reference a code symbol. Bidirectional lookup.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>sectionId</code></td><td>string</td><td>-</td><td>Doc section ID (find code symbols it references)</td></tr>
+            <tr><td><code>nodeId</code></td><td>string</td><td>-</td><td>Code symbol qualified name (find doc sections that reference it)</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_data_list -->
+    <div class="tool-card" id="tool-data-list">
+      <h3>kirograph_data_list <span class="badge" style="background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3);">enableData</span></h3>
+      <p class="tool-desc">List all indexed datasets with row counts, column counts, and file sizes.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_data_describe -->
+    <div class="tool-card" id="tool-data-describe">
+      <h3>kirograph_data_describe <span class="badge" style="background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3);">enableData</span></h3>
+      <p class="tool-desc">Full schema profile for a dataset: column names, inferred types, cardinality, null percentages, min/max values, and sample values.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>dataset</code></td><td>string</td><td>required</td><td>Dataset ID (from <code>kirograph_data_list</code>)</td></tr>
+            <tr><td><code>column</code></td><td>string</td><td>-</td><td>Deep dive on a single column</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_data_query -->
+    <div class="tool-card" id="tool-data-query">
+      <h3>kirograph_data_query <span class="badge" style="background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3);">enableData</span></h3>
+      <p class="tool-desc">Filtered row retrieval with structured operators. Multiple filters are ANDed. All queries use parameterized SQL (zero injection surface).</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>dataset</code></td><td>string</td><td>required</td><td>Dataset ID</td></tr>
+            <tr><td><code>filters</code></td><td>Filter[]</td><td>-</td><td>Array of <code>{column, op, value}</code>. Ops: eq, neq, gt, gte, lt, lte, contains, in, is_null, between</td></tr>
+            <tr><td><code>columns</code></td><td>string[]</td><td>all</td><td>Column projection</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>500</td><td>Max rows (hard cap: 500)</td></tr>
+            <tr><td><code>offset</code></td><td>number</td><td>0</td><td>Pagination offset</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_data_aggregate -->
+    <div class="tool-card" id="tool-data-aggregate">
+      <h3>kirograph_data_aggregate <span class="badge" style="background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3);">enableData</span></h3>
+      <p class="tool-desc">Server-side GROUP BY aggregation. Computation happens in SQLite; only results enter the context window.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>dataset</code></td><td>string</td><td>required</td><td>Dataset ID</td></tr>
+            <tr><td><code>groupBy</code></td><td>string[]</td><td>required</td><td>Columns to group by</td></tr>
+            <tr><td><code>metrics</code></td><td>Metric[]</td><td>required</td><td>Array of <code>{column, op}</code>. Ops: count, sum, avg, min, max, count_distinct</td></tr>
+            <tr><td><code>filters</code></td><td>Filter[]</td><td>-</td><td>Pre-aggregation filters</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_data_search -->
+    <div class="tool-card" id="tool-data-search">
+      <h3>kirograph_data_search <span class="badge" style="background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3);">enableData</span></h3>
+      <p class="tool-desc">Search column names and sample values by keyword within a dataset.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>dataset</code></td><td>string</td><td>required</td><td>Dataset ID</td></tr>
+            <tr><td><code>query</code></td><td>string</td><td>required</td><td>Search keyword</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_data_join -->
+    <div class="tool-card" id="tool-data-join">
+      <h3>kirograph_data_join <span class="badge" style="background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3);">enableData</span></h3>
+      <p class="tool-desc">SQL JOIN across two indexed datasets. Combines data without loading either file into context.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>left</code></td><td>string</td><td>required</td><td>Left dataset ID</td></tr>
+            <tr><td><code>right</code></td><td>string</td><td>required</td><td>Right dataset ID</td></tr>
+            <tr><td><code>leftColumn</code></td><td>string</td><td>required</td><td>Join column from left dataset</td></tr>
+            <tr><td><code>rightColumn</code></td><td>string</td><td>required</td><td>Join column from right dataset</td></tr>
+            <tr><td><code>type</code></td><td>string</td><td>inner</td><td>Join type: inner, left, right</td></tr>
+            <tr><td><code>columns</code></td><td>string[]</td><td>all</td><td>Column projection (prefix with dataset ID)</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>100</td><td>Max rows (hard cap: 500)</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_data_correlations -->
+    <div class="tool-card" id="tool-data-correlations">
+      <h3>kirograph_data_correlations <span class="badge" style="background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3);">enableData</span></h3>
+      <p class="tool-desc">Pairwise Pearson correlations between numeric columns. Discovers hidden relationships without loading data.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>dataset</code></td><td>string</td><td>required</td><td>Dataset ID</td></tr>
+            <tr><td><code>threshold</code></td><td>number</td><td>0.3</td><td>Min absolute correlation to include</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_data_quality -->
+    <div class="tool-card" id="tool-data-quality">
+      <h3>kirograph_data_quality <span class="badge" style="background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3);">enableData</span></h3>
+      <p class="tool-desc">Data quality triage: rank columns by risk (null rate, cardinality anomalies, type issues). Identifies problematic columns without loading data.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>dataset</code></td><td>string</td><td>required</td><td>Dataset ID</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </main>
 
   <!-- Right sidebar TOC -->
@@ -466,6 +684,19 @@
       <a href="#tool-mem-store" class="sidebar-link">kirograph_mem_store</a>
       <a href="#tool-mem-timeline" class="sidebar-link">kirograph_mem_timeline</a>
       <a href="#tool-mem-status" class="sidebar-link">kirograph_mem_status</a>
+      <a href="#tool-docs-toc" class="sidebar-link">kirograph_docs_toc</a>
+      <a href="#tool-docs-search" class="sidebar-link">kirograph_docs_search</a>
+      <a href="#tool-docs-section" class="sidebar-link">kirograph_docs_section</a>
+      <a href="#tool-docs-outline" class="sidebar-link">kirograph_docs_outline</a>
+      <a href="#tool-docs-refs" class="sidebar-link">kirograph_docs_refs</a>
+      <a href="#tool-data-list" class="sidebar-link">kirograph_data_list</a>
+      <a href="#tool-data-describe" class="sidebar-link">kirograph_data_describe</a>
+      <a href="#tool-data-query" class="sidebar-link">kirograph_data_query</a>
+      <a href="#tool-data-aggregate" class="sidebar-link">kirograph_data_aggregate</a>
+      <a href="#tool-data-search" class="sidebar-link">kirograph_data_search</a>
+      <a href="#tool-data-join" class="sidebar-link">kirograph_data_join</a>
+      <a href="#tool-data-correlations" class="sidebar-link">kirograph_data_correlations</a>
+      <a href="#tool-data-quality" class="sidebar-link">kirograph_data_quality</a>
     </div>
   </aside>
 

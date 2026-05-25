@@ -38,6 +38,10 @@ KiroGraph builds a semantic knowledge graph of your codebase. Use its MCP tools 
 | What does package X depend on? | \`kirograph_package\` |
 | Run a command with token savings | \`kirograph_exec\` |
 | Check token savings stats | \`kirograph_gain\` |
+| What data files are indexed? | \`kirograph_data_list\` |
+| What columns does this dataset have? | \`kirograph_data_describe\` |
+| Query rows with filters | \`kirograph_data_query\` |
+| Aggregate data (sum, avg, count) | \`kirograph_data_aggregate\` |
 
 ---
 
@@ -305,6 +309,8 @@ export interface SteeringOptions {
   enableCompression?: boolean;
   shellCompressionLevel?: 'off' | 'normal' | 'aggressive' | 'ultra';
   enableMemory?: boolean;
+  enableDocs?: boolean;
+  enableData?: boolean;
 }
 
 function buildSteeringContent(opts?: SteeringOptions): string {
@@ -353,6 +359,60 @@ should know. Keep observations concise — one fact per store call. A hook will 
 at session end.
 `;
     content = content.trimEnd() + '\n\n' + memorySection.trim() + '\n';
+  }
+
+  // Documentation section
+  if (opts?.enableDocs) {
+    const docsSection = `
+## Documentation
+
+KiroGraph indexes project documentation by heading structure. Use \`kirograph_docs_search\`
+to find relevant doc sections instead of reading entire files. Use \`kirograph_docs_section\`
+to retrieve the exact section you need by ID.
+
+**Available tools:**
+- \`kirograph_docs_toc\` — table of contents for a file or the whole project
+- \`kirograph_docs_search\` — search sections by query (independent from code search)
+- \`kirograph_docs_section\` — retrieve full content of a section by ID
+- \`kirograph_docs_outline\` — heading hierarchy for a single document
+- \`kirograph_docs_refs\` — find code symbols referenced by a doc section (or vice versa)
+
+**When to use:** Before reading a documentation file directly, check if \`kirograph_docs_search\`
+or \`kirograph_docs_outline\` can give you the specific section you need. This saves tokens
+and gives you structured navigation instead of raw file content.
+`;
+    content = content.trimEnd() + '\n\n' + docsSection.trim() + '\n';
+  }
+
+  // Data section
+  if (opts?.enableData) {
+    const dataSection = `
+## Data
+
+KiroGraph indexes tabular data files (CSV, TSV, JSONL, JSON, Excel, Parquet) for structured
+querying. Use \`kirograph_data_describe\` to understand a dataset's schema without loading
+the file. Use \`kirograph_data_query\` with filters to retrieve specific rows.
+
+**Available tools:**
+- \`kirograph_data_list\` — list all indexed datasets with row/column counts
+- \`kirograph_data_describe\` — full schema profile: column names, types, cardinality, null%, samples
+- \`kirograph_data_query\` — filtered row retrieval with structured operators (eq, gt, contains, in, between)
+- \`kirograph_data_aggregate\` — server-side GROUP BY: count, sum, avg, min, max, count_distinct
+- \`kirograph_data_search\` — search column names and sample values by keyword
+
+**When to use:** Instead of reading a CSV/data file directly (which floods context with raw rows),
+use \`kirograph_data_describe\` to understand the schema, then \`kirograph_data_query\` with
+filters to get only the rows you need. For summary statistics, use \`kirograph_data_aggregate\`
+to compute results server-side. This saves 95-99% of tokens compared to reading raw data files.
+
+\`\`\`
+kirograph_data_list()
+kirograph_data_describe(dataset: "tests-fixtures-users")
+kirograph_data_query(dataset: "tests-fixtures-users", filters: [{column: "role", op: "eq", value: "admin"}])
+kirograph_data_aggregate(dataset: "data-orders", groupBy: ["region"], metrics: [{column: "amount", op: "sum"}])
+\`\`\`
+`;
+    content = content.trimEnd() + '\n\n' + dataSection.trim() + '\n';
   }
 
   return content;

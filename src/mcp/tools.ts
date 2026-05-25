@@ -406,11 +406,183 @@ export const tools: ToolDefinition[] = [
       },
     },
   },
+  // ── Docs tools (require enableDocs=true) ────────────────────────────────────
+  {
+    name: 'kirograph_docs_toc',
+    description: 'Get table of contents for a documentation file or the whole project. Returns section IDs, titles, levels, and summaries.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', description: 'Filter to a specific doc file (relative path). Omit for project-wide TOC.' },
+        tree: { type: 'boolean', description: 'Return nested tree structure (default: false, flat list)', default: false },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+    },
+  },
+  {
+    name: 'kirograph_docs_search',
+    description: 'Search documentation sections by query. Returns matching sections ranked by relevance. Independent from kirograph_search (code-only).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query (natural language or keywords)' },
+        file: { type: 'string', description: 'Narrow search to a specific doc file (relative path)' },
+        limit: { type: 'number', description: 'Max results (default: 10)', default: 10 },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'kirograph_docs_section',
+    description: 'Retrieve full content of a documentation section by its stable ID. Use context=true to also get ancestor headings and child summaries.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Section ID (from kirograph_docs_toc or kirograph_docs_search results)' },
+        context: { type: 'boolean', description: 'Include ancestor heading chain and child summaries (default: false)', default: false },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'kirograph_docs_outline',
+    description: 'Get the heading hierarchy for a single documentation file. Lighter than full TOC when you know which file is relevant.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', description: 'Relative path to the doc file' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['file'],
+    },
+  },
+  {
+    name: 'kirograph_docs_refs',
+    description: 'Find code symbols referenced by a doc section, or doc sections that reference a code symbol. Bidirectional lookup.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sectionId: { type: 'string', description: 'Doc section ID (find code symbols it references)' },
+        nodeId: { type: 'string', description: 'Code symbol qualified name (find doc sections that reference it)' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+    },
+  },
+  // ── Data tools (require enableData=true) ────────────────────────────────────
+  {
+    name: 'kirograph_data_list',
+    description: 'List all indexed datasets with row counts, column counts, and file sizes.',
+    inputSchema: { type: 'object', properties: { projectPath: { type: 'string', description: 'Project root path (optional)' } } },
+  },
+  {
+    name: 'kirograph_data_describe',
+    description: 'Full schema profile of a dataset: column names, types, cardinality, null%, sample values. Use to orient on a dataset without reading any rows.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dataset: { type: 'string', description: 'Dataset ID (from kirograph_data_list)' },
+        column: { type: 'string', description: 'Optional: deep-dive on a single column' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['dataset'],
+    },
+  },
+  {
+    name: 'kirograph_data_query',
+    description: 'Filtered row retrieval with structured operators. Returns only matching rows (max 500). Use instead of reading raw data files.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dataset: { type: 'string', description: 'Dataset ID' },
+        filters: { type: 'array', description: 'Array of {column, op, value} filters. Ops: eq, neq, gt, gte, lt, lte, contains, in, is_null, between' },
+        columns: { type: 'array', description: 'Column projection (only return these columns)' },
+        limit: { type: 'number', description: 'Max rows (default: 100, hard cap: 500)', default: 100 },
+        offset: { type: 'number', description: 'Pagination offset', default: 0 },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['dataset'],
+    },
+  },
+  {
+    name: 'kirograph_data_aggregate',
+    description: 'Server-side GROUP BY aggregation. Computation runs in SQLite — only the result set enters context. Use for count, sum, avg, min, max questions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dataset: { type: 'string', description: 'Dataset ID' },
+        groupBy: { type: 'array', description: 'Columns to group by' },
+        metrics: { type: 'array', description: 'Array of {column, op} metrics. Ops: count, sum, avg, min, max, count_distinct' },
+        filters: { type: 'array', description: 'Optional pre-filters (same format as kirograph_data_query)' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['dataset', 'groupBy', 'metrics'],
+    },
+  },
+  {
+    name: 'kirograph_data_search',
+    description: 'Search column names and sample values by keyword. Tells you which column holds the answer without loading data.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dataset: { type: 'string', description: 'Dataset ID' },
+        query: { type: 'string', description: 'Search keyword' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['dataset', 'query'],
+    },
+  },
+  {
+    name: 'kirograph_data_join',
+    description: 'SQL JOIN across two indexed datasets. Combines data without loading either file into context.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        left: { type: 'string', description: 'Left dataset ID' },
+        right: { type: 'string', description: 'Right dataset ID' },
+        leftColumn: { type: 'string', description: 'Join column from left dataset' },
+        rightColumn: { type: 'string', description: 'Join column from right dataset' },
+        type: { type: 'string', description: 'Join type: inner (default), left, right', enum: ['inner', 'left', 'right'], default: 'inner' },
+        columns: { type: 'array', description: 'Column projection (prefix with dataset ID)' },
+        limit: { type: 'number', description: 'Max rows (default: 100, hard cap: 500)', default: 100 },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['left', 'right', 'leftColumn', 'rightColumn'],
+    },
+  },
+  {
+    name: 'kirograph_data_correlations',
+    description: 'Pairwise Pearson correlations between numeric columns. Discovers hidden relationships without loading data.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dataset: { type: 'string', description: 'Dataset ID' },
+        threshold: { type: 'number', description: 'Min absolute correlation to include (default: 0.3)', default: 0.3 },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['dataset'],
+    },
+  },
+  {
+    name: 'kirograph_data_quality',
+    description: 'Data quality triage: rank columns by risk (null rate, cardinality anomalies, type issues). Identifies problematic columns without loading data.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dataset: { type: 'string', description: 'Dataset ID' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['dataset'],
+    },
+  },
 ];
 
 export class ToolHandler {
   private defaultCg: KiroGraph | null;
   private connections = new Map<string, KiroGraph>();
+  /** Anti-loop: track recent data_query calls per dataset for pagination detection. */
+  private queryTracker = new Map<string, { offsets: number[]; lastCall: number }>();
 
   constructor(cg: KiroGraph | null) {
     this.defaultCg = cg;
@@ -426,6 +598,40 @@ export class ToolHandler {
       try { cg.close(); } catch { /* ignore */ }
     }
     this.connections.clear();
+  }
+
+  /** Anti-loop: detect pagination patterns and warn the agent. */
+  private checkPaginationLoop(dataset: string, offset: number | undefined, response: string): string {
+    const now = Date.now();
+    const key = dataset;
+    const currentOffset = offset ?? 0;
+
+    // Clean stale entries (older than 60s)
+    for (const [k, v] of this.queryTracker) {
+      if (now - v.lastCall > 60_000) this.queryTracker.delete(k);
+    }
+
+    const entry = this.queryTracker.get(key) ?? { offsets: [], lastCall: 0 };
+    entry.offsets.push(currentOffset);
+    entry.lastCall = now;
+
+    // Keep only last 10 offsets
+    if (entry.offsets.length > 10) entry.offsets = entry.offsets.slice(-10);
+    this.queryTracker.set(key, entry);
+
+    // Check for pagination pattern: >5 calls with incrementing offsets
+    if (entry.offsets.length > 5) {
+      const recent = entry.offsets.slice(-6);
+      let isIncrementing = true;
+      for (let i = 1; i < recent.length; i++) {
+        if (recent[i]! <= recent[i - 1]!) { isIncrementing = false; break; }
+      }
+      if (isIncrementing) {
+        return response + '\n\n⚠ Pagination detected. Consider using kirograph_data_aggregate for summary statistics instead of paginating through all rows.';
+      }
+    }
+
+    return response;
   }
 
   private async getConnection(projectPath?: string): Promise<KiroGraph | null> {
@@ -458,6 +664,10 @@ export class ToolHandler {
             const tracker = new TokenTracker(projectRoot);
             if (toolName.startsWith('kirograph_mem_')) {
               tracker.recordMemorySaving(toolName, outputTokens, naiveCost);
+            } else if (toolName.startsWith('kirograph_docs_')) {
+              tracker.recordDocsSaving(toolName, outputTokens, naiveCost);
+            } else if (toolName.startsWith('kirograph_data_')) {
+              tracker.recordDataSaving(toolName, outputTokens, naiveCost);
             } else {
               tracker.recordGraphSaving(toolName, outputTokens, naiveCost);
             }
@@ -544,10 +754,16 @@ export class ToolHandler {
       ];
 
       // Source breakdown
-      if (stats.bySource.exec.count > 0 || stats.bySource.graph.count > 0 || stats.bySource.memory.count > 0) {
+      if (stats.bySource.exec.count > 0 || stats.bySource.graph.count > 0 || stats.bySource.memory.count > 0 || stats.bySource.docs.count > 0) {
         lines.push('', 'By source:');
         if (stats.bySource.graph.count > 0) {
           lines.push(`  Graph tools: ${stats.bySource.graph.count} calls, ~${stats.bySource.graph.saved.toLocaleString()} tokens saved (vs file reads/grep)`);
+        }
+        if (stats.bySource.docs.count > 0) {
+          lines.push(`  Docs tools: ${stats.bySource.docs.count} calls, ~${stats.bySource.docs.saved.toLocaleString()} tokens saved (vs reading full doc files)`);
+        }
+        if (stats.bySource.data.count > 0) {
+          lines.push(`  Data tools: ${stats.bySource.data.count} calls, ~${stats.bySource.data.saved.toLocaleString()} tokens saved (vs loading raw data files)`);
         }
         if (stats.bySource.exec.count > 0) {
           lines.push(`  Compression: ${stats.bySource.exec.count} calls, ~${stats.bySource.exec.saved.toLocaleString()} tokens saved (vs raw output)`);
@@ -657,6 +873,85 @@ export class ToolHandler {
             }
           }
         } catch { /* memory is non-critical — don't fail context on memory errors */ }
+
+        // Docs integration: surface relevant doc sections if enabled and docsContextLimit > 0
+        try {
+          const projectRoot2 = cg.getProjectRoot();
+          const config2 = await (await import('../config')).loadConfig(projectRoot2);
+          if (config2.enableDocs && config2.docsContextLimit > 0) {
+            const db2 = cg.getDatabase();
+            db2.applyDocsSchema();
+            const { DocsQueries } = await import('../docs/queries');
+            const docsQueries = new DocsQueries(db2.getRawDb(), projectRoot2);
+
+            // Collect qualified names from entry points
+            const qNames = ctx.entryPoints.map((n: any) => n.qualifiedName).filter(Boolean);
+
+            if (qNames.length > 0) {
+              // Find doc sections that reference these symbols
+              const docRefs = docsQueries.getRefs({ qualifiedName: qNames[0] });
+              const additionalRefs = qNames.slice(1, 5).flatMap(qn => docsQueries.getRefs({ qualifiedName: qn }));
+              const allDocRefs = [...docRefs, ...additionalRefs];
+
+              // Deduplicate by section ID and take top N
+              const seenSections = new Set<string>();
+              const uniqueRefs = allDocRefs.filter(r => {
+                if (seenSections.has(r.sectionId)) return false;
+                seenSections.add(r.sectionId);
+                return r.confidence >= config2.docsContextThreshold;
+              }).slice(0, config2.docsContextLimit);
+
+              if (uniqueRefs.length > 0) {
+                lines.push('', '## Related Documentation');
+                for (const ref of uniqueRefs) {
+                  const section = docsQueries.getSection(ref.sectionId);
+                  if (section) {
+                    const summary = section.section.summary ?? section.section.title;
+                    lines.push(`- [${ref.refType}] ${summary} — ${section.section.filePath} (ID: ${ref.sectionId})`);
+                  }
+                }
+              }
+            }
+          }
+        } catch { /* docs is non-critical */ }
+
+        // Data integration: surface relevant dataset schemas if enabled and dataContextLimit > 0
+        try {
+          const projectRoot3 = cg.getProjectRoot();
+          const config3 = await (await import('../config')).loadConfig(projectRoot3);
+          if (config3.enableData && config3.dataContextLimit > 0) {
+            const db3 = cg.getDatabase();
+            db3.applyDataSchema();
+
+            // Find datasets referenced by the entry point files
+            const entryFiles = ctx.entryPoints.map((n: any) => n.filePath).filter(Boolean);
+            if (entryFiles.length > 0) {
+              const placeholders = entryFiles.map(() => '?').join(', ');
+              const dataRefs = db3.getRawDb().all(
+                `SELECT DISTINCT d.id, d.file_path, d.row_count, d.column_count
+                 FROM data_code_refs r JOIN data_datasets d ON r.dataset_id = d.id
+                 WHERE r.qualified_name IN (${placeholders})`,
+                entryFiles,
+              ) as any[];
+
+              if (dataRefs.length > 0) {
+                const { DataQueries } = await import('../data/queries');
+                const dq = new DataQueries(db3.getRawDb());
+                const limit = config3.dataContextLimit;
+
+                lines.push('', '## Related Data');
+                for (const ref of dataRefs.slice(0, limit)) {
+                  const info = dq.describeDataset(ref.id);
+                  if (info) {
+                    const colSummary = info.columns.map(c => `${c.name}:${c.inferredType}`).join(', ');
+                    lines.push(`- **${ref.id}** (${ref.file_path}) — ${ref.row_count} rows, ${ref.column_count} cols`);
+                    lines.push(`  Schema: ${colSummary}`);
+                  }
+                }
+              }
+            }
+          }
+        } catch { /* data is non-critical */ }
 
         return lines.join('\n');
       }
@@ -779,6 +1074,43 @@ export class ToolHandler {
             : `  Architecture: enabled (not yet analyzed — run kirograph index)`
           : `  Architecture: disabled`;
 
+        // Docs stats
+        let docsLine = '  Documentation: disabled';
+        try {
+          const { loadConfig: loadCfg } = await import('../config');
+          const cfg = await loadCfg(cg.getProjectRoot());
+          if (cfg.enableDocs) {
+            const db = cg.getDatabase();
+            db.applyDocsSchema();
+            const rawDb = db.getRawDb();
+            const docFiles = rawDb.get('SELECT COUNT(DISTINCT file_path) as cnt FROM doc_sections')?.cnt ?? 0;
+            const docSections = rawDb.get('SELECT COUNT(*) as cnt FROM doc_sections')?.cnt ?? 0;
+            const docRefs = rawDb.get('SELECT COUNT(*) as cnt FROM doc_code_refs')?.cnt ?? 0;
+            docsLine = `  Documentation: enabled — ${docFiles} files, ${docSections} sections, ${docRefs} code refs`;
+          }
+        } catch { /* non-critical */ }
+
+        // Data stats
+        let dataLine = '  Data: disabled';
+        try {
+          const { loadConfig: loadCfg2 } = await import('../config');
+          const cfg2 = await loadCfg2(cg.getProjectRoot());
+          if (cfg2.enableData) {
+            const rawDb2 = cg.getDatabase().getRawDb();
+            cg.getDatabase().applyDataSchema();
+            const datasetCount = rawDb2.get('SELECT COUNT(*) as cnt FROM data_datasets')?.cnt ?? 0;
+            if (datasetCount > 0) {
+              const totalRows = rawDb2.get('SELECT SUM(row_count) as total FROM data_datasets')?.total ?? 0;
+              const totalCols = rawDb2.get('SELECT SUM(column_count) as total FROM data_datasets')?.total ?? 0;
+              const totalSize = rawDb2.get('SELECT SUM(file_size) as total FROM data_datasets')?.total ?? 0;
+              const sizeMb = (totalSize / 1024 / 1024).toFixed(2);
+              dataLine = `  Data: enabled — ${datasetCount} datasets, ${totalRows.toLocaleString()} rows, ${totalCols} columns (${sizeMb} MB source)`;
+            } else {
+              dataLine = `  Data: enabled (no datasets indexed yet — run kirograph index)`;
+            }
+          }
+        } catch { /* non-critical */ }
+
         // Sync state warning
         const threshold = stats.syncWarningThreshold ?? 10;
         const pendingFiles: number = stats.pendingFiles ?? 0;
@@ -813,6 +1145,8 @@ export class ToolHandler {
           langLine ? `  By language: ${langLine}` : '',
           frameworkLine,
           archLine,
+          docsLine,
+          dataLine,
           `  DB size: ${dbMb} MB`,
           ...semanticLines,
           ...syncLines,
@@ -1278,6 +1612,428 @@ export class ToolHandler {
           `  Caveman compression: ${config.cavemanMode !== 'off' ? config.cavemanMode : 'off (storing raw)'}`,
         ];
         return lines.join('\n');
+      }
+
+      // ── Docs tools ────────────────────────────────────────────────────────────
+
+      case 'kirograph_docs_toc': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableDocs) return 'Documentation indexing is not enabled. Set enableDocs: true in .kirograph/config.json and run kirograph index.';
+
+        const { DocsQueries } = await import('../docs/queries');
+        const db = cg.getDatabase();
+        db.applyDocsSchema();
+        const docs = new DocsQueries(db.getRawDb(), projectRoot);
+
+        const toc = docs.getToc({ file: args.file as string | undefined, tree: args.tree as boolean | undefined });
+        if (toc.length === 0) return args.file ? `No sections found in "${args.file}".` : 'No documentation indexed. Run kirograph index.';
+
+        const lines: string[] = [];
+        const renderEntry = (entry: any, indent: string) => {
+          const prefix = '#'.repeat(entry.level || 1);
+          const summary = entry.summary ? ` — ${entry.summary}` : '';
+          lines.push(`${indent}${prefix} ${entry.title}${summary}`);
+          lines.push(`${indent}  ID: ${entry.id}`);
+          if (entry.children?.length) {
+            for (const child of entry.children) renderEntry(child, indent + '  ');
+          }
+        };
+
+        if (args.tree) {
+          for (const entry of toc) renderEntry(entry, '');
+        } else {
+          for (const entry of toc) {
+            const prefix = '#'.repeat(entry.level || 1);
+            const summary = entry.summary ? ` — ${entry.summary}` : '';
+            lines.push(`${prefix} ${entry.title} [${entry.filePath}]${summary}`);
+            lines.push(`  ID: ${entry.id}`);
+          }
+        }
+
+        return lines.join('\n');
+      }
+
+      case 'kirograph_docs_search': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableDocs) return 'Documentation indexing is not enabled. Set enableDocs: true in .kirograph/config.json and run kirograph index.';
+
+        const { DocsQueries } = await import('../docs/queries');
+        const db = cg.getDatabase();
+        db.applyDocsSchema();
+        const docs = new DocsQueries(db.getRawDb(), projectRoot, config);
+
+        const results = await docs.searchSections(args.query as string, {
+          file: args.file as string | undefined,
+          limit: (args.limit as number) ?? 10,
+        });
+
+        if (results.length === 0) return `No documentation sections found matching "${args.query}".`;
+
+        return results.map((r, i) => {
+          const summary = r.section.summary ? `\n  ${r.section.summary}` : '';
+          return `${i + 1}. ${r.section.title} [${r.section.filePath}]${summary}\n  ID: ${r.section.id}`;
+        }).join('\n\n');
+      }
+
+      case 'kirograph_docs_section': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableDocs) return 'Documentation indexing is not enabled. Set enableDocs: true in .kirograph/config.json and run kirograph index.';
+
+        const { DocsQueries } = await import('../docs/queries');
+        const db = cg.getDatabase();
+        db.applyDocsSchema();
+        const docs = new DocsQueries(db.getRawDb(), projectRoot);
+
+        const result = docs.getSection(args.id as string, { context: args.context as boolean | undefined });
+        if (!result) return `Section "${args.id}" not found.`;
+
+        const lines: string[] = [];
+
+        if (result.ancestors?.length) {
+          lines.push('Breadcrumb: ' + result.ancestors.map(a => a.title).join(' > ') + ' > ' + result.section.title);
+          lines.push('');
+        }
+
+        lines.push(result.content);
+
+        if (result.children?.length) {
+          lines.push('', '## Child sections:');
+          for (const child of result.children) {
+            const summary = child.summary ? ` — ${child.summary}` : '';
+            lines.push(`  - ${child.title}${summary} (ID: ${child.id})`);
+          }
+        }
+
+        return lines.join('\n');
+      }
+
+      case 'kirograph_docs_outline': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableDocs) return 'Documentation indexing is not enabled. Set enableDocs: true in .kirograph/config.json and run kirograph index.';
+
+        const { DocsQueries } = await import('../docs/queries');
+        const db = cg.getDatabase();
+        db.applyDocsSchema();
+        const docs = new DocsQueries(db.getRawDb(), projectRoot);
+
+        const outline = docs.getOutline(args.file as string);
+        if (outline.length === 0) return `No sections found in "${args.file}". Is the file indexed?`;
+
+        const lines: string[] = [`Outline: ${args.file}`, ''];
+        const renderOutline = (entries: any[], indent: string) => {
+          for (const entry of entries) {
+            const summary = entry.summary ? ` — ${entry.summary}` : '';
+            lines.push(`${indent}${'#'.repeat(entry.level || 1)} ${entry.title}${summary}`);
+            if (entry.children?.length) renderOutline(entry.children, indent + '  ');
+          }
+        };
+        renderOutline(outline, '');
+
+        return lines.join('\n');
+      }
+
+      case 'kirograph_docs_refs': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableDocs) return 'Documentation indexing is not enabled. Set enableDocs: true in .kirograph/config.json and run kirograph index.';
+
+        const { DocsQueries } = await import('../docs/queries');
+        const db = cg.getDatabase();
+        db.applyDocsSchema();
+        const docs = new DocsQueries(db.getRawDb(), projectRoot);
+
+        const refs = docs.getRefs({
+          sectionId: args.sectionId as string | undefined,
+          qualifiedName: args.nodeId as string | undefined,
+        });
+
+        if (refs.length === 0) {
+          if (args.sectionId) return `No code references found in section "${args.sectionId}".`;
+          if (args.nodeId) return `No documentation sections reference "${args.nodeId}".`;
+          return 'Provide either sectionId or nodeId to look up cross-references.';
+        }
+
+        return refs.map(r => {
+          const direction = args.sectionId ? `→ ${r.qualifiedName}` : `← ${r.sectionTitle ?? r.sectionId}`;
+          return `[${r.refType}] ${direction} (confidence: ${r.confidence.toFixed(2)})`;
+        }).join('\n');
+      }
+
+      // ── Data tools ────────────────────────────────────────────────────────────
+
+      case 'kirograph_data_list': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableData) return 'Data indexing is not enabled. Set enableData: true in .kirograph/config.json and run kirograph index.';
+
+        const { DataQueries } = await import('../data/queries');
+        const db = cg.getDatabase();
+        db.applyDataSchema();
+        const dq = new DataQueries(db.getRawDb());
+        const datasets = dq.listDatasets();
+
+        if (datasets.length === 0) return 'No datasets indexed. Run kirograph index or kirograph data reindex.';
+
+        return datasets.map(ds => {
+          const sizeMb = (ds.fileSize / 1024 / 1024).toFixed(2);
+          return `${ds.id} (${ds.format})\n  File: ${ds.filePath}\n  Rows: ${ds.rowCount.toLocaleString()} | Columns: ${ds.columnCount} | Size: ${sizeMb} MB`;
+        }).join('\n\n');
+      }
+
+      case 'kirograph_data_describe': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableData) return 'Data indexing is not enabled. Set enableData: true in .kirograph/config.json and run kirograph index.';
+
+        const { DataQueries } = await import('../data/queries');
+        const db = cg.getDatabase();
+        db.applyDataSchema();
+        const dq = new DataQueries(db.getRawDb());
+
+        if (args.column) {
+          const col = dq.describeColumn(args.dataset as string, args.column as string);
+          if (!col) return `Column "${args.column}" not found in dataset "${args.dataset}".`;
+          return [
+            `Column: ${col.name}`,
+            `Type: ${col.inferredType}`,
+            `Nullable: ${col.nullable} (${(col.nullPct * 100).toFixed(1)}% null)`,
+            `Cardinality: ${col.cardinality}`,
+            col.minValue ? `Min: ${col.minValue}` : '',
+            col.maxValue ? `Max: ${col.maxValue}` : '',
+            col.meanValue !== null ? `Mean: ${col.meanValue.toFixed(2)}` : '',
+            `Samples: ${col.sampleValues.join(', ')}`,
+          ].filter(Boolean).join('\n');
+        }
+
+        const result = dq.describeDataset(args.dataset as string);
+        if (!result) return `Dataset "${args.dataset}" not found. Use kirograph_data_list to see available datasets.`;
+
+        const lines = [
+          `Dataset: ${result.dataset.id} (${result.dataset.format})`,
+          `File: ${result.dataset.filePath}`,
+          `Rows: ${result.dataset.rowCount.toLocaleString()} | Columns: ${result.dataset.columnCount}`,
+          '',
+          'Columns:',
+        ];
+        for (const col of result.columns) {
+          const nullInfo = col.nullable ? ` (${(col.nullPct * 100).toFixed(0)}% null)` : '';
+          const samples = col.sampleValues.length > 0 ? ` — samples: ${col.sampleValues.slice(0, 3).join(', ')}` : '';
+          const summary = col.summary ? ` [${col.summary}]` : '';
+          lines.push(`  ${col.name}: ${col.inferredType}${nullInfo} [${col.cardinality} distinct]${samples}${summary}`);
+        }
+
+        // Validation rules
+        const rules = dq.validationRules(args.dataset as string);
+        if (rules && rules.length > 0) {
+          lines.push('', 'Validation rules:');
+          for (const r of rules.slice(0, 10)) {
+            lines.push(`  ${r.column}: ${r.rules.join('; ')}`);
+          }
+        }
+
+        // Sample data hints
+        const hints = dq.sampleHints(args.dataset as string);
+        if (hints && hints.length > 0) {
+          lines.push('', 'Sample data hints:');
+          for (const h of hints.slice(0, 10)) {
+            lines.push(`  ${h.column}: ${h.hint}`);
+          }
+        }
+
+        return lines.join('\n');
+      }
+
+      case 'kirograph_data_query': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableData) return 'Data indexing is not enabled. Set enableData: true in .kirograph/config.json and run kirograph index.';
+
+        const { DataQueries } = await import('../data/queries');
+        const db = cg.getDatabase();
+        db.applyDataSchema();
+        const dq = new DataQueries(db.getRawDb());
+
+        const result = dq.queryRows(args.dataset as string, {
+          filters: args.filters as any[],
+          columns: args.columns as string[],
+          limit: (args.limit as number) ?? 100,
+          offset: (args.offset as number) ?? 0,
+        });
+
+        if (!result) return `Dataset "${args.dataset}" not found.`;
+        if (result.rows.length === 0) return `No rows match the given filters (${result.totalMatching} total in dataset).`;
+
+        const header = `${result.rows.length} rows returned (${result.totalMatching} total matching):\n`;
+        const rowStrs = result.rows.slice(0, 50).map((row, i) => {
+          const vals = Object.entries(row).map(([k, v]) => `${k}=${v ?? 'null'}`).join(', ');
+          return `  ${i + 1}. ${vals}`;
+        });
+        if (result.rows.length > 50) rowStrs.push(`  …and ${result.rows.length - 50} more rows`);
+        let response = header + rowStrs.join('\n');
+
+        // Token budget enforcement
+        const maxChars = config.dataMaxResponseTokens * 4;
+        if (response.length > maxChars) {
+          response = response.slice(0, maxChars) + '\n\n[truncated: response exceeded token budget]';
+        }
+
+        // Anti-loop detection
+        response = this.checkPaginationLoop(args.dataset as string, args.offset as number | undefined, response);
+
+        return response;
+      }
+
+      case 'kirograph_data_aggregate': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableData) return 'Data indexing is not enabled. Set enableData: true in .kirograph/config.json and run kirograph index.';
+
+        const { DataQueries } = await import('../data/queries');
+        const db = cg.getDatabase();
+        db.applyDataSchema();
+        const dq = new DataQueries(db.getRawDb());
+
+        const result = dq.aggregate(args.dataset as string, {
+          groupBy: (args.groupBy as string[]) ?? [],
+          metrics: (args.metrics as any[]) ?? [],
+          filters: args.filters as any[],
+        });
+
+        if (!result) return `Dataset "${args.dataset}" not found.`;
+        if (result.rows.length === 0) return 'No results (empty dataset or all rows filtered out).';
+
+        const keys = Object.keys(result.rows[0]);
+        const header = keys.join(' | ');
+        const separator = keys.map(() => '---').join(' | ');
+        const rows = result.rows.slice(0, 100).map(row => keys.map(k => row[k] ?? 'null').join(' | '));
+
+        let response = `${header}\n${separator}\n${rows.join('\n')}${result.rows.length > 100 ? `\n…and ${result.rows.length - 100} more groups` : ''}`;
+
+        // Token budget enforcement
+        const maxChars = config.dataMaxResponseTokens * 4;
+        if (response.length > maxChars) {
+          response = response.slice(0, maxChars) + '\n\n[truncated: response exceeded token budget]';
+        }
+
+        return response;
+      }
+
+      case 'kirograph_data_search': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableData) return 'Data indexing is not enabled. Set enableData: true in .kirograph/config.json and run kirograph index.';
+
+        const { DataQueries } = await import('../data/queries');
+        const db = cg.getDatabase();
+        db.applyDataSchema();
+        const dq = new DataQueries(db.getRawDb());
+
+        const cols = dq.searchColumns(args.dataset as string, args.query as string);
+        if (cols.length === 0) return `No columns matching "${args.query}" in dataset "${args.dataset}".`;
+
+        return cols.map(c => {
+          const samples = c.sampleValues.length > 0 ? ` — samples: ${c.sampleValues.slice(0, 3).join(', ')}` : '';
+          return `${c.name}: ${c.inferredType} [${c.cardinality} distinct]${samples}`;
+        }).join('\n');
+      }
+
+      case 'kirograph_data_join': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableData) return 'Data indexing is not enabled. Set enableData: true in .kirograph/config.json and run kirograph index.';
+
+        const { DataQueries } = await import('../data/queries');
+        const db = cg.getDatabase();
+        db.applyDataSchema();
+        const dq = new DataQueries(db.getRawDb());
+
+        try {
+          const result = dq.join({
+            left: args.left as string,
+            right: args.right as string,
+            leftColumn: args.leftColumn as string,
+            rightColumn: args.rightColumn as string,
+            type: (args.type as any) ?? 'inner',
+            columns: args.columns as string[] | undefined,
+            limit: args.limit as number | undefined,
+          });
+
+          if (!result) return `Dataset not found. Verify both dataset IDs with kirograph_data_list.`;
+
+          const joinTypeStr = String(args.type ?? 'inner').toUpperCase();
+          const header = `Join: ${args.left}.${args.leftColumn} ${joinTypeStr} JOIN ${args.right}.${args.rightColumn}\nMatching rows: ${result.totalMatching} (showing ${result.rows.length})`;
+          if (result.rows.length === 0) return `${header}\n\nNo matching rows.`;
+
+          const lines = result.rows.map(r => JSON.stringify(r));
+          let response = `${header}\n\n${lines.join('\n')}`;
+
+          // Token budget enforcement
+          const maxChars = config.dataMaxResponseTokens * 4;
+          if (response.length > maxChars) {
+            response = response.slice(0, maxChars) + '\n\n[truncated: response exceeded token budget]';
+          }
+
+          return response;
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      }
+
+      case 'kirograph_data_correlations': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableData) return 'Data indexing is not enabled. Set enableData: true in .kirograph/config.json and run kirograph index.';
+
+        const { DataQueries } = await import('../data/queries');
+        const db = cg.getDatabase();
+        db.applyDataSchema();
+        const dq = new DataQueries(db.getRawDb());
+
+        const pairs = dq.correlations(args.dataset as string, args.threshold as number | undefined);
+        if (pairs === null) return `Dataset "${args.dataset}" not found.`;
+        if (pairs.length === 0) return `No correlations above threshold ${args.threshold ?? 0.3} found. The dataset may have fewer than 2 numeric columns or no significant correlations.`;
+
+        const lines = pairs.map(p =>
+          `${p.column1} ↔ ${p.column2}: ${p.correlation > 0 ? '+' : ''}${p.correlation.toFixed(4)} (${p.strength})`
+        );
+        return `Correlations for "${args.dataset}" (threshold: ${args.threshold ?? 0.3}):\n\n${lines.join('\n')}`;
+      }
+
+      case 'kirograph_data_quality': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableData) return 'Data indexing is not enabled. Set enableData: true in .kirograph/config.json and run kirograph index.';
+
+        const { DataQueries } = await import('../data/queries');
+        const db = cg.getDatabase();
+        db.applyDataSchema();
+        const dq = new DataQueries(db.getRawDb());
+
+        const quality = dq.quality(args.dataset as string);
+        if (quality === null) return `Dataset "${args.dataset}" not found.`;
+        if (quality.length === 0) return `No quality issues detected in "${args.dataset}". All columns look healthy.`;
+
+        const lines = quality.map(q =>
+          `${q.column} (risk: ${(q.riskScore * 100).toFixed(0)}%): ${q.issues.join('; ')}`
+        );
+        return `Quality report for "${args.dataset}" (${quality.length} columns with issues):\n\n${lines.join('\n')}`;
       }
 
       default:

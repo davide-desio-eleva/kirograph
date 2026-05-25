@@ -6,7 +6,7 @@ import * as readline from 'readline';
 import { KiroGraphConfig } from '../../config';
 type CavemanMode = 'lite' | 'full' | 'ultra';
 import { ask, askToggle, arrowSelect, printSection, printSeparator, dim, reset, violet } from './prompts';
-export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites' | 'enableArchitecture' | 'cavemanMode' | 'shellCompressionLevel' | 'enableMemory'> & { embeddingModel?: string; embeddingDim?: number };
+export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites' | 'enableArchitecture' | 'cavemanMode' | 'shellCompressionLevel' | 'enableMemory' | 'enableDocs' | 'docsContextLimit' | 'enableData' | 'dataContextLimit'> & { embeddingModel?: string; embeddingDim?: number };
 export type SemanticEngine = KiroGraphConfig['semanticEngine'];
 
 export const DEFAULT_EMBEDDING_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
@@ -55,7 +55,7 @@ export async function promptConfigOptions(rl: readline.Interface): Promise<Confi
     'Enables natural-language code search via vector embeddings. A local model (~130MB) is downloaded on first use.',
   );
 
-  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, semanticEngine: 'cosine', typesenseDashboard: false, qdrantDashboard: false, extractDocstrings: true, trackCallSites: true, enableArchitecture: false, cavemanMode: 'off', shellCompressionLevel: 'normal', enableMemory: false };
+  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, semanticEngine: 'cosine', typesenseDashboard: false, qdrantDashboard: false, extractDocstrings: true, trackCallSites: true, enableArchitecture: false, cavemanMode: 'off', shellCompressionLevel: 'normal', enableMemory: false, enableDocs: false, docsContextLimit: 0, enableData: false, dataContextLimit: 0 };
 
   if (enableEmbeddings) {
     // ── Model selection ────────────────────────────────────────────────────────
@@ -139,6 +139,55 @@ export async function promptConfigOptions(rl: readline.Interface): Promise<Confi
     'Detects packages from manifests and architectural layers. Enables kirograph_architecture, kirograph_coupling, kirograph_package.',
     false,
   );
+
+  // ── Documentation ───────────────────────────────────────────────────────────
+  printSection('📖', 'Documentation');
+
+  (patch as any).enableDocs = await askToggle(rl,
+    'Documentation indexing (section-level retrieval):',
+    'Indexes docs by heading structure. Enables kirograph_docs_toc, kirograph_docs_search, kirograph_docs_section, kirograph_docs_outline, kirograph_docs_refs.',
+    false,
+  );
+
+  if ((patch as any).enableDocs) {
+    const contextChoice = await arrowSelect<number>(rl, 'Include doc sections in kirograph_context results?', [
+      { value: 0,  label: '0 (disabled)', description: 'Docs stay separate — use kirograph_docs_* tools explicitly (recommended)' },
+      { value: 3,  label: '3 sections',   description: 'Include up to 3 relevant doc sections in context results' },
+      { value: 5,  label: '5 sections',   description: 'Include up to 5 relevant doc sections in context results' },
+      { value: 10, label: '10 sections',  description: 'Include up to 10 relevant doc sections in context results' },
+    ]);
+    (patch as any).docsContextLimit = contextChoice;
+  }
+
+  // ── Data ─────────────────────────────────────────────────────────────────────
+  printSection('📊', 'Data');
+
+  (patch as any).enableData = await askToggle(rl,
+    'Tabular data indexing (CSV/TSV/JSONL/JSON/Excel/Parquet):',
+    'Indexes data files for structured querying. Enables kirograph_data_list, kirograph_data_describe, kirograph_data_query, kirograph_data_aggregate, kirograph_data_search.',
+    false,
+  );
+
+  if ((patch as any).enableData) {
+    (patch as any).dataInstallExcel = await askToggle(rl,
+      'Install Excel support (xlsx package)?',
+      'Required for .xlsx/.xls files. CSV/TSV/JSONL/JSON are always supported without extra deps.',
+      false,
+    );
+
+    (patch as any).dataInstallParquet = await askToggle(rl,
+      'Install Parquet support (parquetjs-lite package)?',
+      'Required for .parquet files. CSV/TSV/JSONL/JSON are always supported without extra deps.',
+      false,
+    );
+
+    const contextChoice = await arrowSelect<number>(rl, 'Include dataset schemas in kirograph_context results?', [
+      { value: 0,  label: '0 (disabled)', description: 'Data stays separate — use kirograph_data_* tools explicitly (recommended)' },
+      { value: 2,  label: '2 datasets',   description: 'Include up to 2 relevant dataset schemas in context results' },
+      { value: 5,  label: '5 datasets',   description: 'Include up to 5 relevant dataset schemas in context results' },
+    ]);
+    (patch as any).dataContextLimit = contextChoice;
+  }
 
   // ── Agent Behavior ──────────────────────────────────────────────────────────
   printSection('🤖', 'Agent Behavior');

@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.16.6] - 2026-05-22: Antigravity, Gemini CLI & OpenCode Fixes
+## [0.18.6] - 2026-05-22: Antigravity, Gemini CLI & OpenCode Fixes
 
 ### Fixed
 
@@ -15,7 +15,7 @@
 
 ---
 
-## [0.16.5] - 2026-05-22: Hooks & Session Hygiene
+## [0.18.5] - 2026-05-22: Hooks & Session Hygiene
 
 > ⚠️ Community-contributed, vibecoded, unverified. PRs welcome for fixes.
 
@@ -38,7 +38,7 @@
 
 ---
 
-## [0.16.4] - 2026-05-22: Tier 4 — Full Coverage
+## [0.18.4] - 2026-05-22: Tier 4 — Full Coverage
 
 > ⚠️ Community-contributed, vibecoded, unverified. PRs welcome for fixes.
 
@@ -55,7 +55,7 @@
 
 ---
 
-## [0.16.3] - 2026-05-22: Tier 3 IDE Expansion
+## [0.18.3] - 2026-05-22: Tier 3 IDE Expansion
 
 > ⚠️ Community-contributed, vibecoded, unverified. PRs welcome for fixes.
 
@@ -73,7 +73,7 @@
 
 ---
 
-## [0.16.2] - 2026-05-22: Tier 2 IDE Expansion
+## [0.18.2] - 2026-05-22: Tier 2 IDE Expansion
 
 > ⚠️ Community-contributed, vibecoded, unverified. PRs welcome for fixes.
 
@@ -88,7 +88,7 @@
 
 ---
 
-## [0.16.1] - 2026-05-22: Tier 1 IDE Expansion
+## [0.18.1] - 2026-05-22: Tier 1 IDE Expansion
 
 > ⚠️ Community-contributed, vibecoded, unverified. PRs welcome for fixes.
 
@@ -109,7 +109,7 @@
 
 ---
 
-## [0.16.0] - 2026-05-22: Multi-IDE Expansion
+## [0.18.0] - 2026-05-22: Multi-IDE Expansion
 
 ### Added
 
@@ -134,6 +134,90 @@
 - `InstallTarget` type extended: `'kiro' | 'claude' | 'codex'` → `'kiro' | 'claude' | 'codex' | 'cursor' | 'antigravity' | 'opencode'`.
 - `kirograph install --target` help text and error messages updated to include `cursor`, `antigravity`, and `opencode`.
 - README and docs updated with Cursor, Antigravity, and OpenCode usage instructions in the "Other Tools (Experimental)" section.
+
+## [0.17.0] - 2026-05-24: Data Navigation
+
+### Added
+
+- **Data module** (`enableData: true`): indexes tabular data files (CSV, TSV, JSONL, JSON, Excel, Parquet) for structured querying. Inspired by [jDataMunch-MCP](https://github.com/jgravelle/jdatamunch-mcp), implemented natively in TypeScript with full kirograph integration.
+  - **`kirograph_data_list` MCP tool**: List all indexed datasets with row counts, column counts, and file sizes.
+  - **`kirograph_data_describe` MCP tool**: Full schema profile — column names, inferred types, cardinality, null percentages, min/max, sample values, NL summaries, validation rules, and sample data generation hints.
+  - **`kirograph_data_query` MCP tool**: Filtered row retrieval with 10 structured operators (eq, neq, gt, gte, lt, lte, contains, in, is_null, between). Parameterized SQL, zero injection surface. Anti-loop detection warns on excessive pagination.
+  - **`kirograph_data_aggregate` MCP tool**: Server-side GROUP BY — count, sum, avg, min, max, count_distinct. Computation in SQLite, only results enter context.
+  - **`kirograph_data_search` MCP tool**: Search column names and sample values by keyword within a dataset.
+  - **`kirograph_data_join` MCP tool**: Cross-dataset SQL JOIN (inner, left, right) with column projection.
+  - **`kirograph_data_correlations` MCP tool**: Pairwise Pearson correlations between numeric columns. Discovers hidden relationships without loading data.
+  - **`kirograph_data_quality` MCP tool**: Data quality triage — rank columns by composite risk score (null rate, cardinality anomalies, type issues).
+  - **6 format parsers**: CSV/TSV (built-in, streaming), JSONL/NDJSON (built-in, streaming), JSON array (built-in, streaming), Excel .xlsx/.xls (optional dep: `xlsx`), Parquet (optional dep: `parquetjs-lite`).
+  - **Column profiler**: Type inference (string, integer, float, boolean, date, null), cardinality, null counting, min/max, mean, sample values, auto-generated NL summaries.
+  - **Streaming parser**: Never loads full file into memory. Processes line-by-line (CSV/JSONL) or in chunks (Excel/Parquet).
+  - **Incremental indexing**: Content hash (SHA-256) per file. Only re-indexes files that changed on disk.
+  - **Code ↔ data linker** (`src/data/linker.ts`): Detects file path references in source code (Node.js `readFileSync`, Python `pd.read_csv`, SQL `COPY FROM`, generic path strings). Populates `data_code_refs` during indexing.
+  - **`kirograph_context` enrichment** (opt-in): When `dataContextLimit > 0`, relevant dataset schemas are surfaced alongside code symbols. Disabled by default.
+  - **Test fixture awareness**: `kirograph affected` now includes test files that reference changed data files via `data_code_refs`.
+  - **Schema drift detection**: `data_dataset_history` table tracks profile snapshots on each re-index. `kirograph data drift` compares latest two snapshots (added/removed/changed columns, row count delta).
+  - **Validation rules extraction**: Infers validation rules from column profiles (required, type, range, enum, uniqueness).
+  - **Sample data generation hints**: From column profiles, provides hints for generating realistic test data.
+  - **NL summaries**: Auto-generated natural-language summaries for each column based on profile patterns.
+  - **Anti-loop detection**: Warns when agent paginates row-by-row (>5 sequential queries with incrementing offsets).
+  - **Token budget enforcement**: Responses exceeding `dataMaxResponseTokens` are truncated with a clear message.
+  - **CLI** (13 commands): `kirograph data {list,describe,query,aggregate,search,index,reindex,join,correlations,quality,history,drift,lint}`.
+  - **Token savings tracking**: Data tools tracked as `'data'` source in `kirograph_gain` with naive cost heuristics (95–99% savings vs reading raw data files).
+  - **`kirograph_status` enhanced**: Shows data stats (datasets, rows, columns, source size) when enabled.
+  - **Sync pipeline integration**: Data files are re-indexed automatically during `kirograph index` and `kirograph sync` with dedicated progress phase.
+  - **Architecture layer auto-assignment**: Data files are assigned to a `data` layer when architecture analysis is enabled.
+- **Installer prompt**: "Tabular data indexing?" added to the interactive installer. Follow-up prompts for Excel/Parquet optional deps and `dataContextLimit`.
+- **Steering file data section**: Teaches the agent to use `kirograph_data_*` tools. Conditionally included when data is enabled.
+- **9 new config fields**: `enableData`, `dataInclude`, `dataExclude`, `dataLinkCode`, `dataContextLimit`, `dataMaxFileSize`, `dataMaxRows`, `dataQueryLimit`, `dataMaxResponseTokens`.
+
+### Changed
+
+- MCP tool count: 29 → 37 (`kirograph_data_list`, `kirograph_data_describe`, `kirograph_data_query`, `kirograph_data_aggregate`, `kirograph_data_search`, `kirograph_data_join`, `kirograph_data_correlations`, `kirograph_data_quality`).
+- `kirograph_gain` output now shows five source categories: Graph tools, Docs tools, Data tools, Compression, Memory.
+- `TokenSavingsRecord.source` type: `'exec' | 'graph' | 'memory' | 'docs'` → `'exec' | 'graph' | 'memory' | 'docs' | 'data'`.
+- `IndexProgress.phase` type extended with `'docs'` and `'data'` phases.
+- Progress rendering: docs and data indexing now have dedicated progress output (previously incorrectly used the `architecture` phase).
+- `GraphDatabase` exposes `applyDataSchema()` for data module access.
+- Installer `installLate` signature extended with `enableData` parameter.
+- `ConfigPatch` type extended with `enableData` and `dataContextLimit`.
+- Build script copies `data-schema.sql` to dist.
+- `KIROGRAPH_TOOL_NAMES` updated with 8 new data tools.
+
+---
+
+## [0.16.0] - 2026-05-24: Documentation Navigation
+
+### Added
+
+- **Documentation module** (`enableDocs: true`): indexes project documentation by heading hierarchy for section-level retrieval. Inspired by [jDocMunch-MCP](https://github.com/jgravelle/jdocmunch-mcp), implemented natively in TypeScript with full kirograph integration.
+  - **`kirograph_docs_toc` MCP tool**: Table of contents for a file or the whole project. Flat or tree mode.
+  - **`kirograph_docs_search` MCP tool**: FTS5-powered search across documentation sections. Independent from code search.
+  - **`kirograph_docs_section` MCP tool**: Retrieve full content of a section by stable ID. Optional context mode (ancestor chain + child summaries).
+  - **`kirograph_docs_outline` MCP tool**: Heading hierarchy for a single document.
+  - **`kirograph_docs_refs` MCP tool**: Bidirectional code ↔ doc cross-references via `qualified_name`.
+  - **9 format parsers**: Markdown (.md, .mdx, .cheatmd), reStructuredText (.rst), AsciiDoc (.adoc, .asciidoc), RDoc (.rdoc), Org-mode (.org), HTML (.html, .htm), Plain text (.txt), OpenAPI/Swagger (.yaml, .yml, .json — content-detected).
+  - **Code linker**: Detects backtick references, CamelCase identifiers, and snake_case patterns in doc content, resolves against the code graph, stores as `doc_code_refs`.
+  - **`kirograph_context` enrichment** (opt-in): When `docsContextLimit > 0`, relevant doc sections are surfaced alongside code symbols. Disabled by default — user chooses the cap during install.
+  - **CLI mirrors all MCP tools**: `kirograph docs {toc,search,section,outline,refs,reindex,lint,reembed}`.
+  - **`kirograph docs lint`**: Health checks — broken code refs, stale sections, FTS desync, orphan refs.
+  - **Stable section IDs**: Format `{file_path}::{ancestor-chain/slug}#{level}`. Stable across re-indexing when path, heading text, level, and parent chain don't change.
+  - **Incremental indexing**: Content hash (SHA-256) per section. Only re-indexes files that changed on disk.
+  - **Token savings tracking**: Docs tools tracked as `'docs'` source in `kirograph_gain` with naive cost heuristics (92–97% savings vs reading full doc files).
+  - **`kirograph_status` enhanced**: Shows docs stats (files, sections, code refs) when enabled.
+  - **Sync pipeline integration**: Docs are re-indexed automatically during `kirograph index` and `kirograph sync`.
+- **Installer prompt**: "Documentation indexing (section-level retrieval)?" added to the interactive installer. Follow-up prompt for `docsContextLimit` when enabled.
+- **Steering file docs section**: Teaches the agent to use `kirograph_docs_*` tools. Conditionally included when docs is enabled.
+- **8 new config fields**: `enableDocs`, `docsInclude`, `docsExclude`, `docsLinkCode`, `docsContextLimit`, `docsContextThreshold`, `docsMaxFileSize`, `docsSummarization`.
+
+### Changed
+
+- MCP tool count: 24 → 29 (`kirograph_docs_toc`, `kirograph_docs_search`, `kirograph_docs_section`, `kirograph_docs_outline`, `kirograph_docs_refs`).
+- `kirograph_gain` output now shows four source categories: Graph tools, Docs tools, Compression, Memory.
+- `TokenSavingsRecord.source` type: `'exec' | 'graph' | 'memory'` → `'exec' | 'graph' | 'memory' | 'docs'`.
+- `GraphDatabase` exposes `applyDocsSchema()` for docs module access.
+- Installer `installLate` signature extended with `enableDocs` parameter.
+- Build script copies `docs-schema.sql` to dist.
+>>>>>>> main
 
 ---
 

@@ -69,6 +69,8 @@
     <div class="sidebar-section">
       <div class="sidebar-heading">Advanced</div>
       <a href="#memory" class="sidebar-link">Memory</a>
+      <a href="#documentation" class="sidebar-link">Documentation</a>
+      <a href="#data" class="sidebar-link">Data</a>
       <a href="#caveman-mode" class="sidebar-link">Caveman Mode</a>
       <a href="#shell-compression" class="sidebar-link">Shell Compression</a>
       <a href="#compression-caveman" class="sidebar-link" style="padding-left:2rem">Coexistence with Caveman</a>
@@ -145,6 +147,8 @@ cd kirograph && npm uninstall -g .</code></pre>
       <li>Whether to enable embeddings (semantic search)</li>
       <li>Embedding model and semantic engine</li>
       <li>Whether to enable architecture analysis</li>
+      <li>Whether to enable documentation indexing</li>
+      <li>Whether to enable tabular data indexing</li>
       <li>Caveman mode level</li>
       <li>Shell compression (on/off)</li>
       <li>Whether to run an initial index immediately</li>
@@ -159,7 +163,7 @@ cd kirograph && npm uninstall -g .</code></pre>
     <!-- ── How Indexing Works ── -->
     <h2 id="how-indexing-works">How Indexing Works</h2>
 
-    <p>Indexing has three layers: <strong>structural</strong> (always on), <strong>semantic</strong> (opt-in), and <strong>architecture</strong> (opt-in).</p>
+    <p>Indexing has five layers: <strong>structural</strong> (always on), <strong>semantic</strong> (opt-in), <strong>architecture</strong> (opt-in), <strong>documentation</strong> (opt-in), and <strong>data</strong> (opt-in).</p>
 
     <h3 id="structural-layer">Structural layer</h3>
     <p>tree-sitter parses every source file into an AST. Nodes and edges are extracted and written to <code>.kirograph/kirograph.db</code>. This powers all graph traversal tools and exact/FTS symbol search. No extra dependencies. Runs on every <code>kirograph index</code> or <code>kirograph sync</code>.</p>
@@ -189,6 +193,16 @@ cd kirograph && npm uninstall -g .</code></pre>
 
     <h3 id="architecture-layer">Architecture layer (opt-in)</h3>
     <p>When <code>enableArchitecture: true</code>, KiroGraph detects packages and architectural layers (api, service, data, ui, shared) and computes coupling metrics (Ca, Ce, instability) between them. Results stored in <code>arch_*</code> tables in <code>kirograph.db</code>.</p>
+
+    <h3 id="documentation-layer">Documentation layer (opt-in)</h3>
+    <p>When <code>enableDocs: true</code>, KiroGraph indexes project documentation by heading hierarchy and section structure. Instead of reading entire doc files, agents retrieve exactly the section they need via stable section IDs.</p>
+    <p>Supports 9 formats: Markdown (.md, .mdx, .cheatmd), reStructuredText (.rst), AsciiDoc (.adoc), RDoc (.rdoc), Org-mode (.org), HTML (.html), plain text (.txt), and OpenAPI/Swagger specs (content-detected in .yaml/.json files).</p>
+    <p>Sections are cross-referenced to code symbols via backtick detection, CamelCase/snake_case pattern matching, and stored as <code>doc_code_refs</code> using stable <code>qualified_name</code> keys.</p>
+
+    <h3 id="data-layer">Data layer (opt-in)</h3>
+    <p>When <code>enableData: true</code>, KiroGraph indexes tabular data files (CSV, TSV, JSONL, JSON, Excel, Parquet) that live alongside your code. Instead of reading raw data files into context, agents query structured schemas and filtered rows — saving 95–99% of tokens.</p>
+    <p>Supports 6 formats: CSV/TSV (built-in, streaming), JSONL/NDJSON (built-in), JSON arrays (built-in), Excel .xlsx/.xls (optional dep: <code>xlsx</code>), Parquet (optional dep: <code>parquetjs-lite</code>).</p>
+    <p>Each dataset is profiled with column types, cardinality, null rates, min/max, sample values, and auto-generated NL summaries. Data files are cross-referenced to code symbols via path detection (<code>readFileSync</code>, <code>pd.read_csv</code>, SQL <code>COPY FROM</code>, etc.) and stored as <code>data_code_refs</code>.</p>
 
     <!-- ── Languages & Frameworks ── -->
     <h2 id="languages">Supported Languages</h2>
@@ -393,13 +407,14 @@ cd kirograph && npm uninstall -g .</code></pre>
 }</code></pre>
 
     <h3 id="ide-hooks">IDE Hooks (<code>.kiro/hooks/</code>)</h3>
-    <p>Up to two hooks are installed (<code>.kiro.hook</code> extension):</p>
+    <p>Up to three hooks are installed (<code>.kiro.hook</code> extension):</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Hook file</th><th>Event</th><th>Type</th><th>Behavior</th></tr></thead>
         <tbody>
           <tr><td><code>kirograph-sync-if-dirty.kiro.hook</code></td><td><code>agentStop</code></td><td><code>runCommand</code></td><td>Runs <code>kirograph sync --quiet</code> when the agent stops. Skips unchanged files via content hashing, so it's fast even when nothing changed.</td></tr>
           <tr><td><code>kirograph-compress-hint.kiro.hook</code></td><td><code>preToolUse</code> (shell)</td><td><code>askAgent</code></td><td>Reminds the agent to use <code>kirograph_exec</code> for commands that benefit from token compression. Only installed when shell compression is enabled.</td></tr>
+          <tr><td><code>kirograph-mem-capture.kiro.hook</code></td><td><code>agentStop</code></td><td><code>askAgent</code></td><td>Prompts the agent to store important observations (decisions, errors, patterns) in memory at the end of each session. Only installed when memory is enabled.</td></tr>
         </tbody>
       </table>
     </div>
@@ -417,6 +432,7 @@ cd kirograph && npm uninstall -g .</code></pre>
         </tbody>
       </table>
     </div>
+    <p style="margin-top: 0.75rem; color: var(--text-muted); font-size: 0.85rem;">The CLI agent format only supports <code>command</code> hooks (shell commands), not <code>askAgent</code> prompts. Memory capture and compression hints are handled via the steering file instructions instead — the agent reads them from <code>.kiro/steering/kirograph.md</code> which is referenced as a resource.</p>
     <pre><code>kiro-cli --agent kirograph
 # or, inside an active session:
 /agent swap kirograph</code></pre>
@@ -521,35 +537,91 @@ kirograph install --target claude      # also Claude Code</code></pre>
 
     <p>All configuration is in <code>.kirograph/config.json</code>. The interactive <code>kirograph install</code> writes this for you.</p>
 
-    <div class="table-wrap">
+    <!-- Search box for config fields -->
+    <div style="max-width: 400px; margin: 0 auto 1.5rem; position: relative;">
+      <input type="text" id="config-search" placeholder="Search config fields..." autocomplete="off"
+        style="width: 100%; padding: 0.6rem 1rem 0.6rem 2.5rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); font-size: 0.9rem; outline: none; transition: border-color 0.2s;"
+        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+      <svg style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-muted);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    </div>
+
+    <div class="table-wrap" id="config-table">
       <table>
         <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
         <tbody>
+          <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);">Indexing</td></tr>
+          <tr><td><code>languages</code></td><td>string[]</td><td><code>[]</code></td><td>Limit indexing to specific languages (empty = all)</td></tr>
+          <tr><td><code>include</code></td><td>string[]</td><td><code>[]</code></td><td>Glob patterns to include (empty = include everything not excluded)</td></tr>
+          <tr><td><code>exclude</code></td><td>string[]</td><td>see below</td><td>Glob patterns to exclude from indexing</td></tr>
+          <tr><td><code>maxFileSize</code></td><td>number</td><td><code>1048576</code></td><td>Skip files larger than this (bytes, default 1MB)</td></tr>
+          <tr><td><code>extractDocstrings</code></td><td>boolean</td><td><code>true</code></td><td>Extract JSDoc, docstrings, and comments</td></tr>
+          <tr><td><code>trackCallSites</code></td><td>boolean</td><td><code>true</code></td><td>Record line/column for call edges</td></tr>
+          <tr><td><code>frameworkHints</code></td><td>string[]</td><td>auto</td><td>Override framework detection (e.g. <code>["react", "express"]</code>)</td></tr>
+          <tr><td><code>fuzzyResolutionThreshold</code></td><td>number</td><td><code>0.5</code></td><td>Name matching threshold for cross-file resolution (0.0–1.0)</td></tr>
+          <tr><td><code>syncWarningThreshold</code></td><td>number</td><td><code>10</code></td><td>Warn in <code>kirograph_status</code> when pending files exceed this count (0 = disable)</td></tr>
+          <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);">Semantic Search</td></tr>
           <tr><td><code>enableEmbeddings</code></td><td>boolean</td><td><code>false</code></td><td>Enable semantic (vector) search</td></tr>
-          <tr><td><code>semanticEngine</code></td><td>string</td><td><code>"cosine"</code></td><td>Vector engine: <code>cosine</code>, <code>sqlite-vec</code>, <code>orama</code>, <code>pglite</code>, <code>lancedb</code>, <code>qdrant</code>, <code>typesense</code></td></tr>
           <tr><td><code>embeddingModel</code></td><td>string</td><td><code>"nomic-ai/nomic-embed-text-v1.5"</code></td><td>HuggingFace model ID</td></tr>
-          <tr><td><code>embeddingDim</code></td><td>number</td><td><code>768</code></td><td>Embedding dimension (auto-corrected on mismatch)</td></tr>
-          <tr><td><code>enableArchitecture</code></td><td>boolean</td><td><code>false</code></td><td>Enable architecture analysis layer</td></tr>
-          <tr><td><code>architectureLayers</code></td><td>object</td><td>-</td><td>Override layer glob patterns</td></tr>
-          <tr><td><code>cavemanMode</code></td><td>string</td><td><code>"off"</code></td><td>Communication compression: <code>off</code>, <code>lite</code>, <code>full</code>, <code>ultra</code></td></tr>
-          <tr><td><code>shellCompressionLevel</code></td><td>string</td><td><code>"normal"</code></td><td>Shell command compression level: <code>off</code>, <code>normal</code>, <code>aggressive</code>, <code>ultra</code></td></tr>
-          <tr><td><code>syncWarningThreshold</code></td><td>number</td><td><code>10</code></td><td>Pending-file count above which <code>kirograph_status</code> warns. Set <code>0</code> to disable.</td></tr>
-          <tr><td><code>extractDocstrings</code></td><td>boolean</td><td><code>true</code></td><td>Extract docstrings/comments during indexing</td></tr>
-          <tr><td><code>trackCallSites</code></td><td>boolean</td><td><code>true</code></td><td>Track precise call-site locations</td></tr>
-          <tr><td><code>exclude</code></td><td>string[]</td><td>-</td><td>Glob patterns to exclude from indexing</td></tr>
+          <tr><td><code>embeddingDim</code></td><td>number</td><td><code>768</code></td><td>Embedding dimension</td></tr>
+          <tr><td><code>semanticEngine</code></td><td>string</td><td><code>"cosine"</code></td><td>Engine: <code>cosine</code>, <code>sqlite-vec</code>, <code>orama</code>, <code>pglite</code>, <code>lancedb</code>, <code>qdrant</code>, <code>typesense</code></td></tr>
+          <tr><td><code>useVecIndex</code></td><td>boolean</td><td><code>false</code></td><td>Deprecated alias for <code>semanticEngine: "sqlite-vec"</code></td></tr>
+          <tr><td><code>typesenseDashboard</code></td><td>boolean</td><td><code>false</code></td><td>Open Typesense dashboard after indexing</td></tr>
+          <tr><td><code>qdrantDashboard</code></td><td>boolean</td><td><code>false</code></td><td>Open Qdrant dashboard after indexing</td></tr>
+          <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);">Architecture</td></tr>
+          <tr><td><code>enableArchitecture</code></td><td>boolean</td><td><code>false</code></td><td>Enable architecture analysis (package graph + layer detection)</td></tr>
+          <tr><td><code>architectureLayers</code></td><td>object</td><td>-</td><td>Custom layer definitions: <code>{ "layerName": ["glob/**"] }</code></td></tr>
+          <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);">Memory</td></tr>
           <tr><td><code>enableMemory</code></td><td>boolean</td><td><code>false</code></td><td>Enable persistent cross-session memory</td></tr>
-          <tr><td><code>memorySearchAlpha</code></td><td>number</td><td><code>0.5</code></td><td>FTS/vector blend for memory search</td></tr>
-          <tr><td><code>memorySessionTimeout</code></td><td>number</td><td><code>7200</code></td><td>Seconds before auto-closing inactive session</td></tr>
-          <tr><td><code>memoryContextLimit</code></td><td>number</td><td><code>3</code></td><td>Max observations in <code>kirograph_context</code></td></tr>
-          <tr><td><code>memoryContextThreshold</code></td><td>number</td><td><code>0.3</code></td><td>Min score to include memory in context</td></tr>
+          <tr><td><code>memorySearchAlpha</code></td><td>number</td><td><code>0.5</code></td><td>FTS/vector blend (0 = FTS only, 1 = vector only)</td></tr>
+          <tr><td><code>memoryKeepRaw</code></td><td>boolean</td><td><code>true</code></td><td>Store original text alongside compressed version</td></tr>
+          <tr><td><code>memoryMaxObservations</code></td><td>number</td><td><code>10000</code></td><td>Max observations before auto-pruning oldest</td></tr>
+          <tr><td><code>memorySessionTimeout</code></td><td>number</td><td><code>3600000</code></td><td>Session timeout in ms (default 1 hour)</td></tr>
+          <tr><td><code>memoryContextLimit</code></td><td>number</td><td><code>3</code></td><td>Max observations surfaced in <code>kirograph_context</code></td></tr>
+          <tr><td><code>memoryContextThreshold</code></td><td>number</td><td><code>0.3</code></td><td>Min relevance score to surface in context</td></tr>
+          <tr><td><code>memoryExcludePatterns</code></td><td>string[]</td><td><code>[]</code></td><td>Glob patterns for files to exclude from symbol linking</td></tr>
+          <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);">Documentation</td></tr>
+          <tr><td><code>enableDocs</code></td><td>boolean</td><td><code>false</code></td><td>Enable documentation indexing (section-level retrieval)</td></tr>
+          <tr><td><code>docsInclude</code></td><td>string[]</td><td><code>["**/*.md", ...]</code></td><td>Glob patterns for doc files to include</td></tr>
+          <tr><td><code>docsExclude</code></td><td>string[]</td><td><code>["node_modules/**", ...]</code></td><td>Glob patterns for doc files to exclude</td></tr>
+          <tr><td><code>docsLinkCode</code></td><td>boolean</td><td><code>true</code></td><td>Auto-link doc sections to code symbols</td></tr>
+          <tr><td><code>docsContextLimit</code></td><td>number</td><td><code>0</code></td><td>Max doc sections in <code>kirograph_context</code> (0 = disabled)</td></tr>
+          <tr><td><code>docsContextThreshold</code></td><td>number</td><td><code>0.5</code></td><td>Min confidence for doc refs in context</td></tr>
+          <tr><td><code>docsMaxFileSize</code></td><td>number</td><td><code>1048576</code></td><td>Max doc file size in bytes</td></tr>
+          <tr><td><code>docsSummarization</code></td><td>string</td><td><code>"first-sentence"</code></td><td>Summary strategy: <code>embedding</code>, <code>first-sentence</code>, <code>off</code></td></tr>
+          <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);">Data</td></tr>
+          <tr><td><code>enableData</code></td><td>boolean</td><td><code>false</code></td><td>Enable tabular data indexing and querying</td></tr>
+          <tr><td><code>dataInclude</code></td><td>string[]</td><td><code>["**/*.csv", ...]</code></td><td>Glob patterns for data files to include</td></tr>
+          <tr><td><code>dataExclude</code></td><td>string[]</td><td><code>["node_modules/**", ...]</code></td><td>Glob patterns for data files to exclude</td></tr>
+          <tr><td><code>dataLinkCode</code></td><td>boolean</td><td><code>true</code></td><td>Auto-link data files to code symbols via path detection</td></tr>
+          <tr><td><code>dataContextLimit</code></td><td>number</td><td><code>0</code></td><td>Max datasets in <code>kirograph_context</code> (0 = disabled)</td></tr>
+          <tr><td><code>dataMaxFileSize</code></td><td>number</td><td><code>52428800</code></td><td>Max data file size in bytes (50MB)</td></tr>
+          <tr><td><code>dataMaxRows</code></td><td>number</td><td><code>1000000</code></td><td>Max rows to index per file</td></tr>
+          <tr><td><code>dataQueryLimit</code></td><td>number</td><td><code>500</code></td><td>Max rows returned per query (hard cap)</td></tr>
+          <tr><td><code>dataMaxResponseTokens</code></td><td>number</td><td><code>8000</code></td><td>Max token budget per data tool response</td></tr>
+          <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);">Agent Behavior</td></tr>
+          <tr><td><code>cavemanMode</code></td><td>string</td><td><code>"off"</code></td><td>Communication compression: <code>off</code>, <code>lite</code>, <code>full</code>, <code>ultra</code></td></tr>
+          <tr><td><code>shellCompressionLevel</code></td><td>string</td><td><code>"normal"</code></td><td>Shell command compression: <code>off</code>, <code>normal</code>, <code>aggressive</code>, <code>ultra</code></td></tr>
+          <tr><td><code>minLogLevel</code></td><td>string</td><td><code>"warn"</code></td><td>Log level: <code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code></td></tr>
         </tbody>
       </table>
     </div>
 
+    <script>
+    document.getElementById('config-search')?.addEventListener('input', function() {
+      const q = this.value.toLowerCase();
+      const rows = document.querySelectorAll('#config-table tbody tr');
+      rows.forEach(row => {
+        if (row.querySelector('td[colspan]')) { row.style.display = ''; return; }
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(q) ? '' : 'none';
+      });
+    });
+    </script>
+
     <!-- ── Memory ── -->
     <h2 id="memory">Memory (opt-in)</h2>
 
-    <p>When <code>enableMemory: true</code> is set in <code>.kirograph/config.json</code>, KiroGraph stores persistent observations across sessions. Decisions, errors, patterns, and architecture notes are captured with <strong>zero LLM tokens on write</strong> (compression is deterministic, symbol linking is programmatic, embedding uses the local model) and minimal tokens on read.</p>
+    <p>When <code>enableMemory: true</code> is set in <code>.kirograph/config.json</code>, KiroGraph stores persistent observations across sessions. Decisions, errors, patterns, and architecture notes are captured with <strong>zero LLM tokens on write</strong> (compression is deterministic, symbol linking is programmatic, embedding uses the local model) and minimal tokens on read. Inspired by <a href="https://github.com/JuliusBrussee/cavemem" target="_blank" rel="noopener">cavemem</a> by <a href="https://www.linkedin.com/in/julius-brussee/" target="_blank" rel="noopener">Julius Brussee</a>.</p>
 
     <h3>How it works</h3>
     <p>The write path runs entirely without LLM involvement:</p>
@@ -618,6 +690,199 @@ kirograph mem export --format jsonl</code></pre>
     <h3>Privacy</h3>
     <p>Wrap sensitive content in <code>&lt;private&gt;...&lt;/private&gt;</code> blocks — they are stripped before storage. All data stays in the local <code>.kirograph/kirograph.db</code> file, same as the rest of the graph.</p>
 
+    <!-- ── Documentation ── -->
+    <h2 id="documentation">Documentation (opt-in)</h2>
+
+    <p>When <code>enableDocs: true</code> is set in <code>.kirograph/config.json</code>, KiroGraph indexes project documentation by heading hierarchy and section structure. Instead of reading entire doc files, agents retrieve exactly the section they need via stable section IDs — saving <strong>92–97% of tokens</strong> compared to reading full files. Inspired by <a href="https://github.com/jgravelle/jdocmunch-mcp" target="_blank" rel="noopener">jDocMunch-MCP</a> by <a href="https://www.linkedin.com/in/j-gravelle-2778223/" target="_blank" rel="noopener">J. Gravelle</a>.</p>
+
+    <h3>How it works</h3>
+    <p>The indexing pipeline:</p>
+    <ol>
+      <li>Scans the project for documentation files matching <code>docsInclude</code> / <code>docsExclude</code> patterns</li>
+      <li>Detects the format (Markdown, RST, AsciiDoc, etc.) and parses headings into a section hierarchy</li>
+      <li>Generates stable section IDs: <code>{file_path}::{ancestor-chain/slug}#{level}</code></li>
+      <li>Computes SHA-256 content hashes for incremental re-indexing (skips unchanged files)</li>
+      <li>If <code>docsLinkCode: true</code>, detects code symbol references (backtick patterns, CamelCase, snake_case) and stores cross-references via <code>qualified_name</code></li>
+      <li>Stores everything in <code>doc_sections</code> and <code>doc_code_refs</code> tables in the same SQLite DB</li>
+    </ol>
+    <p>On read, agents use <code>kirograph_docs_search</code> (FTS5) to find sections, <code>kirograph_docs_section</code> to retrieve content, and <code>kirograph_docs_refs</code> to navigate code ↔ docs cross-references.</p>
+
+    <h3>Supported formats</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Format</th><th>Extensions</th><th>Parsing strategy</th></tr></thead>
+        <tbody>
+          <tr><td>Markdown</td><td><code>.md</code>, <code>.mdx</code>, <code>.cheatmd</code></td><td>ATX (<code>#</code>) + setext headings</td></tr>
+          <tr><td>reStructuredText</td><td><code>.rst</code></td><td>Adornment-based heading detection</td></tr>
+          <tr><td>AsciiDoc</td><td><code>.adoc</code>, <code>.asciidoc</code></td><td><code>=</code> heading hierarchy</td></tr>
+          <tr><td>RDoc</td><td><code>.rdoc</code></td><td><code>=</code> heading hierarchy (Ruby)</td></tr>
+          <tr><td>Org-mode</td><td><code>.org</code></td><td><code>*</code> heading hierarchy</td></tr>
+          <tr><td>HTML</td><td><code>.html</code>, <code>.htm</code></td><td><code>&lt;h1&gt;</code>–<code>&lt;h6&gt;</code> headings</td></tr>
+          <tr><td>Plain text</td><td><code>.txt</code></td><td>ALL CAPS + underline detection</td></tr>
+          <tr><td>OpenAPI/Swagger</td><td><code>.yaml</code>, <code>.yml</code>, <code>.json</code></td><td>Operations grouped by tag (content-detected)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>MCP Tools</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>kirograph_docs_toc</code></td><td>Table of contents for a file or the whole project (flat or tree)</td></tr>
+          <tr><td><code>kirograph_docs_search</code></td><td>FTS5 search across documentation sections (independent from code search)</td></tr>
+          <tr><td><code>kirograph_docs_section</code></td><td>Retrieve full content of a section by stable ID, with optional context (ancestors + children)</td></tr>
+          <tr><td><code>kirograph_docs_outline</code></td><td>Heading hierarchy for a single document</td></tr>
+          <tr><td><code>kirograph_docs_refs</code></td><td>Bidirectional code ↔ doc cross-references</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>CLI Commands</h3>
+    <pre><code># Table of contents
+kirograph docs toc                          # whole project
+kirograph docs toc README.md                # single file
+kirograph docs toc README.md --tree         # nested tree
+
+# Search
+kirograph docs search "authentication"
+kirograph docs search "config" --file docs/guide.md --limit 5
+
+# Retrieve a section
+kirograph docs section "README.md::installation#1"
+kirograph docs section "README.md::installation#1" --context
+
+# Outline
+kirograph docs outline docs/api.md
+
+# Cross-references
+kirograph docs refs "docs/auth.md::oauth/token-refresh#2"
+
+# Maintenance
+kirograph docs reindex                      # force full re-index
+kirograph docs lint                         # health checks
+kirograph docs reembed                      # re-embed with current model</code></pre>
+
+    <h3>Context integration (opt-in)</h3>
+    <p>By default, <code>kirograph_context</code> does <strong>not</strong> include doc sections — the agent uses <code>kirograph_docs_*</code> tools explicitly. If you want docs to surface automatically in context results, set <code>docsContextLimit</code> to a value greater than 0 during install (or in config).</p>
+    <p>When enabled, <code>kirograph_context</code> queries <code>doc_code_refs</code> for the symbols it found and includes up to N relevant doc sections (above <code>docsContextThreshold</code> score).</p>
+
+    <h3>Configuration</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>enableDocs</code></td><td>boolean</td><td><code>false</code></td><td>Enable documentation indexing</td></tr>
+          <tr><td><code>docsInclude</code></td><td>string[]</td><td><code>["**/*.md", ...]</code></td><td>Glob patterns for doc files to include</td></tr>
+          <tr><td><code>docsExclude</code></td><td>string[]</td><td><code>["node_modules/**", ...]</code></td><td>Glob patterns for doc files to exclude</td></tr>
+          <tr><td><code>docsLinkCode</code></td><td>boolean</td><td><code>true</code></td><td>Auto-link doc sections to code symbols</td></tr>
+          <tr><td><code>docsContextLimit</code></td><td>number</td><td><code>0</code></td><td>Max doc sections in <code>kirograph_context</code> (0 = disabled)</td></tr>
+          <tr><td><code>docsContextThreshold</code></td><td>number</td><td><code>0.3</code></td><td>Min relevance score for context inclusion</td></tr>
+          <tr><td><code>docsMaxFileSize</code></td><td>number</td><td><code>1048576</code></td><td>Max doc file size in bytes (1 MB)</td></tr>
+          <tr><td><code>docsSummarization</code></td><td>string</td><td><code>"first-sentence"</code></td><td>Summary strategy: <code>embedding</code>, <code>first-sentence</code>, <code>off</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Token savings</h3>
+    <p>Documentation tools are tracked in <code>kirograph_gain</code> as a separate "Docs tools" source category. Typical savings per call:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>Without kirograph</th><th>With kirograph</th><th>Savings</th></tr></thead>
+        <tbody>
+          <tr><td><code>kirograph_docs_toc</code></td><td>~10,000 tokens</td><td>~400–800</td><td>92–96%</td></tr>
+          <tr><td><code>kirograph_docs_search</code></td><td>~8,000–13,000</td><td>~300–600</td><td>93–97%</td></tr>
+          <tr><td><code>kirograph_docs_section</code></td><td>~2,500</td><td>~200–800</td><td>68–92%</td></tr>
+          <tr><td><code>kirograph_docs_outline</code></td><td>~2,500</td><td>~200–400</td><td>84–92%</td></tr>
+          <tr><td><code>kirograph_docs_refs</code></td><td>~7,400</td><td>~300–500</td><td>93–96%</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ── Data ── -->
+    <h2 id="data">Data (opt-in)</h2>
+
+    <p>When <code>enableData: true</code> is set in <code>.kirograph/config.json</code>, KiroGraph indexes tabular data files (CSV, TSV, JSONL, JSON, Excel, Parquet) that live alongside your code — test fixtures, seed data, configuration tables, sample datasets. Instead of reading raw data files into context, agents query structured schemas and filtered rows — saving <strong>95–99% of tokens</strong>. Inspired by <a href="https://github.com/jgravelle/jdatamunch-mcp" target="_blank" rel="noopener">jDataMunch-MCP</a> by <a href="https://www.linkedin.com/in/j-gravelle-2778223/" target="_blank" rel="noopener">J. Gravelle</a>.</p>
+
+    <h3>Key features</h3>
+    <ul>
+      <li><strong>Streaming parser</strong>: never loads full files into memory. Processes line-by-line (CSV/JSONL) or in chunks (Excel/Parquet).</li>
+      <li><strong>Column profiling</strong>: type inference (string, integer, float, boolean, date), cardinality, null percentages, min/max, mean, sample values.</li>
+      <li><strong>Server-side computation</strong>: filters, aggregations, joins, and correlations run in SQLite. Only results enter the context window.</li>
+      <li><strong>Incremental indexing</strong>: content hash (SHA-256) per file. Only re-indexes files that changed.</li>
+      <li><strong>Optional format deps</strong>: CSV/TSV/JSONL/JSON are built-in (zero deps). Excel requires <code>xlsx</code>, Parquet requires <code>parquetjs-lite</code>.</li>
+      <li><strong>Code ↔ data linking</strong>: detects file path references in source code and populates <code>data_code_refs</code>. Enables test fixture awareness in <code>kirograph affected</code>.</li>
+      <li><strong>Schema drift detection</strong>: tracks profile history across re-indexes. <code>kirograph data drift</code> shows added/removed/changed columns.</li>
+      <li><strong>NL summaries</strong>: auto-generated natural-language descriptions for each column based on profile patterns.</li>
+      <li><strong>Validation rules</strong>: infers rules from profiles (required, type, range, enum, uniqueness).</li>
+      <li><strong>Anti-loop detection</strong>: warns when agent paginates row-by-row instead of using aggregations.</li>
+      <li><strong>Token budget enforcement</strong>: responses exceeding <code>dataMaxResponseTokens</code> are truncated.</li>
+    </ul>
+
+    <h3>Supported formats</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Format</th><th>Extensions</th><th>Dependencies</th><th>Parsing strategy</th></tr></thead>
+        <tbody>
+          <tr><td>CSV</td><td><code>.csv</code></td><td>None (built-in)</td><td>Line-by-line streaming</td></tr>
+          <tr><td>TSV</td><td><code>.tsv</code></td><td>None (built-in)</td><td>Line-by-line streaming (tab delimiter)</td></tr>
+          <tr><td>JSONL / NDJSON</td><td><code>.jsonl</code>, <code>.ndjson</code></td><td>None (built-in)</td><td>Line-by-line streaming</td></tr>
+          <tr><td>JSON array</td><td><code>.json</code> (in data/ dirs)</td><td>None (built-in)</td><td>Streaming array parse</td></tr>
+          <tr><td>Excel</td><td><code>.xlsx</code>, <code>.xls</code></td><td><code>xlsx</code> (optional)</td><td>Sheet-by-sheet, row iteration</td></tr>
+          <tr><td>Parquet</td><td><code>.parquet</code></td><td><code>parquetjs-lite</code> (optional)</td><td>Column-chunk streaming</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>MCP tools</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>kirograph_data_list</code></td><td>List all indexed datasets with row counts, column counts, file sizes</td></tr>
+          <tr><td><code>kirograph_data_describe</code></td><td>Full schema profile: column names, types, cardinality, null%, samples</td></tr>
+          <tr><td><code>kirograph_data_query</code></td><td>Filtered row retrieval with structured operators (eq, gt, contains, in, between)</td></tr>
+          <tr><td><code>kirograph_data_aggregate</code></td><td>Server-side GROUP BY: count, sum, avg, min, max, count_distinct</td></tr>
+          <tr><td><code>kirograph_data_search</code></td><td>Search column names and sample values by keyword</td></tr>
+          <tr><td><code>kirograph_data_join</code></td><td>Cross-dataset SQL JOIN (inner, left, right)</td></tr>
+          <tr><td><code>kirograph_data_correlations</code></td><td>Pairwise Pearson correlations between numeric columns</td></tr>
+          <tr><td><code>kirograph_data_quality</code></td><td>Data quality triage: rank columns by risk score</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Configuration</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>enableData</code></td><td>boolean</td><td><code>false</code></td><td>Enable tabular data indexing and querying</td></tr>
+          <tr><td><code>dataInclude</code></td><td>string[]</td><td><code>['**/*.csv', '**/*.tsv', ...]</code></td><td>Glob patterns for data files to include</td></tr>
+          <tr><td><code>dataExclude</code></td><td>string[]</td><td><code>['node_modules/**', ...]</code></td><td>Glob patterns for data files to exclude</td></tr>
+          <tr><td><code>dataContextLimit</code></td><td>number</td><td><code>0</code></td><td>Max datasets in <code>kirograph_context</code> results (0 = disabled)</td></tr>
+          <tr><td><code>dataMaxFileSize</code></td><td>number</td><td><code>52428800</code></td><td>Max data file size in bytes (50MB)</td></tr>
+          <tr><td><code>dataMaxRows</code></td><td>number</td><td><code>1000000</code></td><td>Max rows to index per file</td></tr>
+          <tr><td><code>dataQueryLimit</code></td><td>number</td><td><code>500</code></td><td>Max rows returned per query (hard cap)</td></tr>
+          <tr><td><code>dataMaxResponseTokens</code></td><td>number</td><td><code>8000</code></td><td>Max token budget per response (truncates if exceeded)</td></tr>
+          <tr><td><code>dataLinkCode</code></td><td>boolean</td><td><code>true</code></td><td>Auto-link data files to code symbols via path detection</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Token savings</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>Naive cost (without)</th><th>Typical output (with)</th><th>Savings</th></tr></thead>
+        <tbody>
+          <tr><td><code>kirograph_data_describe</code></td><td>~50,000–111M tokens</td><td>~2,000–4,000 tokens</td><td>96–99.99%</td></tr>
+          <tr><td><code>kirograph_data_query</code></td><td>~50,000+ tokens</td><td>~1,000–3,000 tokens</td><td>94–99%</td></tr>
+          <tr><td><code>kirograph_data_aggregate</code></td><td>~50,000+ tokens</td><td>~500–1,500 tokens</td><td>97–99%</td></tr>
+          <tr><td><code>kirograph_data_search</code></td><td>~10,000 tokens</td><td>~200–500 tokens</td><td>95–98%</td></tr>
+          <tr><td><code>kirograph_data_list</code></td><td>~2,000 tokens</td><td>~200–400 tokens</td><td>80–90%</td></tr>
+        </tbody>
+      </table>
+    </div>
+
     <!-- ── Caveman Mode ── -->
     <h2 id="caveman-mode">Caveman Mode</h2>
 
@@ -652,6 +917,8 @@ kirograph caveman         # show current mode</code></pre>
 
     <!-- ── Shell Compression ── -->
     <h2 id="shell-compression">Shell Compression</h2>
+
+    <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/rtk.png" alt="shell compression mode" style="border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 1.5rem; max-width: 100%;">
 
     <p>KiroGraph includes a built-in shell compression engine inspired by <a href="https://github.com/rtk-ai/rtk" target="_blank" rel="noopener">rtk</a>. The <code>kirograph_exec</code> MCP tool runs shell commands and returns token-optimized output, saving 60-90% of tokens on verbose commands.</p>
 
@@ -722,6 +989,12 @@ kirograph gain --graph           # ASCII graph (last 30 days)</code></pre>
 
     <h3 id="credits-origin">Original idea</h3>
     <p>KiroGraph is inspired by <a href="https://github.com/colbymchenry/codegraph" target="_blank" rel="noopener">CodeGraph</a> by <a href="https://www.linkedin.com/in/colby-mchenry/" target="_blank" rel="noopener">Colby McHenry</a>. The original concept of building a semantic code graph for AI coding agents comes from his work.</p>
+
+    <h3 id="credits-inspirations">Inspirations</h3>
+    <ul>
+      <li><a href="https://github.com/JuliusBrussee/cavemem" target="_blank" rel="noopener">cavemem</a> by <a href="https://www.linkedin.com/in/julius-brussee/" target="_blank" rel="noopener">Julius Brussee</a>: the memory module's hook-based observation capture, deterministic compression, and SQLite storage pattern.</li>
+      <li><a href="https://github.com/jgravelle/jdocmunch-mcp" target="_blank" rel="noopener">jDocMunch-MCP</a> by <a href="https://www.linkedin.com/in/j-gravelle-2778223/" target="_blank" rel="noopener">J. Gravelle</a>: the documentation module's section-first retrieval approach, stable section IDs, and byte-offset addressing.</li>
+    </ul>
 
     <h3 id="credits-contributors">Contributors</h3>
     <ul>

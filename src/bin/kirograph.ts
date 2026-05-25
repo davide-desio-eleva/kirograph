@@ -35,6 +35,8 @@ import { register as registerGain } from './commands/gain';
 import { register as registerCompression } from './commands/compression';
 import { register as registerExec } from './commands/exec';
 import { register as registerMemory } from './commands/memory';
+import { register as registerDocs } from './commands/docs';
+import { register as registerData } from './commands/data';
 
 // ── Global error handler for WASM runtime crashes ─────────────────────────────
 //
@@ -115,6 +117,8 @@ registerGain(program);
 registerCompression(program);
 registerExec(program);
 registerMemory(program);
+registerDocs(program);
+registerData(program);
 
 // Register the help command for `kirograph help`
 program
@@ -134,6 +138,15 @@ registerHelp(program);
 
 // Show interactive help when called with no arguments
 if (process.argv.length === 2) {
+  if (process.stdout.isTTY) {
+    printInteractiveHelp();
+  } else {
+    printBanner();
+    printColoredHelp();
+    process.exit(0);
+  }
+} else if (process.argv.includes('--help') || process.argv.includes('-h')) {
+  // Intercept --help before Commander to avoid process.exit
   if (process.stdout.isTTY) {
     printInteractiveHelp();
   } else {

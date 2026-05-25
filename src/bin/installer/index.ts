@@ -45,6 +45,8 @@ export async function runInstaller(target: InstallTarget = 'kiro'): Promise<void
     let cavemanMode: CavemanMode | 'off' = 'off';
     let shellCompressionLevel: 'off' | 'normal' | 'aggressive' | 'ultra' = 'normal';
     let enableMemory = false;
+    let enableDocs = false;
+    let enableData = false;
     let shouldOfferIndex = false;
     let typesenseDashboard = false;
     let qdrantDashboard = false;
@@ -55,6 +57,8 @@ export async function runInstaller(target: InstallTarget = 'kiro'): Promise<void
         cavemanMode = config.cavemanMode ?? 'off';
         shellCompressionLevel = config.shellCompressionLevel ?? 'normal';
         enableMemory = config.enableMemory ?? false;
+        enableDocs = config.enableDocs ?? false;
+        enableData = (config as any).enableData ?? false;
         console.log(`  ✓ Reusing existing KiroGraph data in ${cwd}/.kirograph/`);
         console.log(`  • semanticEngine: ${config.semanticEngine}`);
         console.log(`  • enableEmbeddings: ${config.enableEmbeddings}`);
@@ -62,6 +66,8 @@ export async function runInstaller(target: InstallTarget = 'kiro'): Promise<void
         console.log(`  • cavemanMode: ${cavemanMode}`);
         console.log(`  • shellCompressionLevel: ${shellCompressionLevel}`);
         console.log(`  • enableMemory: ${enableMemory}`);
+        console.log(`  • enableDocs: ${enableDocs}`);
+        console.log(`  • enableData: ${enableData}`);
       } else {
         shouldOfferIndex = true;
         const patch = await promptConfigOptions(rl);
@@ -69,6 +75,8 @@ export async function runInstaller(target: InstallTarget = 'kiro'): Promise<void
         cavemanMode = patch.cavemanMode ?? 'off';
         shellCompressionLevel = patch.shellCompressionLevel ?? 'normal';
         enableMemory = patch.enableMemory ?? false;
+        enableDocs = patch.enableDocs ?? false;
+        enableData = patch.enableData ?? false;
         typesenseDashboard = patch.typesenseDashboard;
         qdrantDashboard = patch.qdrantDashboard;
 
@@ -142,9 +150,33 @@ export async function runInstaller(target: InstallTarget = 'kiro'): Promise<void
         console.log(`  • cavemanMode: ${cavemanMode}`);
         console.log(`  • shellCompressionLevel: ${shellCompressionLevel}`);
         console.log(`  • enableMemory: ${enableMemory}`);
+        console.log(`  • enableDocs: ${enableDocs}`);
+        console.log(`  • enableData: ${enableData}`);
+
+        // Install optional data format deps if enableData is on
+        if (enableData) {
+          if ((patch as any).dataInstallExcel) {
+            console.log(`\n  Installing xlsx...`);
+            const xlsxResult = spawnSync('npm', ['install', 'xlsx'], { stdio: 'inherit', shell: true });
+            if (xlsxResult.status === 0) {
+              console.log(`  ✓ xlsx installed`);
+            } else {
+              console.warn(`  ✗ npm install failed. Run manually: npm install xlsx`);
+            }
+          }
+          if ((patch as any).dataInstallParquet) {
+            console.log(`\n  Installing parquetjs-lite...`);
+            const pqResult = spawnSync('npm', ['install', 'parquetjs-lite'], { stdio: 'inherit', shell: true });
+            if (pqResult.status === 0) {
+              console.log(`  ✓ parquetjs-lite installed`);
+            } else {
+              console.warn(`  ✗ npm install failed. Run manually: npm install parquetjs-lite`);
+            }
+          }
+        }
       }
 
-      installer.installLate(cwd, cavemanMode, shellCompressionLevel, enableMemory);
+      installer.installLate(cwd, cavemanMode, shellCompressionLevel, enableMemory, enableDocs, enableData);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       console.error(`\n  ✗ Failed to write configuration: ${reason}`);

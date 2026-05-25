@@ -38,16 +38,61 @@ export function register(program: Command): void {
         testPattern: opts.filter,
       });
 
+      // Data file awareness: if a changed file is a data file referenced by test files,
+      // include those test files in the affected list.
+      const affectedSet = new Set(affected);
+      try {
+        const { loadConfig } = await import('../../config');
+        const config = await loadConfig(target);
+        if (config.enableData) {
+          const db = cg.getDatabase();
+          db.applyDataSchema();
+          const rawDb = db.getRawDb();
+
+          // Check if data_code_refs table exists
+          const tableExists = rawDb.get("SELECT name FROM sqlite_master WHERE type='table' AND name='data_code_refs'");
+          if (tableExists) {
+            for (const file of changedFiles) {
+              const rel = file.replace(/\\/g, '/').replace(/^\.\//, '');
+              // Check if this file is a data file
+              const dataset = rawDb.get('SELECT id FROM data_datasets WHERE file_path = ?', [rel]);
+              if (dataset) {
+                // Find code files that reference this dataset
+                const refs = rawDb.all(
+                  'SELECT qualified_name FROM data_code_refs WHERE dataset_id = ?',
+                  [dataset.id],
+                ) as Array<{ qualified_name: string }>;
+
+                for (const ref of refs) {
+                  // qualified_name might be a file path or a symbol — check if it's a test file
+                  const picomatch = require('picomatch');
+                  const isTest = picomatch(
+                    opts.filter ?? '{**/*.spec.*,**/*.test.*,**/*_test.*,**/*Test.*,**/*Spec.*,**/*.t.sol,**/*.bats,**/e2e/**,**/test/**,**/tests/**,**/spec/**,**/__tests__/**,**/src/test/**}'
+                  );
+                  // Look up the file path for this qualified name from the nodes table
+                  const node = rawDb.get('SELECT file_path FROM nodes WHERE qualified_name = ?', [ref.qualified_name]);
+                  if (node && isTest(node.file_path)) {
+                    affectedSet.add(node.file_path);
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch { /* data awareness is non-critical */ }
+
+      const finalAffected = [...affectedSet].sort();
+
       if (opts.json) {
-        console.log(JSON.stringify({ changedFiles, affectedTests: affected }, null, 2));
+        console.log(JSON.stringify({ changedFiles, affectedTests: finalAffected }, null, 2));
       } else if (opts.quiet) {
-        for (const f of affected) console.log(f);
+        for (const f of finalAffected) console.log(f);
       } else {
-        if (affected.length === 0) {
+        if (finalAffected.length === 0) {
           console.log(`  ${dim}No affected test files found.${reset}`);
         } else {
-          console.log(`\n  ${section('Affected test files')}  ${dim}(${affected.length})${reset}\n`);
-          for (const f of affected) console.log(`  ${violet}${bold}${f}${reset}`);
+          console.log(`\n  ${section('Affected test files')}  ${dim}(${finalAffected.length})${reset}\n`);
+          for (const f of finalAffected) console.log(`  ${violet}${bold}${f}${reset}`);
           console.log();
         }
       }
