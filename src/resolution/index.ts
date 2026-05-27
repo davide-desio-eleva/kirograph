@@ -10,6 +10,7 @@ import type { GraphDatabase } from '../db/database';
 import type { KiroGraphConfig } from '../config';
 import { matchReference } from './name-matcher';
 import { logDebug, logWarn } from '../errors';
+import { runBridgeResolvers, type BridgeResolutionResult } from './bridges';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -18,6 +19,7 @@ export interface ResolutionResult {
   unresolved: number;
   total: number;
   durationMs: number;
+  bridgeResult?: BridgeResolutionResult;
 }
 
 // ── ReferenceResolver ─────────────────────────────────────────────────────────
@@ -25,6 +27,7 @@ export interface ResolutionResult {
 export class ReferenceResolver {
   private db: GraphDatabase;
   private config: KiroGraphConfig;
+  private projectRoot: string;
 
   // Warm caches for O(1) lookup
   private nameCache: Map<string, Node[]> = new Map();
@@ -37,9 +40,10 @@ export class ReferenceResolver {
 
   private cacheWarmed = false;
 
-  constructor(db: GraphDatabase, config: KiroGraphConfig) {
+  constructor(db: GraphDatabase, config: KiroGraphConfig, projectRoot?: string) {
     this.db = db;
     this.config = config;
+    this.projectRoot = projectRoot ?? '';
   }
 
   /**
@@ -121,6 +125,12 @@ export class ReferenceResolver {
     const remaining = rawDb.get('SELECT COUNT(*) as c FROM unresolved_refs')?.c ?? 0;
     const total = resolvedCount + remaining;
 
+    // Run cross-language bridge resolvers after standard resolution
+    let bridgeResult: BridgeResolutionResult | undefined;
+    if (this.projectRoot) {
+      bridgeResult = this._runBridgeResolvers();
+    }
+
     const durationMs = Date.now() - start;
     logDebug(`ReferenceResolver: resolved ${resolvedCount}/${total} refs in ${durationMs}ms`);
 
@@ -129,6 +139,7 @@ export class ReferenceResolver {
       unresolved: remaining,
       total,
       durationMs,
+      bridgeResult,
     };
   }
 
@@ -456,6 +467,62 @@ export class ReferenceResolver {
       decorators: row.decorators ? JSON.parse(row.decorators) : undefined,
       typeParameters: row.type_parameters ? JSON.parse(row.type_parameters) : undefined,
       updatedAt: row.updated_at,
+    };
+  }
+
+  // ── Bridge Resolution ──────────────────────────────────────────────────────
+
+  /**
+   * Run cross-language bridge resolvers to synthesize edges between
+   * symbols in different languages (Swift ↔ ObjC, JS ↔ Native, etc.).
+   */
+  private _runBridgeResolvers(): BridgeResolutionResult {
+    const context = this._buildBridgeContext();
+    return runBridgeResolvers(context, this.db);
+  }
+
+  /**
+   * Build a ResolutionContext for bridge resolvers using the warm caches.
+   */
+  private _buildBridgeContext(): import('../frameworks/types').ResolutionContext {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const projectRoot = this.projectRoot;
+    const db = this.db;
+    const nameCache = this.nameCache;
+    const kindCache = this.kindCache;
+    const fileCache = new Map<string, string | null>();
+
+    return {
+      getNodesInFile(filePath: string): Node[] {
+        return db.getNodesByFile(filePath);
+      },
+      getNodesByName(name: string): Node[] {
+        return nameCache.get(name) ?? [];
+      },
+      getNodesByKind(kind: Node['kind']): Node[] {
+        return kindCache.get(kind) ?? [];
+      },
+      fileExists(filePath: string): boolean {
+        return fs.existsSync(path.join(projectRoot, filePath));
+      },
+      readFile(filePath: string): string | null {
+        if (fileCache.has(filePath)) return fileCache.get(filePath)!;
+        try {
+          const content = fs.readFileSync(path.join(projectRoot, filePath), 'utf8');
+          fileCache.set(filePath, content);
+          return content;
+        } catch {
+          fileCache.set(filePath, null);
+          return null;
+        }
+      },
+      getProjectRoot(): string {
+        return projectRoot;
+      },
+      getAllFiles(): string[] {
+        return db.getAllFiles().map((f: any) => f.path);
+      },
     };
   }
 }

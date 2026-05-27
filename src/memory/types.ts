@@ -27,6 +27,14 @@ export interface MemObservation {
   source: ObservationSource;
   tags?: string[];
   createdAt: number;
+  /** Temporal validity: when this fact became valid (epoch ms). */
+  validFrom?: number;
+  /** Temporal validity: when this fact expires (epoch ms). Null = no expiry. */
+  validUntil?: number;
+  /** ID of the observation that supersedes this one. */
+  supersededBy?: string;
+  /** Fact type for temporal classification. */
+  factType?: 'observation' | 'decision' | 'procedure' | 'constraint';
 }
 
 export interface MemObservationInput {
@@ -59,6 +67,8 @@ export interface MemSearchOptions {
   sessionId?: string;
   /** FTS/vector blend: 0 = FTS only, 1 = vector only, 0.5 = equal blend */
   alpha?: number;
+  /** Query facts valid at this timestamp (epoch ms). Filters out expired/superseded observations. */
+  asOf?: number;
 }
 
 export interface MemTimelineOptions {

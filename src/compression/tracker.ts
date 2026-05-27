@@ -293,3 +293,116 @@ export class TokenTracker {
     }
   }
 }
+
+
+// ── Context Budget Governance ─────────────────────────────────────────────────
+
+export interface BudgetConfig {
+  maxTokensPerSession: number;
+  warnAt: number;
+  throttleAt: number;
+}
+
+export interface BudgetStatus {
+  consumed: number;
+  limit: number;
+  remaining: number;
+  utilization: number;
+  warning: string | null;
+  throttled: boolean;
+}
+
+const DEFAULT_BUDGET: BudgetConfig = {
+  maxTokensPerSession: 100_000,
+  warnAt: 80_000,
+  throttleAt: 95_000,
+};
+
+/**
+ * Session-scoped context budget tracker.
+ * Tracks cumulative token consumption and enforces budget limits.
+ */
+export class BudgetTracker {
+  private static instances = new Map<string, BudgetTracker>();
+
+  private consumed = 0;
+  private config: BudgetConfig;
+  private projectRoot: string;
+
+  private constructor(projectRoot: string, config?: Partial<BudgetConfig>) {
+    this.projectRoot = projectRoot;
+    this.config = { ...DEFAULT_BUDGET, ...config };
+  }
+
+  static getInstance(projectRoot: string, config?: Partial<BudgetConfig>): BudgetTracker {
+    const key = projectRoot;
+    if (!BudgetTracker.instances.has(key)) {
+      BudgetTracker.instances.set(key, new BudgetTracker(projectRoot, config));
+    }
+    const instance = BudgetTracker.instances.get(key)!;
+    if (config) {
+      instance.config = { ...DEFAULT_BUDGET, ...config };
+    }
+    return instance;
+  }
+
+  /**
+   * Record tokens consumed by a tool response.
+   */
+  recordConsumption(tokens: number): void {
+    this.consumed += tokens;
+  }
+
+  /**
+   * Get current budget status.
+   */
+  getStatus(): BudgetStatus {
+    const limit = this.config.maxTokensPerSession;
+    const remaining = Math.max(0, limit - this.consumed);
+    const utilization = limit > 0 ? Math.round((this.consumed / limit) * 100) : 0;
+
+    let warning: string | null = null;
+    if (limit > 0 && this.consumed >= this.config.throttleAt) {
+      warning = `Budget nearly exhausted (${utilization}%). Responses will be truncated.`;
+    } else if (limit > 0 && this.consumed >= this.config.warnAt) {
+      warning = `Approaching budget limit (${utilization}%). Consider using compact read modes.`;
+    }
+
+    return {
+      consumed: this.consumed,
+      limit,
+      remaining,
+      utilization,
+      warning,
+      throttled: limit > 0 && this.consumed >= this.config.throttleAt,
+    };
+  }
+
+  /**
+   * Check if the budget is throttled (responses should be truncated).
+   */
+  isThrottled(): boolean {
+    return this.config.maxTokensPerSession > 0 && this.consumed >= this.config.throttleAt;
+  }
+
+  /**
+   * Check if a warning should be appended to responses.
+   */
+  shouldWarn(): boolean {
+    return this.config.maxTokensPerSession > 0 && this.consumed >= this.config.warnAt;
+  }
+
+  /**
+   * Reset the budget counters.
+   */
+  reset(): void {
+    this.consumed = 0;
+  }
+
+  /**
+   * Update budget configuration.
+   */
+  updateConfig(config: Partial<BudgetConfig>): void {
+    this.config = { ...this.config, ...config };
+  }
+}

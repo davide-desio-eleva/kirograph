@@ -53,7 +53,7 @@ export default class KiroGraph {
     this.db = db;
     this.config = config;
     this.queryManager = new GraphQueryManager(db);
-    this.resolver = new ReferenceResolver(db, config);
+    this.resolver = new ReferenceResolver(db, config, projectRoot);
     this.vectors = new VectorManager(db, config, projectRoot);
     this.contextBuilder = new ContextBuilder(db, this.resolver, this.vectors, projectRoot);
     this.arch = new ArchitectureAnalyzer(db, config, projectRoot);

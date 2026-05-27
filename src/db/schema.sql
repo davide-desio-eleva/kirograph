@@ -67,7 +67,9 @@ CREATE TABLE IF NOT EXISTS edges (
   kind TEXT NOT NULL,
   metadata TEXT,
   line INTEGER,
-  column INTEGER
+  column INTEGER,
+  confidence TEXT NOT NULL DEFAULT 'extracted',
+  confidence_score REAL NOT NULL DEFAULT 1.0
 );
 
 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source);

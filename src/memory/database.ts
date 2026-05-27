@@ -47,7 +47,32 @@ export class MemoryDatabase {
     const schemaPath = path.join(__dirname, '../db/memory-schema.sql');
     const sql = fs.readFileSync(schemaPath, 'utf8');
     this.db.exec(sql);
+
+    // Migration: add temporal columns if they don't exist (for existing databases)
+    this.migrateTemporalColumns();
+
     this.initialized = true;
+  }
+
+  /**
+   * Add temporal fact columns to mem_observations if missing.
+   * Safe to run multiple times (uses IF NOT EXISTS pattern via try/catch).
+   */
+  private migrateTemporalColumns(): void {
+    const columnsToAdd = [
+      { name: 'valid_from', type: 'INTEGER' },
+      { name: 'valid_until', type: 'INTEGER' },
+      { name: 'superseded_by', type: 'TEXT' },
+      { name: 'fact_type', type: "TEXT DEFAULT 'observation'" },
+    ];
+
+    for (const col of columnsToAdd) {
+      try {
+        this.db.exec(`ALTER TABLE mem_observations ADD COLUMN ${col.name} ${col.type}`);
+      } catch {
+        // Column already exists — ignore
+      }
+    }
   }
 
   // ── Sessions ─────────────────────────────────────────────────────────────
@@ -170,7 +195,7 @@ export class MemoryDatabase {
   // ── FTS Search ───────────────────────────────────────────────────────────
 
   searchFTS(query: string, opts: MemSearchOptions = {}): ScoredObservation[] {
-    const { limit = 10, kind, sessionId } = opts;
+    const { limit = 10, kind, sessionId, asOf } = opts;
 
     // Sanitize for FTS5
     const safe = query
@@ -193,6 +218,15 @@ export class MemoryDatabase {
     if (sessionId) {
       conditions.push('o.session_id = ?');
       params.push(sessionId);
+    }
+
+    // Temporal filtering: exclude expired and superseded facts
+    if (asOf) {
+      conditions.push('(o.valid_from IS NULL OR o.valid_from <= ?)');
+      params.push(asOf);
+      conditions.push('(o.valid_until IS NULL OR o.valid_until > ?)');
+      params.push(asOf);
+      conditions.push('o.superseded_by IS NULL');
     }
 
     const where = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
@@ -439,6 +473,10 @@ export class MemoryDatabase {
       source: row.source,
       tags: row.tags ? JSON.parse(row.tags) : undefined,
       createdAt: row.created_at,
+      validFrom: row.valid_from ?? undefined,
+      validUntil: row.valid_until ?? undefined,
+      supersededBy: row.superseded_by ?? undefined,
+      factType: row.fact_type ?? undefined,
     };
   }
 }

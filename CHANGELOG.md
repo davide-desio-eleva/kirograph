@@ -135,6 +135,45 @@
 - `kirograph install --target` help text and error messages updated to include `cursor`, `antigravity`, and `opencode`.
 - README and docs updated with Cursor, Antigravity, and OpenCode usage instructions in the "Other Tools (Experimental)" section.
 
+## [0.17.1] - 2026-05-26: Multi-Platform Auto-Detection & Gap Closure
+
+### Added
+
+- **Multi-platform auto-detection**: `kirograph install` (no flags) now auto-detects installed AI coding tools and offers to configure them all. Supports `--all` (skip prompt) and `--target all` as aliases.
+- **`kirograph_flows` MCP tool + CLI**: Trace execution flows from entry points (routes, handlers, main functions) through the call graph, sorted by criticality scoring.
+- **`kirograph_communities` MCP tool + CLI**: Louvain-based community detection clusters related code. Auto-splits oversized communities. Shows modularity, inter-community coupling, and dominant directories.
+- **`kirograph_refactor` MCP tool + CLI**: Two modes — `rename` (preview all locations referencing a symbol) and `suggest` (community-driven refactoring suggestions: move, split, extract candidates).
+- **Edge confidence scoring**: Edges now carry `confidence` (extracted/inferred/ambiguous) and `confidence_score` (0.0–1.0). Resolution-created edges are marked as inferred; ambiguous when multiple candidates exist.
+- **Estimated context savings**: `kirograph_context` responses now include a savings footer showing graph tokens vs naive file-read tokens.
+- **Workflow steering files**: 5 task-specific steering files generated on install (review, debug, architecture, onboard, refactor) with `inclusion: manual` for on-demand use.
+- **Graph export formats**: `kirograph export graphml` (Gephi/yEd), `kirograph export cypher` (Neo4j), `kirograph export obsidian` (Markdown vault with wikilinks).
+- **Reproducible benchmarks**: `kirograph benchmark` CLI command clones repos at pinned SHAs, indexes them, runs predefined queries, and measures token efficiency. Results in `benchmarks/results/`.
+- **Copilot CLI target**: New `--target copilot-cli` writes MCP config to `~/.copilot/mcp-config.json` with `servers` key.
+- **`kirograph status --integrations`**: Shows which platforms are configured vs detected-but-not-configured.
+- **iOS/React Native/Expo cross-language bridging**: 7 bridge resolvers synthesize edges across language boundaries — Swift ↔ ObjC, RN Legacy Bridge, TurboModules, Expo Modules, Native Events, Fabric/Paper Views. Enables `kirograph_callers`, `kirograph_impact`, and `kirograph_flows` to trace calls across Swift/ObjC/Java/Kotlin/JS boundaries.
+- **`kirograph_read` MCP tool + CLI**: File read with session caching (re-reads of unchanged files cost ~13 tokens) and 7 read modes: `full`, `map`, `signatures`, `diff`, `lines`, `imports`, `exports`. Map and signatures modes use graph data — no file read needed.
+- **`kirograph_budget` MCP tool + CLI**: Context budget governance — tracks cumulative token consumption per session with configurable limits (`contextBudget` in config). Warns at threshold, throttles at limit.
+- **Temporal facts in memory**: Observations now support `valid_from`, `valid_until`, `superseded_by`, and `fact_type` fields. `kirograph_mem_search` gains `asOf` parameter for temporal queries. Expired/superseded facts are filtered automatically.
+
+### Fixed
+
+- **Windsurf**: Now writes MCP config directly to `~/.codeium/windsurf/mcp_config.json` (was print-only).
+- **Antigravity**: Now writes MCP config directly to `~/.gemini/antigravity/mcp_config.json` (was print-only).
+- **Copilot**: Now writes to both `.vscode/mcp.json` (with `servers` key for VS Code Copilot Chat) and `.github/copilot-mcp.json` (with `mcpServers` key for agent mode).
+- **Cline**: Now writes MCP config to `.cline/mcp_settings.json` (was print-only).
+- **Qoder**: Promoted from generic print-only to proper target writing `.qoder/mcp.json`.
+- **Qwen**: Promoted from generic print-only to proper target writing `~/.qwen/settings.json`.
+- **Idempotent re-install**: `writeMcpServersConfig` now returns false and skips if kirograph is already configured (no overwrite).
+- **Uninit for user-scoped configs**: Windsurf, Antigravity, Copilot CLI, and Qwen uninit now removes the kirograph entry from user-scoped config files.
+
+### Changed
+
+- Install command default behavior: without `--target`, auto-detects platforms instead of defaulting to Kiro.
+- `--dry-run` flag added to install command.
+- Target count increased from 33 to 34 (added copilot-cli).
+
+---
+
 ## [0.17.0] - 2026-05-24: Data Navigation
 
 ### Added

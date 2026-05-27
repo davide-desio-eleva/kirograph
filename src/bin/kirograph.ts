@@ -37,6 +37,12 @@ import { register as registerExec } from './commands/exec';
 import { register as registerMemory } from './commands/memory';
 import { register as registerDocs } from './commands/docs';
 import { register as registerData } from './commands/data';
+import { register as registerBenchmark } from './commands/benchmark';
+import { register as registerFlows } from './commands/flows';
+import { register as registerCommunities } from './commands/communities';
+import { register as registerRefactor } from './commands/refactor';
+import { register as registerRead } from './commands/read';
+import { register as registerBudget } from './commands/budget';
 
 // ── Global error handler for WASM runtime crashes ─────────────────────────────
 //
@@ -119,6 +125,12 @@ registerExec(program);
 registerMemory(program);
 registerDocs(program);
 registerData(program);
+registerBenchmark(program);
+registerFlows(program);
+registerCommunities(program);
+registerRefactor(program);
+registerRead(program);
+registerBudget(program);
 
 // Register the help command for `kirograph help`
 program

@@ -1,0 +1,27 @@
+{
+  "description": "KiroGraph benchmark configuration. Each repo is cloned at a pinned SHA and indexed. Queries are run against the graph and compared to naive file-read token costs.",
+  "repos": [
+    {
+      "name": "express",
+      "url": "https://github.com/expressjs/express",
+      "sha": "4f0e3c3e8e1e6e3e3e3e3e3e3e3e3e3e3e3e3e3e",
+      "description": "Express.js web framework (~200 files)",
+      "queries": [
+        { "tool": "kirograph_context", "args": { "task": "How does middleware execution work?" } },
+        { "tool": "kirograph_callers", "args": { "symbol": "createApplication" } },
+        { "tool": "kirograph_impact", "args": { "symbol": "Router", "depth": 2 } }
+      ]
+    },
+    {
+      "name": "fastify",
+      "url": "https://github.com/fastify/fastify",
+      "sha": "main",
+      "description": "Fastify web framework (~300 files)",
+      "queries": [
+        { "tool": "kirograph_context", "args": { "task": "How does request validation work?" } },
+        { "tool": "kirograph_callers", "args": { "symbol": "addHook" } },
+        { "tool": "kirograph_impact", "args": { "symbol": "Reply", "depth": 2 } }
+      ]
+    }
+  ]
+}

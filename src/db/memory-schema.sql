@@ -20,7 +20,11 @@ CREATE TABLE IF NOT EXISTS mem_observations (
   kind TEXT NOT NULL,
   source TEXT NOT NULL DEFAULT 'hook',
   tags TEXT,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  valid_from INTEGER,
+  valid_until INTEGER,
+  superseded_by TEXT,
+  fact_type TEXT DEFAULT 'observation'
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mem_obs_hash ON mem_observations(content_hash);

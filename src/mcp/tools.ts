@@ -19,6 +19,21 @@ function truncate(s: string): string {
   return s.length > MAX_OUTPUT ? s.slice(0, MAX_OUTPUT) + '\n…[truncated]' : s;
 }
 
+/** Estimate how many tokens reading the full files would cost (chars / 4 heuristic). */
+function estimateFileTokens(projectRoot: string, filePaths: string[]): number {
+  let total = 0;
+  for (const fp of filePaths) {
+    try {
+      const fullPath = path.isAbsolute(fp) ? fp : path.join(projectRoot, fp);
+      const stat = fs.statSync(fullPath);
+      total += Math.round(stat.size / 4);
+    } catch {
+      // File may not exist or be unreadable — skip
+    }
+  }
+  return total;
+}
+
 function clampLimit(value: number | undefined, defaultValue: number): number {
   const n = typeof value === 'number' ? value : defaultValue;
   return Math.max(1, Math.min(100, Math.round(n)));
@@ -346,6 +361,77 @@ export const tools: ToolDefinition[] = [
       },
     },
   },
+  {
+    name: 'kirograph_read',
+    description: 'Read a file with caching and multiple modes. First read returns full content; subsequent reads of unchanged files return a compact "cached" marker (~13 tokens). Supports modes: full, map, signatures, diff, lines, imports, exports.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'File path to read (absolute or relative to project root)' },
+        mode: {
+          type: 'string',
+          description: 'Read mode: "full" (default), "map" (structure overview), "signatures" (function signatures), "diff" (changes since last read), "lines" (line range), "imports", "exports"',
+          enum: ['full', 'map', 'signatures', 'diff', 'lines', 'imports', 'exports'],
+          default: 'full',
+        },
+        start: { type: 'number', description: 'Start line (for lines mode)' },
+        end: { type: 'number', description: 'End line (for lines mode)' },
+        noCache: { type: 'boolean', description: 'Force fresh read, bypass cache (default: false)', default: false },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'kirograph_budget',
+    description: 'Show current session context budget usage. Returns tokens consumed, remaining budget, and utilization percentage.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        reset: { type: 'boolean', description: 'Reset session budget counters (default: false)', default: false },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+    },
+  },
+  {
+    name: 'kirograph_flows',
+    description: 'Trace execution flows from entry points (routes, handlers, main functions) through the call graph. Returns ordered call chains sorted by criticality.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entryPoint: { type: 'string', description: 'Symbol name to trace from, or omit to auto-detect entry points' },
+        maxFlows: { type: 'number', description: 'Max number of flows to return (default 10)' },
+        maxDepth: { type: 'number', description: 'Max call chain depth (default 10)' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+    },
+  },
+  {
+    name: 'kirograph_communities',
+    description: 'Detect code communities (clusters of related symbols) using graph-based community detection. Shows which code belongs together and how communities are coupled.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        resolution: { type: 'number', description: 'Resolution parameter (default 1.0, higher = more communities)' },
+        limit: { type: 'number', description: 'Max communities to return (default 15)' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+    },
+  },
+  {
+    name: 'kirograph_refactor',
+    description: 'Refactoring assistant. Use mode "rename" to preview all locations that reference a symbol (rename preview). Use mode "suggest" for community-driven refactoring suggestions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mode: { type: 'string', description: 'Mode: "rename" (preview references) or "suggest" (refactoring suggestions)', enum: ['rename', 'suggest'] },
+        symbol: { type: 'string', description: 'Symbol name (required for rename mode)' },
+        limit: { type: 'number', description: 'Max results (default 10)' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['mode'],
+    },
+  },
   // ── Memory tools (require enableMemory=true) ────────────────────────────────
   {
     name: 'kirograph_mem_search',
@@ -361,6 +447,7 @@ export const tools: ToolDefinition[] = [
         },
         limit: { type: 'number', description: 'Max results (default: 10)', default: 10 },
         sessionId: { type: 'string', description: 'Filter to specific session' },
+        asOf: { type: 'number', description: 'Query facts valid at this timestamp (epoch ms). Filters out expired/superseded observations.' },
         projectPath: { type: 'string', description: 'Project root path (optional)' },
       },
       required: ['query'],
@@ -791,6 +878,87 @@ export class ToolHandler {
       return lines.join('\n');
     }
 
+    if (toolName === 'kirograph_read') {
+      const filePath = args.path as string;
+      if (!filePath) return 'Error: path is required.';
+
+      const projectRoot = (args.projectPath as string) || process.cwd();
+      const resolvedPath = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
+      const mode = (args.mode as string) ?? 'full';
+      const noCache = (args.noCache as boolean) ?? false;
+
+      if (!fs.existsSync(resolvedPath)) {
+        return `Error: File not found: ${resolvedPath}`;
+      }
+
+      const { getFileReadCache } = await import('./cache');
+      const { executeReadMode } = await import('./read-modes');
+      const cache = getFileReadCache();
+
+      // For non-full modes, skip caching logic and use read-modes directly
+      if (mode !== 'full') {
+        // Get graph connection for map/signatures/imports/exports modes
+        let cg: KiroGraph | null = null;
+        try {
+          cg = await this.getConnection(args.projectPath as string | undefined);
+        } catch { /* no graph available */ }
+
+        const result = executeReadMode({
+          mode: mode as any,
+          filePath: resolvedPath,
+          start: args.start as number | undefined,
+          end: args.end as number | undefined,
+          cg,
+        });
+
+        // Update cache with current content for future diff mode
+        cache.read(resolvedPath, true);
+
+        return result.content;
+      }
+
+      // Full mode with caching
+      const result = cache.read(resolvedPath, noCache);
+
+      if (result.cached) {
+        return result.content;
+      }
+
+      if (result.changed) {
+        return `[file changed since last read]\n\n${result.content}`;
+      }
+
+      return result.content;
+    }
+
+    if (toolName === 'kirograph_budget') {
+      const projectRoot = (args.projectPath as string) || process.cwd();
+      const reset = (args.reset as boolean) ?? false;
+
+      const { BudgetTracker } = await import('../compression/tracker');
+      const budget = BudgetTracker.getInstance(projectRoot);
+
+      if (reset) {
+        budget.reset();
+        return 'Context budget counters reset.';
+      }
+
+      const status = budget.getStatus();
+      const lines = [
+        'Context Budget:',
+        `  Tokens consumed: ${status.consumed.toLocaleString()}`,
+        `  Budget limit:    ${status.limit > 0 ? status.limit.toLocaleString() : 'unlimited'}`,
+        `  Remaining:       ${status.limit > 0 ? status.remaining.toLocaleString() : '∞'}`,
+        `  Utilization:     ${status.utilization}%`,
+      ];
+
+      if (status.warning) {
+        lines.push(`\n  ⚠ ${status.warning}`);
+      }
+
+      return lines.join('\n');
+    }
+
     const cg = await this.getConnection(args.projectPath as string | undefined);
     if (!cg) return 'KiroGraph not initialized. Run `kirograph init` in your project first.';
 
@@ -952,6 +1120,22 @@ export class ToolHandler {
             }
           }
         } catch { /* data is non-critical */ }
+
+        // Context savings estimation
+        const graphTokens = lines.join('\n').length / 4; // rough token estimate
+        const uniqueFiles = new Set([
+          ...ctx.entryPoints.map((n: any) => n.filePath),
+          ...ctx.relatedNodes.map((n: any) => n.filePath),
+        ]);
+        if (uniqueFiles.size > 0) {
+          const naiveTokens = estimateFileTokens(cg.getProjectRoot(), [...uniqueFiles]);
+          if (naiveTokens > 0) {
+            const savingsPct = Math.round((1 - graphTokens / naiveTokens) * 100);
+            if (savingsPct > 0) {
+              lines.push('', `---`, `Context savings: ~${Math.round(graphTokens)} tokens (graph) vs ~${naiveTokens} tokens (full files) — ${savingsPct}% reduction`);
+            }
+          }
+        }
 
         return lines.join('\n');
       }
@@ -1506,6 +1690,146 @@ export class ToolHandler {
         return lines.join('\n');
       }
 
+      case 'kirograph_flows': {
+        const { getExecutionFlows, traceFlow, detectEntryPoints } = await import('../graph/flows');
+        const db = cg.getDatabase();
+
+        if (args.entryPoint) {
+          // Trace from a specific symbol
+          const results = cg.searchNodes(args.entryPoint as string, undefined, 5);
+          if (results.length === 0) return `Symbol "${args.entryPoint}" not found in index.`;
+          const hops = traceFlow(db, results[0].node.id, (args.maxDepth as number) ?? 10);
+          if (hops.length < 2) return `No outgoing call chain found from "${args.entryPoint}".`;
+
+          const lines = [`## Execution flow from \`${args.entryPoint}\``, ''];
+          for (let i = 0; i < hops.length; i++) {
+            const hop = hops[i];
+            const indent = '  '.repeat(i);
+            const arrow = i === 0 ? '→' : '↳';
+            const conf = hop.confidence && hop.confidence !== 'extracted' ? ` [${hop.confidence}]` : '';
+            lines.push(`${indent}${arrow} ${hop.kind} \`${hop.symbol}\` — ${hop.filePath}:${hop.line}${conf}`);
+          }
+          return lines.join('\n');
+        }
+
+        // Auto-detect entry points and trace flows
+        const flows = getExecutionFlows(db, {
+          maxFlows: (args.maxFlows as number) ?? 10,
+          maxDepth: (args.maxDepth as number) ?? 10,
+        });
+
+        if (flows.length === 0) return 'No execution flows detected. The graph may be too small or have no call edges.';
+
+        const lines = [`## Execution Flows (${flows.length} detected)`, ''];
+        for (const flow of flows) {
+          lines.push(`### \`${flow.entryPoint}\` (${flow.entryPointKind}) — criticality: ${flow.criticality.toFixed(2)}`);
+          lines.push(`File: ${flow.entryPointFile}`, '');
+          for (let i = 0; i < flow.hops.length; i++) {
+            const hop = flow.hops[i];
+            const indent = '  '.repeat(Math.min(i, 5));
+            const arrow = i === 0 ? '→' : '↳';
+            const conf = hop.confidence && hop.confidence !== 'extracted' ? ` [${hop.confidence}]` : '';
+            lines.push(`${indent}${arrow} \`${hop.symbol}\` (${hop.kind}) — ${hop.filePath}:${hop.line}${conf}`);
+          }
+          lines.push('');
+        }
+        return lines.join('\n');
+      }
+
+      case 'kirograph_communities': {
+        const { detectCommunities } = await import('../graph/communities');
+        const db = cg.getDatabase();
+        const result = detectCommunities(db, {
+          resolution: (args.resolution as number) ?? 1.0,
+        });
+
+        if (result.communities.length === 0) return 'No communities detected. The graph may be too small or have no edges.';
+
+        const limit = Math.min((args.limit as number) ?? 15, result.communities.length);
+        const lines = [
+          `## Communities (${result.communities.length} detected, modularity: ${result.modularity.toFixed(3)})`,
+          `Graph: ${result.totalNodes} nodes, ${result.totalEdges} edges`,
+          '',
+        ];
+
+        for (const c of result.communities.slice(0, limit)) {
+          lines.push(`### ${c.label} (${c.memberCount} symbols)`);
+          lines.push(`- Directory: \`${c.dominantDirectory}\``);
+          lines.push(`- Language: ${c.dominantLanguage}`);
+          lines.push(`- Inter-community edges: ${c.interCommunityEdges}`);
+          lines.push(`- Top members:`);
+          for (const m of c.members.slice(0, 8)) {
+            lines.push(`  - ${m.kind} \`${m.name}\` — ${m.filePath}`);
+          }
+          if (c.memberCount > 8) lines.push(`  - …and ${c.memberCount - 8} more`);
+          lines.push('');
+        }
+
+        return lines.join('\n');
+      }
+
+      case 'kirograph_refactor': {
+        const { renamePreview, suggestRefactorings } = await import('../graph/refactor');
+        const db = cg.getDatabase();
+        const mode = args.mode as string;
+
+        if (mode === 'rename') {
+          if (!args.symbol) return 'Error: "symbol" parameter is required for rename mode.';
+          const preview = renamePreview(db, args.symbol as string);
+          if (!preview) return `Symbol "${args.symbol}" not found in index.`;
+
+          const lines = [
+            `## Rename Preview: \`${preview.symbol}\``,
+            `Kind: ${preview.kind}`,
+            `Defined at: ${preview.filePath}:${preview.line}`,
+            `Total references: ${preview.totalReferences}`,
+            '',
+          ];
+
+          if (preview.references.length === 0) {
+            lines.push('No references found — this symbol can be safely renamed without affecting other code.');
+          } else {
+            // Group by file
+            const byFile = new Map<string, typeof preview.references>();
+            for (const ref of preview.references) {
+              if (!byFile.has(ref.filePath)) byFile.set(ref.filePath, []);
+              byFile.get(ref.filePath)!.push(ref);
+            }
+
+            for (const [file, refs] of byFile) {
+              lines.push(`### ${file} (${refs.length} references)`);
+              for (const ref of refs.slice(0, 10)) {
+                lines.push(`- Line ${ref.line}: \`${ref.context}\` (${ref.edgeKind})`);
+              }
+              if (refs.length > 10) lines.push(`  …and ${refs.length - 10} more`);
+              lines.push('');
+            }
+          }
+
+          return lines.join('\n');
+        }
+
+        if (mode === 'suggest') {
+          const suggestions = suggestRefactorings(db, (args.limit as number) ?? 10);
+          if (suggestions.length === 0) return 'No refactoring suggestions — the codebase structure looks clean.';
+
+          const lines = [`## Refactoring Suggestions (${suggestions.length})`, ''];
+          for (const s of suggestions) {
+            const icon = s.priority === 'high' ? '🔴' : s.priority === 'medium' ? '🟡' : '🟢';
+            lines.push(`${icon} **${s.type}** [${s.priority}]: ${s.description}`);
+            lines.push(`   Rationale: ${s.rationale}`);
+            if (s.symbols.length > 0) {
+              lines.push(`   Symbols: ${s.symbols.slice(0, 3).join(', ')}`);
+            }
+            lines.push('');
+          }
+
+          return lines.join('\n');
+        }
+
+        return 'Unknown mode. Use "rename" or "suggest".';
+      }
+
       // ── Memory tools ────────────────────────────────────────────────────────
 
       case 'kirograph_mem_search': {
@@ -1524,6 +1848,7 @@ export class ToolHandler {
           limit: (args.limit as number) ?? 10,
           kind: args.kind as any,
           sessionId: args.sessionId as string | undefined,
+          asOf: args.asOf as number | undefined,
         });
 
         if (results.length === 0) return `No memory observations found for "${args.query}".`;

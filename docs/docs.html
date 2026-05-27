@@ -51,6 +51,7 @@
       <a href="#why-kirograph" class="sidebar-link">Why KiroGraph</a>
       <a href="#installation" class="sidebar-link">Installation</a>
       <a href="#quick-start" class="sidebar-link">Quick Start</a>
+      <a href="#comparison" class="sidebar-link">Comparison</a>
     </div>
     <div class="sidebar-section">
       <div class="sidebar-heading">Core Concepts</div>
@@ -162,6 +163,194 @@ kirograph install --target kiro   # install for a specific platform only</code><
     <div class="callout callout-tip">
       <strong>Tip:</strong> You can also use the short alias <code>kg install</code>.
     </div>
+
+    <!-- ── Comparison ── -->
+    <h2 id="comparison">Feature Comparison</h2>
+    <p>KiroGraph combines features from 7 separate open-source projects (160k+ combined ⭐) into a single integrated MCP server.</p>
+
+    <input type="text" id="cmp-search" placeholder="🔍 Search features…" style="width:100%;padding:0.6rem 1rem;margin:1rem 0;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-family:inherit;font-size:0.9rem;outline:none;" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+
+    <div id="cmp-tabs" style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:1rem;overflow-x:auto;">
+      <button class="cmp-tab active" data-tab="code-graph">Code Graph</button>
+      <button class="cmp-tab" data-tab="architecture">Architecture</button>
+      <button class="cmp-tab" data-tab="memory">Search & Memory</button>
+      <button class="cmp-tab" data-tab="docs-data">Docs & Data</button>
+      <button class="cmp-tab" data-tab="tokens">Tokens</button>
+      <button class="cmp-tab" data-tab="integration">Integration</button>
+      <button class="cmp-tab" data-tab="languages">Languages</button>
+    </div>
+
+    <div class="cmp-panel active" id="panel-code-graph">
+    <h3 id="cmp-code-graph">Code Graph &amp; Analysis</h3>
+    <div style="overflow-x:auto;">
+    <table class="config-table cmp-filterable">
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>jMunch</th></tr></thead>
+      <tbody>
+        <tr><td>Tree-sitter AST parsing</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Symbol search (FTS)</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Call graph (callers/callees)</td><td>✅</td><td>✅</td><td>✅</td><td>—</td></tr>
+        <tr><td>Impact/blast radius</td><td>✅</td><td>✅</td><td>✅</td><td>—</td></tr>
+        <tr><td>Type hierarchy traversal</td><td>✅</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Circular dependency detection</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Dead code detection</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Hotspot/hub detection</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Execution flow tracing</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Community/cluster detection</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Edge confidence scoring</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Framework-aware routes</td><td>✅ (14+)</td><td>✅ (14)</td><td>—</td><td>—</td></tr>
+        <tr><td>Trace (path between symbols)</td><td>✅</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td>Mixed iOS/RN bridging</td><td>✅</td><td>✅</td><td>—</td><td>—</td></tr>
+      </tbody>
+    </table>
+    </div>
+    </div>
+
+    <div class="cmp-panel" id="panel-architecture">
+    <h3 id="cmp-architecture">Architecture &amp; Refactoring</h3>
+    <div style="overflow-x:auto;">
+    <table class="config-table cmp-filterable">
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th></tr></thead>
+      <tbody>
+        <tr><td>Package graph</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td>Layer detection</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td>Coupling metrics (Ca/Ce/instability)</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td>Refactoring suggestions</td><td>✅</td><td>—</td><td>✅</td></tr>
+        <tr><td>Rename preview</td><td>✅</td><td>—</td><td>✅</td></tr>
+      </tbody>
+    </table>
+    </div>
+    </div>
+
+    <div class="cmp-panel" id="panel-memory">
+    <h3 id="cmp-memory">Semantic Search &amp; Memory</h3>
+    <div style="overflow-x:auto;">
+    <table class="config-table cmp-filterable">
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>cavemem</th><th>lean-ctx</th></tr></thead>
+      <tbody>
+        <tr><td>Vector embeddings</td><td>✅</td><td>—</td><td>✅</td><td>✅</td><td>—</td></tr>
+        <tr><td>7 pluggable semantic engines</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Custom HuggingFace models</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Persistent cross-session memory</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Observations linked to symbols</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Compressed storage</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Zero LLM tokens on write</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Knowledge graph (temporal facts)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Property graph (code edges)</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>✅</td></tr>
+      </tbody>
+    </table>
+    </div>
+    </div>
+
+    <div class="cmp-panel" id="panel-docs-data">
+    <h3 id="cmp-docs-data">Documentation &amp; Data</h3>
+    <div style="overflow-x:auto;">
+    <table class="config-table cmp-filterable">
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>jMunch</th></tr></thead>
+      <tbody>
+        <tr><td>Documentation indexing</td><td>✅ (9 formats)</td><td>—</td><td>—</td><td>✅ (8+)</td></tr>
+        <tr><td>Section-level retrieval</td><td>✅</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Code ↔ docs cross-references</td><td>✅</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Tabular data querying</td><td>✅</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>CSV/JSON/Excel/Parquet</td><td>✅</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Server-side aggregations</td><td>✅</td><td>—</td><td>—</td><td>✅</td></tr>
+      </tbody>
+    </table>
+    </div>
+    </div>
+
+    <div class="cmp-panel" id="panel-tokens">
+    <h3 id="cmp-tokens">Token Optimization</h3>
+    <div style="overflow-x:auto;">
+    <table class="config-table cmp-filterable">
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>caveman</th><th>rtk</th><th>lean-ctx</th></tr></thead>
+      <tbody>
+        <tr><td>Shell output compression</td><td>✅ (6 families)</td><td>—</td><td>—</td><td>—</td><td>✅ (20+)</td><td>✅ (56 modules)</td></tr>
+        <tr><td>Agent prose compression</td><td>✅ (lite/full/ultra)</td><td>—</td><td>—</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td>File read caching</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅ (~13 tokens)</td></tr>
+        <tr><td>Multiple read modes (map/sig/diff)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅ (10 modes)</td></tr>
+        <tr><td>Token analytics/tracking</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td><td>✅ (dashboard)</td></tr>
+        <tr><td>Context budget/governance</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Estimated context savings</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Reproducible benchmarks</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>—</td><td>✅</td></tr>
+      </tbody>
+    </table>
+    </div>
+    </div>
+
+    <div class="cmp-panel" id="panel-integration">
+    <h3 id="cmp-integration">Integration &amp; Platform Support</h3>
+    <div style="overflow-x:auto;">
+    <table class="config-table cmp-filterable">
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>jMunch</th><th>cavemem</th><th>rtk</th><th>lean-ctx</th></tr></thead>
+      <tbody>
+        <tr><td>MCP server (stdio)</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>✅ (62 tools)</td></tr>
+        <tr><td>Multi-platform targets</td><td>✅ (34)</td><td>✅ (7)</td><td>✅ (13)</td><td>—</td><td>—</td><td>✅ (any)</td><td>✅ (28+)</td></tr>
+        <tr><td>Auto-detection</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Auto-sync hooks</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Interactive visualization</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>✅ (dashboard)</td></tr>
+        <tr><td>Graph export (GraphML/Cypher/Obsidian)</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>100% local (no API keys)</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+      </tbody>
+    </table>
+    </div>
+    </div>
+
+    <div class="cmp-panel" id="panel-languages">
+    <h3 id="cmp-languages">Language &amp; Framework Support</h3>
+    <div style="overflow-x:auto;">
+    <table class="config-table cmp-filterable">
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>jMunch</th></tr></thead>
+      <tbody>
+        <tr><td>Languages supported</td><td>24+</td><td>22</td><td>30+</td><td>20+</td></tr>
+        <tr><td>Framework detection</td><td>✅ (26)</td><td>✅ (14)</td><td>—</td><td>—</td></tr>
+        <tr><td>Route extraction</td><td>✅ (14+)</td><td>✅ (14)</td><td>—</td><td>—</td></tr>
+      </tbody>
+    </table>
+    </div>
+    </div>
+
+    <style>
+      .cmp-tab { padding: 0.5rem 1rem; border: none; background: none; color: var(--text-muted); font-family: inherit; font-size: 0.8rem; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; transition: all 0.15s; }
+      .cmp-tab:hover { color: var(--text); }
+      .cmp-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+      .cmp-panel { display: none; }
+      .cmp-panel.active { display: block; }
+      #cmp-search:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(121,134,203,0.2); }
+    </style>
+    <script>
+    (function() {
+      const tabs = document.querySelectorAll('.cmp-tab');
+      const panels = document.querySelectorAll('.cmp-panel');
+      const search = document.getElementById('cmp-search');
+
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          tabs.forEach(t => t.classList.remove('active'));
+          panels.forEach(p => p.classList.remove('active'));
+          tab.classList.add('active');
+          document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+        });
+      });
+
+      search.addEventListener('input', () => {
+        const q = search.value.toLowerCase().trim();
+        if (!q) {
+          // Show active tab only, all rows visible
+          document.querySelectorAll('.cmp-filterable tbody tr').forEach(r => r.style.display = '');
+          panels.forEach(p => p.classList.remove('active'));
+          const activeTab = document.querySelector('.cmp-tab.active');
+          if (activeTab) document.getElementById('panel-' + activeTab.dataset.tab).classList.add('active');
+          return;
+        }
+        // Show all panels, filter rows
+        panels.forEach(p => p.classList.add('active'));
+        document.querySelectorAll('.cmp-filterable tbody tr').forEach(row => {
+          const text = row.cells[0].textContent.toLowerCase();
+          row.style.display = text.includes(q) ? '' : 'none';
+        });
+      });
+    })();
+    </script>
 
     <!-- ── How Indexing Works ── -->
     <h2 id="how-indexing-works">How Indexing Works</h2>

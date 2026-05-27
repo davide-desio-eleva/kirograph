@@ -118,6 +118,18 @@ export class GraphDatabase {
     } catch {
       // Column already exists — nothing to do.
     }
+
+    // Add confidence columns to edges if not present.
+    try {
+      this.db.run("ALTER TABLE edges ADD COLUMN confidence TEXT NOT NULL DEFAULT 'extracted'");
+    } catch {
+      // Column already exists — nothing to do.
+    }
+    try {
+      this.db.run('ALTER TABLE edges ADD COLUMN confidence_score REAL NOT NULL DEFAULT 1.0');
+    } catch {
+      // Column already exists — nothing to do.
+    }
   }
 
   // ── Files ──────────────────────────────────────────────────────────────────
@@ -312,9 +324,9 @@ export class GraphDatabase {
 
   insertEdge(edge: Edge): void {
     this.db.run(
-      `INSERT OR IGNORE INTO edges (source, target, kind, metadata, line, column)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [edge.source, edge.target, edge.kind, edge.metadata ? JSON.stringify(edge.metadata) : null, edge.line ?? null, edge.column ?? null]
+      `INSERT OR IGNORE INTO edges (source, target, kind, metadata, line, column, confidence, confidence_score)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [edge.source, edge.target, edge.kind, edge.metadata ? JSON.stringify(edge.metadata) : null, edge.line ?? null, edge.column ?? null, edge.confidence ?? 'extracted', edge.confidenceScore ?? 1.0]
     );
   }
 
@@ -432,6 +444,8 @@ export class GraphDatabase {
       if (refKind === 'function') {
         // Strategy 1: exact name match
         let target = this.db.get('SELECT id FROM nodes WHERE name = ? LIMIT 1', [refName]);
+        let confidence: 'extracted' | 'inferred' | 'ambiguous' = 'inferred';
+        let confidenceScore = 1.0;
 
         // Strategy 2: qualified name suffix
         if (!target) {
@@ -447,10 +461,21 @@ export class GraphDatabase {
             'SELECT id FROM nodes WHERE lower(name) = lower(?) LIMIT 1',
             [refName]
           );
+          // Case-insensitive match is less certain
+          if (target) confidenceScore = 0.8;
+        }
+
+        // Check if there are multiple candidates (ambiguous)
+        if (target) {
+          const candidateCount = this.db.get('SELECT COUNT(*) as cnt FROM nodes WHERE name = ?', [refName]);
+          if (candidateCount && candidateCount.cnt > 1) {
+            confidence = 'ambiguous';
+            confidenceScore = 1.0 / candidateCount.cnt;
+          }
         }
 
         if (target) {
-          this.insertEdge({ source: sourceId, target: target.id, kind: 'calls', line: line ?? undefined, column: column ?? undefined });
+          this.insertEdge({ source: sourceId, target: target.id, kind: 'calls', line: line ?? undefined, column: column ?? undefined, confidence, confidenceScore });
           this.db.run('DELETE FROM unresolved_refs WHERE id = ?', [refId]);
           resolved++;
         }
@@ -458,7 +483,7 @@ export class GraphDatabase {
         // Resolve import path to an indexed file
         const targetFileNode = this.resolveImportPath(refName, filePath);
         if (targetFileNode) {
-          this.insertEdge({ source: sourceId, target: targetFileNode, kind: 'imports', line: line ?? undefined, column: column ?? undefined });
+          this.insertEdge({ source: sourceId, target: targetFileNode, kind: 'imports', line: line ?? undefined, column: column ?? undefined, confidence: 'inferred', confidenceScore: 1.0 });
           this.db.run('DELETE FROM unresolved_refs WHERE id = ?', [refId]);
           resolved++;
         }

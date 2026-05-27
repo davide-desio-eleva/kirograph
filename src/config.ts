@@ -99,6 +99,12 @@ export interface KiroGraphConfig {
   dataQueryLimit: number;
   /** Max token budget per response. Default: 8000. */
   dataMaxResponseTokens: number;
+  /** Context budget governance settings. */
+  contextBudget?: {
+    maxTokensPerSession: number;
+    warnAt: number;
+    throttleAt: number;
+  };
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -118,6 +124,7 @@ const KNOWN_FIELDS = new Set<string>([
   'docsContextLimit', 'docsContextThreshold', 'docsMaxFileSize', 'docsSummarization',
   'enableData', 'dataInclude', 'dataExclude', 'dataLinkCode',
   'dataContextLimit', 'dataMaxFileSize', 'dataMaxRows', 'dataQueryLimit', 'dataMaxResponseTokens',
+  'contextBudget',
   // Legacy aliases (still accepted, mapped during validation)
   'enableCompression', 'compressionLevel',
 ]);
@@ -359,6 +366,20 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const dataMaxResponseTokens = typeof raw.dataMaxResponseTokens === 'number' && raw.dataMaxResponseTokens > 0
     ? Math.round(raw.dataMaxResponseTokens) : defaults.dataMaxResponseTokens;
 
+  // ── Context budget config ─────────────────────────────────────────────────
+  let contextBudget: KiroGraphConfig['contextBudget'] | undefined;
+  if (raw.contextBudget && typeof raw.contextBudget === 'object' && !Array.isArray(raw.contextBudget)) {
+    const cb = raw.contextBudget as Record<string, unknown>;
+    contextBudget = {
+      maxTokensPerSession: typeof cb.maxTokensPerSession === 'number' && cb.maxTokensPerSession > 0
+        ? Math.round(cb.maxTokensPerSession) : 100_000,
+      warnAt: typeof cb.warnAt === 'number' && cb.warnAt > 0
+        ? Math.round(cb.warnAt) : 80_000,
+      throttleAt: typeof cb.throttleAt === 'number' && cb.throttleAt > 0
+        ? Math.round(cb.throttleAt) : 95_000,
+    };
+  }
+
   // Validate glob patterns — exclude unsafe regex patterns
   const include = _validatePatterns(raw.include, defaults.include);
   const exclude = _validatePatterns(raw.exclude, defaults.exclude);
@@ -411,6 +432,7 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     dataQueryLimit,
     dataMaxResponseTokens,
     ...(architectureLayers !== undefined ? { architectureLayers } : {}),
+    ...(contextBudget !== undefined ? { contextBudget } : {}),
   };
 }
 

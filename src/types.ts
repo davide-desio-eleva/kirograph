@@ -50,6 +50,8 @@ export interface Edge {
   metadata?: Record<string, unknown>;
   line?: number;
   column?: number;
+  confidence?: 'extracted' | 'inferred' | 'ambiguous';
+  confidenceScore?: number;
 }
 
 export interface FileRecord {

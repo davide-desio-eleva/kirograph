@@ -430,4 +430,236 @@ export function writeSteering(kiroDir: string, opts?: SteeringOptions | CavemanM
 
   fs.writeFileSync(steeringPath, buildSteeringContent(resolvedOpts));
   console.log(`  ✓ Steering file written to ${steeringPath}`);
+
+  // Write workflow-specific steering files
+  writeWorkflowSteering(steeringDir);
+}
+
+function writeWorkflowSteering(steeringDir: string): void {
+  const workflows: Record<string, string> = {
+    'kirograph-review.md': `---
+inclusion: manual
+---
+
+# KiroGraph: Code Review Workflow
+
+Follow these steps for a structured, risk-aware code review using the knowledge graph.
+
+## Steps
+
+1. **Understand the change scope**
+   \`\`\`
+   kirograph_context(task: "<describe what changed>")
+   \`\`\`
+
+2. **Analyze blast radius**
+   For each key symbol that was modified:
+   \`\`\`
+   kirograph_impact(symbol: "<changed symbol>", depth: 2)
+   \`\`\`
+
+3. **Check test coverage**
+   \`\`\`
+   kirograph_callers(symbol: "<changed symbol>")
+   \`\`\`
+   Look for test files among the callers. Flag untested changes.
+
+4. **Look for surprising coupling**
+   \`\`\`
+   kirograph_surprising(limit: 10)
+   \`\`\`
+
+5. **Produce findings** grouped by risk level (high/medium/low) with:
+   - What changed and why it matters
+   - Test coverage status
+   - Suggested improvements
+   - Overall merge recommendation
+`,
+
+    'kirograph-debug.md': `---
+inclusion: manual
+---
+
+# KiroGraph: Debug Workflow
+
+Follow these steps to systematically trace and debug issues using the knowledge graph.
+
+## Steps
+
+1. **Find related code**
+   \`\`\`
+   kirograph_search(query: "<error message or symptom keywords>")
+   \`\`\`
+
+2. **Get full context**
+   \`\`\`
+   kirograph_context(task: "<describe the bug>")
+   \`\`\`
+
+3. **Trace the call chain**
+   \`\`\`
+   kirograph_callers(symbol: "<suspected function>")
+   kirograph_callees(symbol: "<suspected function>")
+   \`\`\`
+
+4. **Check what changed recently**
+   \`\`\`
+   kirograph_diff()
+   \`\`\`
+
+5. **Understand blast radius**
+   \`\`\`
+   kirograph_impact(symbol: "<root cause symbol>", depth: 3)
+   \`\`\`
+
+## Tips
+- Check both callers and callees to understand the full context
+- Recent changes (via diff) are the most common source of new issues
+- Use \`kirograph_path\` to trace how two symbols are connected
+`,
+
+    'kirograph-architecture.md': `---
+inclusion: manual
+---
+
+# KiroGraph: Architecture Exploration Workflow
+
+Follow these steps to understand the high-level structure of the codebase.
+
+## Steps
+
+1. **Get project overview**
+   \`\`\`
+   kirograph_status()
+   \`\`\`
+
+2. **View architecture**
+   \`\`\`
+   kirograph_architecture()
+   \`\`\`
+
+3. **Check coupling health**
+   \`\`\`
+   kirograph_coupling(sortBy: "instability")
+   \`\`\`
+
+4. **Find core abstractions**
+   \`\`\`
+   kirograph_hotspots(limit: 20)
+   \`\`\`
+
+5. **Detect hidden dependencies**
+   \`\`\`
+   kirograph_surprising(limit: 15)
+   \`\`\`
+
+6. **Check for cycles**
+   \`\`\`
+   kirograph_circular_deps()
+   \`\`\`
+
+## Interpretation
+- High Ca (afferent) = load-bearing, risky to change interface
+- High Ce (efferent) = depends on many things, safe to refactor internals
+- Surprising edges = hidden coupling that may break during refactoring
+`,
+
+    'kirograph-onboard.md': `---
+inclusion: manual
+---
+
+# KiroGraph: Onboarding Workflow
+
+Follow these steps to quickly understand a new codebase.
+
+## Steps
+
+1. **Project overview**
+   \`\`\`
+   kirograph_status()
+   \`\`\`
+
+2. **File structure**
+   \`\`\`
+   kirograph_files(format: "tree", maxDepth: 2)
+   \`\`\`
+
+3. **Key entry points**
+   \`\`\`
+   kirograph_hotspots(limit: 15)
+   \`\`\`
+
+4. **Architecture layers**
+   \`\`\`
+   kirograph_architecture()
+   \`\`\`
+
+5. **Explore a specific area**
+   \`\`\`
+   kirograph_context(task: "<area you want to understand>")
+   \`\`\`
+
+6. **Understand a key symbol**
+   \`\`\`
+   kirograph_node(symbol: "<symbol name>", includeCode: true)
+   \`\`\`
+
+## Tips
+- Start broad (status, files, hotspots) then narrow down
+- Use \`kirograph_type_hierarchy\` to understand inheritance patterns
+- Use \`kirograph_callees\` on entry points to trace execution flow
+`,
+
+    'kirograph-refactor.md': `---
+inclusion: manual
+---
+
+# KiroGraph: Refactoring Workflow
+
+Follow these steps to plan and execute safe refactoring.
+
+## Steps
+
+1. **Understand what you're changing**
+   \`\`\`
+   kirograph_node(symbol: "<target symbol>", includeCode: true)
+   \`\`\`
+
+2. **Check blast radius**
+   \`\`\`
+   kirograph_impact(symbol: "<target symbol>", depth: 3)
+   \`\`\`
+
+3. **Find all callers (rename preview)**
+   \`\`\`
+   kirograph_callers(symbol: "<target symbol>", limit: 50)
+   \`\`\`
+
+4. **Check for cycles that might complicate the refactor**
+   \`\`\`
+   kirograph_circular_deps()
+   \`\`\`
+
+5. **Find dead code to clean up**
+   \`\`\`
+   kirograph_dead_code(limit: 30)
+   \`\`\`
+
+6. **Verify after changes**
+   Run \`kirograph sync\` then:
+   \`\`\`
+   kirograph_diff()
+   \`\`\`
+
+## Safety Checks
+- Always check \`kirograph_impact\` before major refactors
+- Use \`kirograph_callers\` as a rename preview (all locations that reference the symbol)
+- After changes, use \`kirograph_diff\` to verify only intended symbols changed
+`,
+  };
+
+  for (const [filename, content] of Object.entries(workflows)) {
+    fs.writeFileSync(path.join(steeringDir, filename), content);
+  }
+  console.log(`  ✓ Workflow steering files written (review, debug, architecture, onboard, refactor)`);
 }
