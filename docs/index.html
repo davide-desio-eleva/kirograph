@@ -185,8 +185,8 @@
 
       <div class="card">
         <span class="card-icon"><i data-lucide="wrench"></i></span>
-        <h3>37 MCP Tools</h3>
-        <p>Context building, symbol search, call graphs, type hierarchies, impact analysis, dead code, circular deps, architecture, coupling metrics, snapshots, memory, documentation navigation, data querying, and more, all auto-approved in Kiro.</p>
+        <h3>45 MCP Tools</h3>
+        <p>Context building, symbol search, call graphs, type hierarchies, impact analysis, dead code, circular deps, architecture, coupling metrics, snapshots, memory, documentation navigation, data querying, security scanning, and more, all auto-approved in Kiro.</p>
       </div>
 
       <div class="card">
@@ -211,6 +211,9 @@
         <span class="card-icon">🔒</span>
         <h3>Vulnerability Detection</h3>
         <p>14 ecosystems, OSV batch queries, EPSS scores, call-graph reachability, license compliance, dependency staleness, CycloneDX 1.5 SBOM/VEX, dashboard security overlay. Opt-in via <code>enableSecurity</code>.</p>
+        <div class="card-media">
+          <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/sec.png" alt="KiroGraph Security mascot">
+        </div>
       </div>
 
       <div class="card">
@@ -250,6 +253,15 @@
       </div>
 
       <div class="card">
+        <span class="card-icon"><i data-lucide="terminal"></i></span>
+        <h3>Shell Compression</h3>
+        <p>Run shell commands through <code>kirograph_exec</code> to get token-optimized output. Cuts 60–90% of tokens on git, test runners, linters, docker, and package managers. Three levels: normal, aggressive, ultra. Inspired by <a href="https://github.com/rtk-ai/rtk" target="_blank" rel="noopener">rtk</a>.</p>
+        <div class="card-media">
+          <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/rtk.png" alt="KiroGraph shell compression mascot">
+        </div>
+      </div>
+
+      <div class="card">
         <span class="card-icon"><i data-lucide="camera"></i></span>
         <h3>Snapshots &amp; Diff</h3>
         <p>Save lightweight graph snapshots before refactors. Diff the current graph against any snapshot to see added/removed symbols and edges, available as both CLI and MCP tool.</p>
@@ -265,6 +277,9 @@
         <span class="card-icon"><i data-lucide="brain"></i></span>
         <h3>Persistent Memory</h3>
         <p>Cross-session observations stored locally with zero LLM tokens on write. Decisions, errors, and patterns are auto-linked to code symbols and surfaced in <code>kirograph_context</code> when relevant. Opt-in via <code>enableMemory</code>.</p>
+        <div class="card-media">
+          <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/mem.png" alt="KiroGraph Memory mascot">
+        </div>
       </div>
 
       <div class="card">

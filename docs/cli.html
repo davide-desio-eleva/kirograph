@@ -59,7 +59,10 @@
     </div>
 
     <h3 id="cli-setup">Setup</h3>
-    <pre><code>kirograph install                 # Wire up MCP + hooks + steering + CLI agent in .kiro/
+    <pre><code>kirograph install                 # Wire up MCP + hooks + steering in .kiro/
+kirograph install --target kiro   # Same as above (explicit)
+kirograph install --target claude # Wire up Claude Code MCP + project memory
+kirograph install --target codex  # Write Codex instructions and print MCP config
 kirograph init [path]             # Initialize .kirograph/ in a project
 kirograph init --index            # Initialize and index immediately
 kirograph uninit [path]           # Prompts to remove integration files and .kirograph/ data
@@ -76,7 +79,7 @@ kirograph sync-if-dirty [path]    # Sync only if a dirty marker is present
 kirograph mark-dirty [path]       # Write a dirty marker for deferred sync</code></pre>
 
     <h3 id="cli-status">Status &amp; Maintenance</h3>
-    <pre><code>kirograph status [path]           # Show index stats (files, symbols, edges, sync state)
+    <pre><code>kirograph status [path]           # Show index stats (files, symbols, edges, frameworks)
 kirograph unlock [path]           # Force-release a stale lock file</code></pre>
 
     <h3 id="cli-search">Search &amp; Exploration</h3>
@@ -180,9 +183,10 @@ kirograph snapshot diff --format full # Full added/removed symbol lists
 kirograph snapshot diff --format json # JSON output</code></pre>
 
     <h3 id="cli-export">Export Dashboard</h3>
-    <pre><code>kirograph export                      # Generate interactive graph dashboard
-kirograph export --open               # Open in browser immediately
-kirograph export --output ./report    # Custom output directory</code></pre>
+    <pre><code>kirograph export build [path]             # Generate .kirograph/export/{index.html,app.css,app.js}
+kirograph export start [path]             # Generate and open in browser
+kirograph export build -o /tmp/myexport   # Custom output directory
+kirograph export build --include-contains # Include structural contains edges</code></pre>
 
     <h3 id="cli-memory">Memory</h3>
     <pre><code># Search (hybrid FTS + vector)
@@ -214,6 +218,119 @@ kirograph mem export [--format jsonl|md]  # export for backup/reading
 kirograph mem import &lt;file.jsonl&gt;         # restore from JSONL backup (deduplicates)</code></pre>
     <p>Requires <code>enableMemory: true</code> in <code>.kirograph/config.json</code>.</p>
 
+    <h3 id="cli-dashboard">Dashboard</h3>
+    <p>When <code>semanticEngine</code> is set to <code>qdrant</code> or <code>typesense</code>:</p>
+    <pre><code>kirograph dashboard start [path]   # Start server and open dashboard
+kirograph dashboard stop [path]    # Stop the running engine server</code></pre>
+
+    <h3 id="cli-docs">Documentation</h3>
+    <pre><code># Table of contents
+kirograph docs toc                          # whole project
+kirograph docs toc README.md                # single file
+kirograph docs toc README.md --tree         # nested tree structure
+
+# Search
+kirograph docs search "authentication"
+kirograph docs search "config" --file docs/guide.md
+
+# Retrieve a section
+kirograph docs section "README.md::installation#1"
+kirograph docs section "README.md::installation#1" --context
+
+# Outline
+kirograph docs outline docs/api.md
+
+# Cross-references
+kirograph docs refs "docs/auth.md::oauth/token-refresh#2"
+
+# Maintenance
+kirograph docs reindex                      # force full re-index
+kirograph docs lint                         # health checks
+kirograph docs reembed                      # re-embed with current model</code></pre>
+    <p>Requires <code>enableDocs: true</code> in <code>.kirograph/config.json</code>.</p>
+
+    <h3 id="cli-data">Data</h3>
+    <pre><code># List datasets
+kirograph data list
+
+# Describe schema
+kirograph data describe tests-fixtures-users
+kirograph data describe tests-fixtures-users --column email
+
+# Query rows
+kirograph data query orders --filter status:eq:shipped --limit 10
+kirograph data query users --filter age:gt:18 --columns name,email
+
+# Aggregate
+kirograph data aggregate orders --group-by region --metric sum:amount
+kirograph data aggregate users --group-by role --metric count:id --metric avg:age
+
+# Search columns
+kirograph data search orders "price"
+
+# Join two datasets
+kirograph data join users orders --left-col id --right-col user_id
+
+# Correlations &amp; quality
+kirograph data correlations sales-data --threshold 0.5
+kirograph data quality orders
+
+# Maintenance
+kirograph data index                        # incremental index
+kirograph data reindex                      # force re-index all
+kirograph data lint                         # validate integrity</code></pre>
+    <p>Requires <code>enableData: true</code> in <code>.kirograph/config.json</code>.</p>
+
+    <h3 id="cli-security">Security</h3>
+    <pre><code>kirograph security [path]                  # Vulnerability status overview
+kirograph security --refresh-staleness     # Re-query registries for latest versions first</code></pre>
+    <p>Shows: total dependencies, vulnerabilities found, verdict breakdown (affected/not_affected/under_investigation), stale data warnings, stale dependency count.</p>
+
+    <pre><code>kirograph vulns [path]                     # List all vulnerabilities
+kirograph vulns --severity critical        # Filter by severity
+kirograph vulns --verdict affected         # Filter by reachability verdict
+kirograph vulns --epss 0.5                 # Filter by EPSS exploitation probability &gt;= 0.5
+kirograph vulns --stale                    # Show staleness score alongside each CVE
+kirograph vulns --refresh                  # Refresh from vulnerability databases first
+kirograph vulns --add CVE-2024-1234 --package lodash --version 4.17.20  # Register private CVE</code></pre>
+
+    <table>
+      <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>--severity &lt;level&gt;</code></td><td>Filter: <code>critical</code>, <code>high</code>, <code>medium</code>, <code>low</code></td></tr>
+        <tr><td><code>--verdict &lt;verdict&gt;</code></td><td>Filter: <code>affected</code>, <code>not_affected</code>, <code>under_investigation</code></td></tr>
+        <tr><td><code>--epss &lt;threshold&gt;</code></td><td>Filter by EPSS exploitation probability &gt;= threshold (0.0–1.0)</td></tr>
+        <tr><td><code>--stale</code></td><td>Show staleness score of the dependency alongside each CVE</td></tr>
+        <tr><td><code>--refresh</code></td><td>Trigger fresh enrichment from configured databases before listing</td></tr>
+        <tr><td><code>--add &lt;cveId&gt;</code></td><td>Manually register a CVE (requires <code>--package</code> and <code>--version</code>)</td></tr>
+        <tr><td><code>--package &lt;name&gt;</code></td><td>Package name for manual CVE registration</td></tr>
+        <tr><td><code>--version &lt;ver&gt;</code></td><td>Package version for manual CVE registration</td></tr>
+      </tbody>
+    </table>
+
+    <pre><code>kirograph reachability &lt;target&gt; [path]     # Check reachability for a CVE or dependency
+kirograph reachability CVE-2023-12345      # By CVE ID
+kirograph reachability lodash              # By package name</code></pre>
+
+    <pre><code>kirograph licenses [path]                  # List all dependency licenses
+kirograph licenses --policy                # Show only policy violations
+kirograph licenses --deny "GPL-*,AGPL-3.0" # Override deny list (comma-separated SPDX patterns)
+kirograph licenses --warn "LGPL-*"         # Override warn list
+kirograph licenses --format json</code></pre>
+
+    <pre><code>kirograph staleness [path]                 # Check freshness against registries
+kirograph staleness --threshold 0.5        # Only show staleness_score &gt;= 0.5
+kirograph staleness --refresh              # Re-query registries first
+kirograph staleness --format json</code></pre>
+    <p>Staleness score 0.0–1.0: <code>0</code> = current, <code>1</code> = very stale. Supports npm, PyPI, crates.io, RubyGems, Packagist.</p>
+
+    <pre><code>kirograph sbom [path]                      # Export CycloneDX 1.5 SBOM to stdout
+kirograph sbom --output sbom.json          # Export to file</code></pre>
+
+    <pre><code>kirograph vex [path]                       # Export CycloneDX 1.5 VEX to stdout
+kirograph vex --output vex.json            # Export to file</code></pre>
+    <p>Requires <code>enableSecurity: true</code> in <code>.kirograph/config.json</code>.</p>
+
   </main>
 
   <!-- Right sidebar TOC -->
@@ -235,6 +352,10 @@ kirograph mem import &lt;file.jsonl&gt;         # restore from JSONL backup (ded
       <a href="#cli-snapshots" class="sidebar-link">Snapshots &amp; Diff</a>
       <a href="#cli-export" class="sidebar-link">Export Dashboard</a>
       <a href="#cli-memory" class="sidebar-link">Memory</a>
+      <a href="#cli-dashboard" class="sidebar-link">Dashboard</a>
+      <a href="#cli-docs" class="sidebar-link">Documentation</a>
+      <a href="#cli-data" class="sidebar-link">Data</a>
+      <a href="#cli-security" class="sidebar-link">Security</a>
     </div>
   </aside>
 

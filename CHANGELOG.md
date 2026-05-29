@@ -50,6 +50,13 @@
 - **`kirograph install` UX**: Without `--target`, now prompts "Kiro only (recommended) vs Auto-detect all platforms" instead of immediately entering auto-detect flow.
 - **"Did you know?" tips**: Expanded from 8 to 37 tips covering all CLI commands — core graph, indexing, architecture, security (vulns/reachability/licenses/staleness/EPSS), memory, docs, data, export, shell compression, and workflow slash commands (`/kirograph-security`, `/kirograph-review`, etc.).
 - **3 new config fields**: `enableSecurity`, `securityDatabases`, `securityAutoEnrich`, `securityLicensePolicy`.
+- **Jupyter notebook support** (`.ipynb`): code cells extracted as Python, line numbers remapped to notebook coordinate space. All existing Python symbol kinds (functions, classes, imports, calls) work on notebook code.
+- **Flutter full support**:
+  - **Architecture layer detection** (`src/architecture/layers/dart.ts`): `screens/pages/views/widgets` → `ui`, `services/providers/blocs/cubits` → `service`, `repositories/data/models/domain` → `data`, `core/utils/helpers/extensions` → `shared`, `routes/navigation` + `main.dart` → `api`.
+  - **Widget classification**: `StatelessWidget`, `StatefulWidget`, `HookWidget`, `ConsumerWidget`, `ConsumerStatefulWidget` subclasses → kind `component`.
+  - **Flutter framework resolver** (`src/frameworks/flutter.ts`): route extraction from `MaterialApp(routes: {...})`, `GoRouter`, and `@RoutePage()` AutoRoute annotations.
+  - **Flutter Method Channel bridge** (`src/resolution/bridges/flutter-channel.ts`): Dart `invokeMethod('name')` → Kotlin/Java/Swift `setMethodCallHandler`. Channel name string is the linking key. `MethodChannel` call→handler: `calls` at 0.7; `EventChannel` stream→handler: `references` at 0.65.
+- **Android/Kotlin React Native bridge** (`src/resolution/bridges/android-rn.ts`): `@ReactMethod` → JS `NativeModules.Module.method()` call edges, `NativeEventEmitter` binding edges, `@ReactProp` setter → JSX attribute usage edges.
 
 ### Fixed
 
@@ -72,6 +79,8 @@
 - `SteeringOptions` extended with `enableArchitecture`, `enableDocs`, `enableData`, `enableSecurity` — all are now properly conditional in both Kiro steering and non-Kiro agent instructions.
 - Build script copies `security-schema.sql` to dist.
 - `KIROGRAPH_TOOL_NAMES` updated with 8 new security tools.
+- **Community detection: Louvain → Leiden**: refinement phase added after local move — guarantees all communities are internally well-connected. Public API unchanged; `CommunityResult` gains `algorithm: 'leiden'`.
+- Bridge resolver count: 6 → 8 (added `android-rn-bridge`, `flutter-channel-bridge`).
 
 ---
 

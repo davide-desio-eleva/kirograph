@@ -41,6 +41,7 @@ export { dockerComposeResolver } from './docker';
 export { ansibleResolver } from './ansible';
 export { angularResolver } from './angular';
 export { amplifyResolver } from './amplify';
+export { flutterResolver } from './flutter';
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,7 @@ import { dockerComposeResolver } from './docker';
 import { ansibleResolver } from './ansible';
 import { angularResolver } from './angular';
 import { amplifyResolver } from './amplify';
+import { flutterResolver } from './flutter';
 
 const FRAMEWORK_RESOLVERS: FrameworkResolver[] = [
   // PHP
@@ -118,6 +120,8 @@ const FRAMEWORK_RESOLVERS: FrameworkResolver[] = [
   dockerComposeResolver,
   // Configuration Management
   ansibleResolver,
+  // Dart / Flutter
+  flutterResolver,
 ];
 
 export function getAllFrameworkResolvers(): FrameworkResolver[] {

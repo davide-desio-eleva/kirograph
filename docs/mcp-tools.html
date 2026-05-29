@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KiroGraph: MCP Tools Reference</title>
-  <meta name="description" content="Full reference for all 37 KiroGraph MCP tools: parameters, types, defaults, and descriptions.">
+  <meta name="description" content="Full reference for all 45 KiroGraph MCP tools: parameters, types, defaults, and descriptions.">
   <link rel="stylesheet" href="style.css">
   <link rel="icon" href="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png">
 </head>
@@ -52,7 +52,7 @@
     </nav>
 
     <h2 id="mcp-tools" style="border-top: none; margin-top: 0; padding-top: 0;">MCP Tools</h2>
-    <p>All 20 tools are auto-approved and available to Kiro once installed. The MCP server is started by Kiro automatically when needed.</p>
+    <p>All <strong>45</strong> tools are auto-approved and available to Kiro once installed. The MCP server is started by Kiro automatically when needed.</p>
 
     <div class="search-box" style="margin-bottom: 1.5rem;">
       <input type="text" id="tool-search-input" placeholder="Search tools..." aria-label="Search tools" style="width: 100%; padding: 0.6rem 1rem; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text); font-size: 0.95rem; outline: none;" />
@@ -258,6 +258,8 @@
         <table>
           <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
           <tbody>
+            <tr><td><code>level</code></td><td>string</td><td><code>both</code></td><td><code>packages</code>, <code>layers</code>, or <code>both</code></td></tr>
+            <tr><td><code>includeFiles</code></td><td>boolean</td><td>false</td><td>Include per-file package/layer assignments</td></tr>
             <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
           </tbody>
         </table>
@@ -272,7 +274,8 @@
         <table>
           <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>packageId</code></td><td>string</td><td>-</td><td>Package ID (e.g. <code>pkg:npm:src/auth</code>). Omit for all packages.</td></tr>
+            <tr><td><code>sortBy</code></td><td>string</td><td><code>instability</code></td><td>Sort: <code>instability</code>, <code>afferent</code>, <code>efferent</code></td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results</td></tr>
             <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
           </tbody>
         </table>
@@ -287,7 +290,8 @@
         <table>
           <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>packageId</code></td><td>string</td><td><em>required</em></td><td>Package ID (e.g. <code>pkg:npm:src/auth</code>)</td></tr>
+            <tr><td><code>package</code></td><td>string</td><td><em>required</em></td><td>Package name or path (partial match accepted)</td></tr>
+            <tr><td><code>includeFiles</code></td><td>boolean</td><td>true</td><td>List files in the package</td></tr>
             <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
           </tbody>
         </table>
@@ -654,6 +658,134 @@
       </div>
     </div>
 
+    <!-- ── Security Tools ── -->
+    <h2 id="security-tools" style="margin-top: 3rem;">Security Tools <span class="badge badge-orange">enableSecurity</span></h2>
+
+    <!-- kirograph_security -->
+    <div class="tool-card" id="tool-security">
+      <h3>kirograph_security <span class="badge badge-orange">enableSecurity</span></h3>
+      <p class="tool-desc">Security overview: total dependencies, vulnerability counts, verdict breakdown (affected/not_affected/under_investigation), and stale data warnings.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_vulns -->
+    <div class="tool-card" id="tool-vulns">
+      <h3>kirograph_vulns <span class="badge badge-orange">enableSecurity</span></h3>
+      <p class="tool-desc">List vulnerabilities with filtering by severity and reachability verdict. Includes fix suggestions when a fixed version is available.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>severity</code></td><td>string</td><td>-</td><td>Filter: <code>critical</code>, <code>high</code>, <code>medium</code>, <code>low</code></td></tr>
+            <tr><td><code>verdict</code></td><td>string</td><td>-</td><td>Filter: <code>affected</code>, <code>not_affected</code>, <code>under_investigation</code></td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results</td></tr>
+            <tr><td><code>refresh</code></td><td>boolean</td><td>false</td><td>Trigger fresh enrichment from configured databases before listing</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_reachability -->
+    <div class="tool-card" id="tool-reachability">
+      <h3>kirograph_reachability <span class="badge badge-orange">enableSecurity</span></h3>
+      <p class="tool-desc">Analyze reachability for a specific CVE or dependency. Returns call paths, entry points, and affected layers.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>target</code></td><td>string</td><td><em>required</em></td><td>CVE identifier (e.g. <code>CVE-2024-1234</code>) or package name (e.g. <code>lodash</code>)</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_licenses -->
+    <div class="tool-card" id="tool-licenses">
+      <h3>kirograph_licenses <span class="badge badge-orange">enableSecurity</span></h3>
+      <p class="tool-desc">List dependency licenses and check against the configured policy (<code>securityLicensePolicy</code>).</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>policy</code></td><td>boolean</td><td>false</td><td>Show only policy violations (deny/warn)</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_staleness -->
+    <div class="tool-card" id="tool-staleness">
+      <h3>kirograph_staleness <span class="badge badge-orange">enableSecurity</span></h3>
+      <p class="tool-desc">Check dependency freshness — identifies packages significantly behind their latest published version. Supports npm, PyPI, crates.io, RubyGems, and Packagist registries.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>threshold</code></td><td>number</td><td>0.3</td><td>Minimum staleness score (0.0–1.0) to include</td></tr>
+            <tr><td><code>refresh</code></td><td>boolean</td><td>false</td><td>Re-query registries before listing</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_sbom -->
+    <div class="tool-card" id="tool-sbom">
+      <h3>kirograph_sbom <span class="badge badge-orange">enableSecurity</span></h3>
+      <p class="tool-desc">Generate a CycloneDX 1.5 SBOM JSON document containing all project dependencies as components with purl identifiers, scope classification, and dependency relationships.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_vex -->
+    <div class="tool-card" id="tool-vex">
+      <h3>kirograph_vex <span class="badge badge-orange">enableSecurity</span></h3>
+      <p class="tool-desc">Generate a CycloneDX 1.5 VEX JSON document with reachability-derived analysis states. Maps graph verdicts to CycloneDX VEX states.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_vuln_add -->
+    <div class="tool-card" id="tool-vuln-add">
+      <h3>kirograph_vuln_add <span class="badge badge-orange">enableSecurity</span></h3>
+      <p class="tool-desc">Manually register a CVE against a dependency. Useful for private/internal advisories not in public databases.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>cveId</code></td><td>string</td><td><em>required</em></td><td>CVE identifier (e.g. <code>CVE-2024-9999</code>)</td></tr>
+            <tr><td><code>package</code></td><td>string</td><td><em>required</em></td><td>Package name (must match an existing indexed dependency)</td></tr>
+            <tr><td><code>severity</code></td><td>number</td><td>-</td><td>CVSS v3.1 base score (0.0–10.0)</td></tr>
+            <tr><td><code>summary</code></td><td>string</td><td>-</td><td>Human-readable description (truncated to 500 chars)</td></tr>
+            <tr><td><code>fixedVersion</code></td><td>string</td><td>-</td><td>Version that fixes the vulnerability</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </main>
 
   <!-- Right sidebar TOC -->
@@ -697,6 +829,15 @@
       <a href="#tool-data-join" class="sidebar-link">kirograph_data_join</a>
       <a href="#tool-data-correlations" class="sidebar-link">kirograph_data_correlations</a>
       <a href="#tool-data-quality" class="sidebar-link">kirograph_data_quality</a>
+      <a href="#security-tools" class="sidebar-link">— Security Tools —</a>
+      <a href="#tool-security" class="sidebar-link">kirograph_security</a>
+      <a href="#tool-vulns" class="sidebar-link">kirograph_vulns</a>
+      <a href="#tool-reachability" class="sidebar-link">kirograph_reachability</a>
+      <a href="#tool-licenses" class="sidebar-link">kirograph_licenses</a>
+      <a href="#tool-staleness" class="sidebar-link">kirograph_staleness</a>
+      <a href="#tool-sbom" class="sidebar-link">kirograph_sbom</a>
+      <a href="#tool-vex" class="sidebar-link">kirograph_vex</a>
+      <a href="#tool-vuln-add" class="sidebar-link">kirograph_vuln_add</a>
     </div>
   </aside>
 

@@ -60,6 +60,8 @@ export const GRAMMAR_FILE_MAP: Record<Language, string> = {
   pascal: 'tree-sitter-pascal',
   // No WASM available
   liquid: '',
+  // Jupyter notebooks are parsed via the notebook extractor (Python grammar on extracted code cells)
+  jupyter: '',
   unknown: '',
 };
 

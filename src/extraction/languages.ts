@@ -65,6 +65,7 @@ export const EXTENSION_MAP: Record<string, Language> = {
   '.sass': 'scss',
   '.html': 'html',
   '.htm': 'html',
+  '.ipynb': 'jupyter',
 };
 
 export const GRAMMAR_MAP: Record<Language, string> = {
@@ -103,6 +104,8 @@ export const GRAMMAR_MAP: Record<Language, string> = {
   // Pascal and Liquid require custom WASM not bundled in tree-sitter-wasms
   pascal: '',
   liquid: '',
+  // Jupyter notebooks are parsed via the notebook extractor (Python grammar on extracted code cells)
+  jupyter: '',
   unknown: '',
 };
 

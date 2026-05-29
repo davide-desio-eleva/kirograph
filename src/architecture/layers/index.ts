@@ -17,6 +17,7 @@ import { scalaLayerDetector } from './scala';
 import { vueLayerDetector } from './vue';
 import { solidityLayerDetector } from './solidity';
 import { ocamlLayerDetector } from './ocaml';
+import { dartLayerDetector } from './dart';
 
 const LAYER_DETECTORS: LayerDetector[] = [
   typescriptLayerDetector,
@@ -31,6 +32,7 @@ const LAYER_DETECTORS: LayerDetector[] = [
   vueLayerDetector,
   solidityLayerDetector,
   ocamlLayerDetector,
+  dartLayerDetector,
 ];
 
 export function getAllLayerDetectors(): LayerDetector[] {

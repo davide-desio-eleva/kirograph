@@ -1,10 +1,14 @@
 /**
- * Community Detection via Louvain Algorithm
+ * Community Detection via Leiden Algorithm
  *
  * Clusters related code into communities based on edge connectivity.
  * Oversized communities (>25% of graph) are recursively split with higher resolution.
  *
- * Inspired by code-review-graph's Leiden-based community detection.
+ * Leiden improves on Louvain by adding a refinement phase between the local-move phase
+ * and the aggregation phase. The refinement sub-partitions each community into
+ * well-connected sub-communities, guaranteeing that every community in the final
+ * partition is internally connected. This prevents the "disconnected community"
+ * artefact that Louvain is known to produce.
  */
 
 import type { GraphDatabase } from '../db/database';
@@ -24,6 +28,8 @@ export interface CommunityResult {
   modularity: number;
   totalNodes: number;
   totalEdges: number;
+  /** Algorithm used to detect communities. */
+  algorithm: 'leiden';
 }
 
 interface LouvainNode {
@@ -72,10 +78,13 @@ function buildAdjacency(db: GraphDatabase): { nodes: Map<string, LouvainNode>; a
 }
 
 /**
- * Louvain community detection algorithm (Phase 1: local moving).
- * Assigns each node to the community that maximizes modularity gain.
+ * Leiden/Louvain Phase 1 — local moving.
+ *
+ * For each node, try moving it to the neighbouring community that yields the
+ * largest positive modularity gain. Repeats until no improvement is found or
+ * `maxIterations` is reached.
  */
-function louvainPhase1(
+function localMovePhase(
   nodes: Map<string, LouvainNode>,
   adj: Map<string, Map<string, number>>,
   totalWeight: number,
@@ -103,7 +112,7 @@ function louvainPhase1(
       const currentCommunity = node.community;
       const ki = node.degree;
 
-      // Calculate edges to each neighboring community
+      // Calculate edges to each neighbouring community
       const neighborCommunities = new Map<number, number>();
       const neighbors = adj.get(node.id);
       if (!neighbors) continue;
@@ -156,6 +165,158 @@ function louvainPhase1(
 }
 
 /**
+ * Leiden Phase 2 — refinement.
+ *
+ * For each community produced by the local-move phase, attempt to split it into
+ * smaller, well-connected sub-communities. This prevents the disconnected-community
+ * artefact that plain Louvain can produce.
+ *
+ * The procedure:
+ *   1. Collect the nodes that belong to community C.
+ *   2. Start with every node in its own singleton sub-community.
+ *   3. For each node, consider merging its singleton into an adjacent
+ *      sub-community (within C) if the merge yields a positive modularity gain
+ *      AND the resulting sub-community remains well-connected (internal edges ≥
+ *      a connectivity threshold derived from the sub-community's total degree).
+ *   4. Write the refined sub-community ids back into a new partition map.
+ *
+ * Returns a map from original node id → refined community id.
+ */
+function refinementPhase(
+  nodes: Map<string, LouvainNode>,
+  adj: Map<string, Map<string, number>>,
+  totalWeight: number,
+  resolution: number = 1.0,
+): Map<string, number> {
+  // Group nodes by their current (post-local-move) community
+  const communityGroups = new Map<number, string[]>();
+  for (const node of nodes.values()) {
+    if (!communityGroups.has(node.community)) communityGroups.set(node.community, []);
+    communityGroups.get(node.community)!.push(node.id);
+  }
+
+  const m2 = 2 * totalWeight;
+  // Output: node id → refined community id
+  const refined = new Map<string, number>();
+
+  // Use a globally incrementing id so refined sub-communities never collide
+  let nextSubId = 0;
+  // Initialise: reserve unique ids based on current community ids to avoid
+  // collisions even before we start assigning new ones
+  for (const cId of communityGroups.keys()) {
+    if (cId >= nextSubId) nextSubId = cId + 1;
+  }
+
+  for (const [, members] of communityGroups) {
+    if (members.length === 1) {
+      // Singleton community — nothing to refine
+      refined.set(members[0], nextSubId++);
+      continue;
+    }
+
+    const memberSet = new Set(members);
+
+    // Phase 2a: start with each node in its own singleton sub-community
+    const subCommunity = new Map<string, number>(); // node id → sub-community id
+    const subCommunityNodes = new Map<number, Set<string>>(); // sub-community id → node ids
+    // Internal edge weight for each sub-community
+    const subInternalEdges = new Map<number, number>();
+    // Total degree for each sub-community (within the full graph, not just sub-graph)
+    const subDegree = new Map<number, number>();
+
+    for (const mId of members) {
+      const sid = nextSubId++;
+      subCommunity.set(mId, sid);
+      subCommunityNodes.set(sid, new Set([mId]));
+      subInternalEdges.set(sid, 0);
+      subDegree.set(sid, nodes.get(mId)!.degree);
+    }
+
+    // Phase 2b: iteratively merge singletons into well-connected sub-communities
+    // We only allow merging a node if it is currently a singleton (size 1)
+    // — this keeps the procedure efficient and follows the Leiden paper's spirit.
+    let mergedAny = true;
+    let subIterations = 0;
+    const maxSubIterations = 10;
+
+    while (mergedAny && subIterations < maxSubIterations) {
+      mergedAny = false;
+      subIterations++;
+
+      for (const mId of members) {
+        const currentSid = subCommunity.get(mId)!;
+        // Only try to move nodes that are still singletons
+        if (subCommunityNodes.get(currentSid)!.size !== 1) continue;
+
+        const ki = nodes.get(mId)!.degree;
+        const neighbors = adj.get(mId);
+        if (!neighbors) continue;
+
+        // Count edges from this node to each sub-community (within the same community C)
+        const edgesToSub = new Map<number, number>();
+        for (const [nId, w] of neighbors) {
+          if (!memberSet.has(nId)) continue;
+          const nSid = subCommunity.get(nId)!;
+          if (nSid === currentSid) continue;
+          edgesToSub.set(nSid, (edgesToSub.get(nSid) ?? 0) + w);
+        }
+
+        if (edgesToSub.size === 0) continue;
+
+        let bestSid = currentSid;
+        let bestGain = 0;
+
+        for (const [candidateSid, edgesToCandidate] of edgesToSub) {
+          const sigmaCandidate = subDegree.get(candidateSid) ?? 0;
+
+          // Modularity gain of merging this singleton into candidateSid
+          const gain = resolution * edgesToCandidate / m2
+            - resolution * ki * sigmaCandidate / (m2 * m2) * 2;
+
+          if (gain <= bestGain) continue;
+
+          // Well-connectedness check:
+          // After the merge the sub-community's internal edges would be
+          // (current internal edges of candidate) + (edges from mId to candidate).
+          // The threshold is:  internalEdges >= γ * (degree_sum * (degree_sum - ki)) / (2m)
+          // We use a relaxed form: internal edges must be positive (at least one edge
+          // into the sub-community), which is already guaranteed by edgesToCandidate > 0.
+          // Additionally enforce that the density ratio doesn't drop below a floor.
+          const newInternalEdges = (subInternalEdges.get(candidateSid) ?? 0) + edgesToCandidate;
+          const newDegreeSum = sigmaCandidate + ki;
+          // Connectivity threshold: internal edge weight >= resolution * newDegreeSum / (2m)
+          const threshold = resolution * newDegreeSum / m2;
+          if (newInternalEdges < threshold) continue;
+
+          bestGain = gain;
+          bestSid = candidateSid;
+        }
+
+        if (bestSid !== currentSid) {
+          // Perform the merge
+          subCommunityNodes.get(currentSid)!.delete(mId);
+          subCommunityNodes.get(bestSid)!.add(mId);
+          subCommunity.set(mId, bestSid);
+
+          const edgesAdded = edgesToSub.get(bestSid) ?? 0;
+          subInternalEdges.set(bestSid, (subInternalEdges.get(bestSid) ?? 0) + edgesAdded);
+          subDegree.set(bestSid, (subDegree.get(bestSid) ?? 0) + ki);
+
+          mergedAny = true;
+        }
+      }
+    }
+
+    // Write refined assignments into the output map
+    for (const mId of members) {
+      refined.set(mId, subCommunity.get(mId)!);
+    }
+  }
+
+  return refined;
+}
+
+/**
  * Calculate modularity of the current partition.
  */
 function calculateModularity(
@@ -186,7 +347,7 @@ function calculateModularity(
 }
 
 /**
- * Run community detection on the graph.
+ * Run community detection on the graph using the Leiden algorithm.
  */
 export function detectCommunities(db: GraphDatabase, opts?: { resolution?: number; maxCommunityPct?: number }): CommunityResult {
   const resolution = opts?.resolution ?? 1.0;
@@ -195,7 +356,7 @@ export function detectCommunities(db: GraphDatabase, opts?: { resolution?: numbe
   const { nodes, adj, totalWeight } = buildAdjacency(db);
 
   if (nodes.size === 0) {
-    return { communities: [], modularity: 0, totalNodes: 0, totalEdges: 0 };
+    return { communities: [], modularity: 0, totalNodes: 0, totalEdges: 0, algorithm: 'leiden' };
   }
 
   // Initialize: each node in its own community
@@ -204,8 +365,16 @@ export function detectCommunities(db: GraphDatabase, opts?: { resolution?: numbe
     node.community = communityId++;
   }
 
-  // Run Louvain Phase 1
-  louvainPhase1(nodes, adj, totalWeight, resolution);
+  // --- Leiden: local-move phase ---
+  localMovePhase(nodes, adj, totalWeight, resolution);
+
+  // --- Leiden: refinement phase ---
+  // Sub-partition each community into well-connected sub-communities, then apply
+  // the refined assignments back to the nodes map before aggregation.
+  const refinedPartition = refinementPhase(nodes, adj, totalWeight, resolution);
+  for (const [nodeId, refinedCommunityId] of refinedPartition) {
+    nodes.get(nodeId)!.community = refinedCommunityId;
+  }
 
   // Auto-split oversized communities
   const communityMembers = new Map<number, string[]>();
@@ -241,7 +410,12 @@ export function detectCommunities(db: GraphDatabase, opts?: { resolution?: numbe
         }
       }
 
-      louvainPhase1(subNodes, subAdj, subWeight / 2, resolution * 2);
+      // Leiden on the sub-graph: local move + refinement
+      localMovePhase(subNodes, subAdj, subWeight / 2, resolution * 2);
+      const subRefined = refinementPhase(subNodes, subAdj, subWeight / 2, resolution * 2);
+      for (const [mId, rId] of subRefined) {
+        subNodes.get(mId)!.community = rId;
+      }
 
       // Apply sub-community assignments back
       for (const [mId, subNode] of subNodes) {
@@ -326,5 +500,6 @@ export function detectCommunities(db: GraphDatabase, opts?: { resolution?: numbe
     modularity,
     totalNodes: nodes.size,
     totalEdges: totalWeight,
+    algorithm: 'leiden',
   };
 }

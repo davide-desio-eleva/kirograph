@@ -42,11 +42,11 @@ A comparison of KiroGraph with the open-source projects that inspired it or oper
 | Byte-level precision retrieval | — | — | — | ✅ | ✅ | — | — | — | — | — |
 | Trace (path between symbols) | ✅ | ✅ | — | — | — | — | — | — | — | — |
 | Execution flow tracing | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Community/cluster detection | ✅ (Louvain) | — | ✅ (Leiden) | — | — | — | — | — | — | — |
+| Community/cluster detection | ✅ (Leiden) | — | ✅ (Leiden) | — | — | — | — | — | — | — |
 | Edge confidence scoring | ✅ | — | ✅ | — | — | — | — | — | — | — |
 | Graph diff (snapshots) | ✅ | — | ✅ | — | — | — | — | — | — | — |
 | Framework-aware routes | ✅ (14+ frameworks) | ✅ (14 frameworks) | — | — | — | — | — | — | — | — |
-| Mixed iOS/RN bridging | ✅ | ✅ | — | — | — | — | — | — | — | — |
+| Mixed iOS/RN/Android bridging | ✅ (incl. Android/Kotlin) | ✅ | — | — | — | — | — | — | — | — |
 | Dynamic reindexing | — | — | — | ✅ | — | — | — | — | — | — |
 | File read caching | ✅ | — | — | — | — | — | — | — | — | ✅ |
 | Context budget governance | ✅ | — | — | — | — | — | — | — | — | ✅ |
@@ -153,7 +153,7 @@ A comparison of KiroGraph with the open-source projects that inspired it or oper
 | Languages supported | 24+ | 22 | 30+ | 20+ | N/A | N/A | N/A | N/A | N/A | N/A |
 | Framework detection | ✅ (26 frameworks) | ✅ (14 frameworks) | — | — | — | — | — | — | — | — |
 | Framework-aware route extraction | ✅ (14+ frameworks) | ✅ (14 frameworks) | — | — | — | — | — | — | — | — |
-| Jupyter notebook support | — | — | ✅ | — | — | — | — | — | — | — |
+| Jupyter notebook support | ✅ | — | ✅ | — | — | — | — | — | — | — |
 
 ---
 
@@ -248,9 +248,9 @@ The [jCodeMunch-MCP](https://github.com/jgravelle/jcodemunch-mcp) family (jCodeM
 | Documentation cross-references to code | ✅ | — | — |
 | Tabular data querying via MCP | ✅ | — | — |
 | Framework-aware route extraction (14+ frameworks) | ✅ | ✅ | — |
-| Community detection | ✅ (Louvain) | — | ✅ (Leiden) |
+| Community detection | ✅ (Leiden) | — | ✅ (Leiden) |
 | Execution flow tracing | ✅ | — | ✅ |
 | Refactoring tools (rename + suggest) | ✅ | — | ✅ |
-| Mixed iOS/RN/Expo cross-language bridging | — | ✅ | — |
+| Mixed iOS/RN/Expo/Android cross-language bridging | ✅ | ✅ | — |
 | Multi-repo daemon with health checks | — | — | ✅ |
 | Self-contained binary (no Node.js required) | — | ✅ | — |

@@ -884,6 +884,8 @@ kirograph install --target cursor      # Install for a specific platform only</c
     <!-- ── Memory ── -->
     <h2 id="memory">Memory (opt-in)</h2>
 
+    <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/mem.png" alt="KiroGraph Memory" style="border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 1.5rem; max-width: 100%;">
+
     <p>When <code>enableMemory: true</code> is set in <code>.kirograph/config.json</code>, KiroGraph stores persistent observations across sessions. Decisions, errors, patterns, and architecture notes are captured with <strong>zero LLM tokens on write</strong> (compression is deterministic, symbol linking is programmatic, embedding uses the local model) and minimal tokens on read. Inspired by <a href="https://github.com/JuliusBrussee/cavemem" target="_blank" rel="noopener">cavemem</a> by <a href="https://www.linkedin.com/in/julius-brussee/" target="_blank" rel="noopener">Julius Brussee</a>.</p>
 
     <h3>How it works</h3>
@@ -1148,6 +1150,8 @@ kirograph docs reembed                      # re-embed with current model</code>
 
     <!-- ── Security ── -->
     <h2 id="security">Security</h2>
+
+    <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/sec.png" alt="KiroGraph Security" style="border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 1.5rem; max-width: 100%;">
 
     <p>When <code>enableSecurity: true</code>, KiroGraph scans dependency manifests for known vulnerabilities and performs reachability analysis to determine if vulnerable code is actually reachable from entry points.</p>
 

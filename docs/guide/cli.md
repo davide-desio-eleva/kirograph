@@ -248,6 +248,8 @@ kirograph coupling --format json           # JSON output
 
 ## Security *(requires `enableSecurity: true`)*
 
+![KiroGraph Security](https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/sec.png)
+
 ### Security Overview
 
 ```bash
@@ -324,6 +326,8 @@ kirograph staleness --format json
 Staleness score 0.0–1.0: `0` = current, `1` = very stale. Supports npm, PyPI, crates.io, RubyGems, Packagist.
 
 ## Memory *(requires `enableMemory: true`)*
+
+![KiroGraph Memory](https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/mem.png)
 
 ```bash
 # Search

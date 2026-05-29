@@ -42,6 +42,8 @@ import { turboModulesBridge } from './turbomodules';
 import { expoModulesBridge } from './expo-modules';
 import { nativeEventsBridge } from './native-events';
 import { nativeViewsBridge } from './native-views';
+import { androidRnBridge } from './android-rn';
+import { flutterChannelBridge } from './flutter-channel';
 
 const ALL_BRIDGES: BridgeResolver[] = [
   swiftObjcBridge,
@@ -50,6 +52,8 @@ const ALL_BRIDGES: BridgeResolver[] = [
   expoModulesBridge,
   nativeEventsBridge,
   nativeViewsBridge,
+  androidRnBridge,
+  flutterChannelBridge,
 ];
 
 // ── Public API ────────────────────────────────────────────────────────────────

@@ -20,6 +20,7 @@ export type Language =
   | 'dart' | 'svelte' | 'pascal' | 'liquid' | 'elixir'
   | 'scala' | 'lua' | 'zig' | 'bash' | 'ocaml' | 'elm' | 'solidity' | 'vue' | 'objc'
   | 'yaml' | 'hcl' | 'css' | 'scss' | 'html'
+  | 'jupyter'
   | 'unknown';
 
 export interface Node {

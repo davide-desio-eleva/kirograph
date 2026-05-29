@@ -10,6 +10,7 @@ import * as crypto from 'crypto';
 import type { Node, Edge, NodeKind, Language } from '../types';
 import { detectLanguage, isSupportedLanguage } from './languages';
 import { initGrammars, getParser, hasWasmGrammar } from './grammars';
+import { extractNotebook } from './notebook';
 
 export interface UnresolvedRef {
   sourceId: string;
@@ -67,6 +68,11 @@ export async function extractFile(filePath: string, projectRoot: string, content
     }
   } catch {
     return null;
+  }
+
+  // Delegate Jupyter notebooks to the dedicated notebook extractor
+  if (language === 'jupyter') {
+    return extractNotebook(filePath, projectRoot, source);
   }
 
   const contentHash = crypto.createHash('sha256').update(source).digest('hex');
@@ -288,6 +294,50 @@ function extractVariableKind(node: any): NodeKind {
   return 'variable';
 }
 
+/**
+ * Widget superclass names that mark a Dart class as a UI component.
+ * `State<Foo>` subclasses are kept as 'class' — they are state holders, not widgets.
+ */
+const DART_WIDGET_SUPERCLASSES = new Set([
+  'StatelessWidget',
+  'StatefulWidget',
+  'HookWidget',
+  'ConsumerWidget',
+  'ConsumerStatefulWidget',
+]);
+
+/**
+ * Inspect a Dart class_definition node's superclass clause to decide if the
+ * class is a widget component or a plain class.
+ *
+ * Dart tree-sitter grammar: class_definition → superclass → type_identifier
+ * We look for any child/grandchild whose text is one of the known widget base classes.
+ */
+function refineDartClassKind(node: any, source: string): NodeKind {
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+    if (child.type === 'superclass') {
+      // Walk all descendants of the superclass clause looking for a type_identifier
+      const superText = source.slice(child.startIndex, child.endIndex);
+      // Quick string check first for performance
+      if (DART_WIDGET_SUPERCLASSES.has(superText.replace(/^extends\s+/, '').trim())) {
+        return 'component';
+      }
+      // Drill into children to find the exact type_identifier
+      for (let j = 0; j < child.childCount; j++) {
+        const typeNode = child.child(j);
+        if (typeNode.type === 'type_identifier' || typeNode.type === 'identifier') {
+          const name = source.slice(typeNode.startIndex, typeNode.endIndex).trim();
+          if (DART_WIDGET_SUPERCLASSES.has(name)) return 'component';
+          // Also match any name that ends with "Widget" (catches custom base widgets)
+          if (name.endsWith('Widget') && name !== 'State') return 'component';
+        }
+      }
+    }
+  }
+  return 'class';
+}
+
 /** Languages/node-types that represent import statements */
 const IMPORT_NODE_TYPES = new Set([
   'import_statement',         // TS/JS
@@ -344,6 +394,11 @@ function walkTree(
 
   // Python/Go/Rust/Java/C# variable and constant types
   if (!kind) kind = getLanguageSpecificKind(node.type, language);
+
+  // Dart: refine class_definition kind based on superclass (Widget → component)
+  if (language === 'dart' && node.type === 'class_definition' && kind === 'class') {
+    kind = refineDartClassKind(node, source);
+  }
 
   if (kind) {
     const name = extractName(node, source, language, kind);
