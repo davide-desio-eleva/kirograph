@@ -59,6 +59,7 @@
       <a href="#languages" class="sidebar-link">Languages</a>
       <a href="#frameworks" class="sidebar-link">Frameworks</a>
       <a href="#using-with-kiro" class="sidebar-link">Using with Kiro</a>
+      <a href="#workflow-steering" class="sidebar-link" style="padding-left:1.5rem;">↳ Workflow Files</a>
       <a href="#other-tools" class="sidebar-link">Other Tools (Experimental)</a>
       <a href="#configuration" class="sidebar-link">Configuration</a>
     </div>
@@ -673,7 +674,34 @@ kirograph install --target kiro   # install for a specific platform only</code><
 /agent swap kirograph</code></pre>
 
     <h3 id="steering-file">Steering File (<code>.kiro/steering/kirograph.md</code>)</h3>
-    <p>Teaches the Kiro IDE to prefer graph tools over file scanning when <code>.kirograph/</code> exists. Uses <code>inclusion: always</code> so it's in context on every turn. The CLI agent has the same instructions inlined in its <code>prompt</code> field.</p>
+    <p>Always-active (<code>inclusion: always</code>). Teaches the Kiro IDE to prefer graph tools over file scanning. Includes a quick decision guide and — when enabled — dedicated sections for memory, documentation, data, and security tools. The CLI agent has the same instructions inlined in its <code>prompt</code> field.</p>
+
+    <h3 id="workflow-steering">Workflow Steering Files (<code>inclusion: manual</code>)</h3>
+    <p>KiroGraph installs 5–6 task-specific steering files alongside the main one. These use <code>inclusion: manual</code> — they are <strong>not</strong> always active. Kiro loads them on demand when you mention the workflow in your prompt, or when you explicitly invoke them.</p>
+
+    <h4>How to activate</h4>
+    <ul>
+      <li><strong>In Kiro IDE</strong>: type <code>/kirograph-security</code>, <code>/kirograph-review</code>, etc. in the chat. Kiro will load the file and follow its step-by-step instructions for that session.</li>
+      <li><strong>In Kiro CLI</strong>: mention the workflow by name (<em>"do a security audit"</em>, <em>"review this PR with KiroGraph"</em>) — the agent picks up the steering file automatically.</li>
+      <li><strong>In other agents</strong>: paste the file contents as context, or reference the path <code>.kiro/steering/kirograph-security.md</code> directly in your prompt.</li>
+    </ul>
+
+    <h4>Available workflow files</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>File</th><th>Invoke with</th><th>When to use</th></tr></thead>
+        <tbody>
+          <tr><td><code>kirograph-review.md</code></td><td><code>/kirograph-review</code></td><td>Structured code review — blast radius, test coverage, coupling analysis</td></tr>
+          <tr><td><code>kirograph-debug.md</code></td><td><code>/kirograph-debug</code></td><td>Systematic debugging — trace calls, check recent changes, find root cause</td></tr>
+          <tr><td><code>kirograph-architecture.md</code></td><td><code>/kirograph-architecture</code></td><td>Architecture exploration — packages, layers, coupling metrics, cycles</td></tr>
+          <tr><td><code>kirograph-onboard.md</code></td><td><code>/kirograph-onboard</code></td><td>Onboarding a new codebase — structure, entry points, key symbols</td></tr>
+          <tr><td><code>kirograph-refactor.md</code></td><td><code>/kirograph-refactor</code></td><td>Safe refactoring — blast radius, rename preview, verify changes</td></tr>
+          <tr><td><code>kirograph-security.md</code></td><td><code>/kirograph-security</code></td><td>Security audit — CVE triage, EPSS prioritization, reachability deep-dive, license compliance, staleness check, SBOM/VEX export <em>(written only when <code>enableSecurity: true</code>)</em></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.75rem;">All workflow files follow the same structure: numbered steps with exact tool calls and parameters, an interpretation reference table, and tips. They are self-contained — no additional context needed.</p>
 
     <!-- ── Other Tools (Experimental) ── -->
     <h2 id="other-tools">Other Tools (Experimental)</h2>

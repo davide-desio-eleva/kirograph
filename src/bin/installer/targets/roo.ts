@@ -37,8 +37,8 @@ export function installRooEarly(projectRoot: string): void {
   console.log(`  ✓ Roo Code MCP server registered in ${mcpPath}`);
 }
 
-export function installRooLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean): void {
-  const opts = buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, undefined, enableDocs, enableData, enableSecurity);
+export function installRooLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean, enableArchitecture?: boolean): void {
+  const opts = buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, undefined, enableDocs, enableData, enableSecurity, enableArchitecture);
 
   const instructionsPath = path.join(projectRoot, '.kirograph', 'roo.md');
   ensureDir(path.dirname(instructionsPath));

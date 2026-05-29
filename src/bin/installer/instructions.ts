@@ -3,6 +3,7 @@ import { CAVEMAN_RULES, CavemanMode } from './caveman';
 export interface InstructionOptions {
   cavemanMode?: CavemanMode | 'off';
   shellCompressionLevel?: 'off' | 'normal' | 'aggressive' | 'ultra';
+  enableArchitecture?: boolean;
   enableMemory?: boolean;
   enableDocs?: boolean;
   enableData?: boolean;
@@ -46,6 +47,7 @@ export function buildAgentInstructions(cavemanModeOrOpts?: CavemanMode | 'off' |
   const cavemanMode = opts.cavemanMode;
   const enableCompression = opts.shellCompressionLevel && opts.shellCompressionLevel !== 'off';
   const shellCompressionLevel = opts.shellCompressionLevel ?? 'normal';
+  const enableArchitecture = opts.enableArchitecture ?? false;
   const enableMemory = opts.enableMemory ?? false;
   const enableDocs = opts.enableDocs ?? false;
   const enableData = opts.enableData ?? false;
@@ -74,9 +76,7 @@ KiroGraph builds a local semantic knowledge graph of this codebase. When the \`k
 | What are the most critical symbols? | \`kirograph_hotspots\` |
 | Any unexpected cross-module coupling? | \`kirograph_surprising\` |
 | What changed since the last snapshot? | \`kirograph_diff\` |
-| What packages/layers exist? | \`kirograph_architecture\` |
-| How coupled is package X? | \`kirograph_coupling\` |
-| What does package X depend on? | \`kirograph_package\` |
+${enableArchitecture ? '| What packages/layers exist? | `kirograph_architecture` |\n| How coupled is package X? | `kirograph_coupling` |\n| What does package X depend on? | `kirograph_package` |\n' : ''}
 ${enableCompression ? '| Run a command with token savings | `kirograph_exec` |\n| Check token savings stats | `kirograph_gain` |\n' : ''}${enableMemory ? '| Search past decisions/patterns | `kirograph_mem_search` |\n| Store an observation | `kirograph_mem_store` |\n' : ''}${enableDocs ? '| Find a doc section | `kirograph_docs_search` |\n| Get doc table of contents | `kirograph_docs_toc` |\n' : ''}${enableData ? '| What datasets are indexed? | `kirograph_data_list` |\n| Query rows with filters | `kirograph_data_query` |\n| Aggregate data server-side | `kirograph_data_aggregate` |\n' : ''}${enableSecurity ? '| Are there vulnerable dependencies? | `kirograph_security` |\n| Which CVEs affect my project? | `kirograph_vulns` |\n| Is this vulnerability reachable? | `kirograph_reachability` |\n| What licenses do my deps use? | `kirograph_licenses` |\n| Are dependencies outdated? | `kirograph_staleness` |\n' : ''}
 ## Tool selection
 
@@ -151,6 +151,22 @@ linked to code symbols in the graph and surface in \`kirograph_context\` and
 **When to store:** After fixing a bug, making an architecture decision, discovering a pattern,
 encountering a non-obvious error, or learning something about the codebase that future sessions
 should know. Keep observations concise — one fact per store call.
+`;
+  }
+
+  // Architecture section
+  if (enableArchitecture) {
+    content += `
+## Architecture
+
+KiroGraph analyzes the package structure and layer dependencies of the codebase.
+
+- \`kirograph_architecture\` — full package graph, detected layers (api/service/data/ui/shared), dependency edges
+- \`kirograph_coupling\` — Ca (afferent), Ce (efferent), instability per package; high Ca = load-bearing, high Ce = volatile
+- \`kirograph_package\` — drill into a single package: coupling metrics, deps, dependents, files
+
+Use \`kirograph_architecture\` for architectural questions instead of reading directory trees.
+High Ca + low instability = risky to change interface. High Ce + high instability = safe to refactor internals.
 `;
   }
 

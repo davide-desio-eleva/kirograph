@@ -42,8 +42,8 @@ export function installCopilotCliEarly(_projectRoot: string): void {
   console.log(`  ✓ Copilot CLI MCP server registered in ${mcpPath}`);
 }
 
-export function installCopilotCliLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean): void {
-  const opts = buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, undefined, enableDocs, enableData, enableSecurity);
+export function installCopilotCliLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean, enableArchitecture?: boolean): void {
+  const opts = buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, undefined, enableDocs, enableData, enableSecurity, enableArchitecture);
 
   const instructionsPath = path.join(projectRoot, '.kirograph', 'copilot-cli.md');
   ensureDir(path.dirname(instructionsPath));

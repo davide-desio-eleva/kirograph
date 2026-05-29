@@ -48,6 +48,7 @@ export async function runInstaller(target: InstallTarget = 'kiro'): Promise<void
     let enableDocs = false;
     let enableData = false;
     let enableSecurity = false;
+    let enableArchitecture = false;
     let shouldOfferIndex = false;
     let typesenseDashboard = false;
     let qdrantDashboard = false;
@@ -61,6 +62,7 @@ export async function runInstaller(target: InstallTarget = 'kiro'): Promise<void
         enableDocs = config.enableDocs ?? false;
         enableData = (config as any).enableData ?? false;
         enableSecurity = (config as any).enableSecurity ?? false;
+        enableArchitecture = config.enableArchitecture ?? false;
         console.log(`  ✓ Reusing existing KiroGraph data in ${cwd}/.kirograph/`);
         console.log(`  • semanticEngine: ${config.semanticEngine}`);
         console.log(`  • enableEmbeddings: ${config.enableEmbeddings}`);
@@ -81,6 +83,7 @@ export async function runInstaller(target: InstallTarget = 'kiro'): Promise<void
         enableDocs = patch.enableDocs ?? false;
         enableData = patch.enableData ?? false;
         enableSecurity = patch.enableSecurity ?? false;
+        enableArchitecture = patch.enableArchitecture ?? false;
         typesenseDashboard = patch.typesenseDashboard;
         qdrantDashboard = patch.qdrantDashboard;
 
@@ -181,7 +184,7 @@ export async function runInstaller(target: InstallTarget = 'kiro'): Promise<void
         }
       }
 
-      installer.installLate(cwd, cavemanMode, shellCompressionLevel, enableMemory, enableDocs, enableData, enableSecurity);
+      installer.installLate(cwd, cavemanMode, shellCompressionLevel, enableMemory, enableDocs, enableData, enableSecurity, enableArchitecture);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       console.error(`\n  ✗ Failed to write configuration: ${reason}`);

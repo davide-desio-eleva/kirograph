@@ -22,17 +22,17 @@ export function installTraeEarly(projectRoot: string): void {
     : `  ✓ Trae MCP already configured in ${mcpPath}`);
 }
 
-export function installTraeLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean): void {
+export function installTraeLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean, enableArchitecture?: boolean): void {
   const instructionsPath = path.join(projectRoot, '.kirograph', 'trae.md');
   ensureDir(path.dirname(instructionsPath));
-  fs.writeFileSync(instructionsPath, buildAgentInstructions(buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, undefined, enableDocs, enableData, enableSecurity)));
+  fs.writeFileSync(instructionsPath, buildAgentInstructions(buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, undefined, enableDocs, enableData, enableSecurity, enableArchitecture)));
   console.log(`  ✓ Trae instructions written to ${instructionsPath}`);
 
   const rulesDir = path.join(projectRoot, '.trae', 'rules');
   ensureDir(rulesDir);
   const rulePath = path.join(rulesDir, 'kirograph.md');
   const frontmatter = '---\nalwaysApply: true\n---\n\n';
-  fs.writeFileSync(rulePath, frontmatter + buildAgentInstructions(buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, undefined, enableDocs, enableData, enableSecurity)));
+  fs.writeFileSync(rulePath, frontmatter + buildAgentInstructions(buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, undefined, enableDocs, enableData, enableSecurity, enableArchitecture)));
   console.log(`  ✓ Trae rule written to ${rulePath}`);
 }
 

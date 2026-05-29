@@ -17,14 +17,14 @@ export function installAiderEarly(_projectRoot: string): void {
   // We print the setup command in next steps instead of writing outside the project.
 }
 
-export function installAiderLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean): void {
+export function installAiderLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean, enableArchitecture?: boolean): void {
   const instructionsPath = path.join(projectRoot, '.kirograph', 'aider.md');
   ensureDir(path.dirname(instructionsPath));
-  fs.writeFileSync(instructionsPath, buildAgentInstructions(buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, undefined, enableDocs, enableData, enableSecurity)));
+  fs.writeFileSync(instructionsPath, buildAgentInstructions(buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, undefined, enableDocs, enableData, enableSecurity, enableArchitecture)));
   console.log(`  ✓ Aider instructions written to ${instructionsPath}`);
 
   const conventionsPath = path.join(projectRoot, 'CONVENTIONS.md');
-  const changed = upsertGeneratedBlock(conventionsPath, AIDER_BLOCK_ID, '## KiroGraph', buildAgentInstructions(buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, undefined, enableDocs, enableData, enableSecurity)));
+  const changed = upsertGeneratedBlock(conventionsPath, AIDER_BLOCK_ID, '## KiroGraph', buildAgentInstructions(buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, undefined, enableDocs, enableData, enableSecurity, enableArchitecture)));
   console.log(changed
     ? `  ✓ CONVENTIONS.md updated with KiroGraph instructions`
     : `  ✓ CONVENTIONS.md already up to date`);

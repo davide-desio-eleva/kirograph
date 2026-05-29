@@ -51,8 +51,8 @@ export function installOpenCodeEarly(projectRoot: string): void {
   console.log(`  ✓ OpenCode MCP server registered in ${configPath}`);
 }
 
-export function installOpenCodeLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean): void {
-  const opts = buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, true, enableDocs, enableData, enableSecurity);
+export function installOpenCodeLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean, enableArchitecture?: boolean): void {
+  const opts = buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, true, enableDocs, enableData, enableSecurity, enableArchitecture);
 
   const instructionsPath = path.join(projectRoot, '.kirograph', 'opencode.md');
   ensureDir(path.dirname(instructionsPath));

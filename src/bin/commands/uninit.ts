@@ -60,11 +60,19 @@ function uninitKiro(projectRoot: string): void {
   }
   if (removedHooks > 0) console.log(`  ${green}✓${reset} Removed ${removedHooks} hook(s) from .kiro/hooks/`);
 
-  // Remove .kiro/steering/kirograph.md
-  const steeringPath = path.join(projectRoot, '.kiro', 'steering', 'kirograph.md');
-  if (fs.existsSync(steeringPath)) {
-    fs.unlinkSync(steeringPath);
-    console.log(`  ${green}✓${reset} Removed .kiro/steering/kirograph.md`);
+  // Remove .kiro/steering/kirograph*.md (main + all workflow files)
+  const steeringDir = path.join(projectRoot, '.kiro', 'steering');
+  let removedSteering = 0;
+  if (fs.existsSync(steeringDir)) {
+    for (const entry of fs.readdirSync(steeringDir)) {
+      if (entry.startsWith('kirograph') && entry.endsWith('.md')) {
+        fs.unlinkSync(path.join(steeringDir, entry));
+        removedSteering++;
+      }
+    }
+  }
+  if (removedSteering > 0) {
+    console.log(`  ${green}✓${reset} Removed ${removedSteering} steering file(s) from .kiro/steering/`);
   }
 
   // Remove .kiro/agents/kirograph.json

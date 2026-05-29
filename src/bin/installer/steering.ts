@@ -245,6 +245,32 @@ kirograph_package(package: "src/services", includeFiles: false)
 
 ---
 
+## Workflow steering files
+
+KiroGraph installs task-specific steering files in \`.kiro/steering/\`. They are not always active — load them on demand.
+
+**In Kiro IDE:** type \`/kirograph-review\`, \`/kirograph-security\`, etc. to activate a workflow for the current session.
+
+**In Kiro CLI / other agents:** when the user asks for a specific workflow or you recognize the intent, read the file directly:
+
+\`\`\`
+Read file: .kiro/steering/kirograph-security.md
+Read file: .kiro/steering/kirograph-review.md
+\`\`\`
+
+| User intent | File to load |
+|-------------|-------------|
+| security audit, check vulnerabilities, CVE review | \`.kiro/steering/kirograph-security.md\` *(requires enableSecurity)* |
+| code review, review this PR | \`.kiro/steering/kirograph-review.md\` |
+| debug, trace this bug, root cause | \`.kiro/steering/kirograph-debug.md\` |
+| architecture, understand structure, package map | \`.kiro/steering/kirograph-architecture.md\` *(requires enableArchitecture)* |
+| onboard, understand this codebase | \`.kiro/steering/kirograph-onboard.md\` |
+| refactor, rename, safe refactoring | \`.kiro/steering/kirograph-refactor.md\` |
+
+Each file contains numbered steps, exact tool calls, and an interpretation reference. Follow the steps in order.
+
+---
+
 ## If \`.kirograph/\` does NOT exist
 
 Ask the user: "This project doesn't have KiroGraph initialized. Run \`kirograph init -i\` to build a code knowledge graph for faster exploration?"
@@ -315,6 +341,7 @@ export interface SteeringOptions {
   cavemanMode?: CavemanMode | 'off';
   enableCompression?: boolean;
   shellCompressionLevel?: 'off' | 'normal' | 'aggressive' | 'ultra';
+  enableArchitecture?: boolean;
   enableMemory?: boolean;
   enableDocs?: boolean;
   enableData?: boolean;
@@ -727,7 +754,14 @@ Follow these steps to plan and execute safe refactoring.
 `,
   };
 
+  // kirograph-architecture.md only when enableArchitecture is true
+  if (opts?.enableArchitecture) {
+    fs.writeFileSync(path.join(steeringDir, 'kirograph-architecture.md'), workflows['kirograph-architecture.md']!);
+  }
+
+  // Always write the non-conditional workflow files
   for (const [filename, content] of Object.entries(workflows)) {
+    if (filename === 'kirograph-architecture.md') continue; // handled above
     fs.writeFileSync(path.join(steeringDir, filename), content);
   }
 
@@ -819,7 +853,8 @@ kirograph_vex()    // Vulnerability Exploitability eXchange
     console.log(`  ✓ Security workflow steering file written`);
   }
 
-  const written = ['review', 'debug', 'architecture', 'onboard', 'refactor'];
+  const written = ['review', 'debug', 'onboard', 'refactor'];
+  if (opts?.enableArchitecture) written.push('architecture');
   if (opts?.enableSecurity) written.push('security');
   console.log(`  ✓ Workflow steering files written (${written.join(', ')})`);
 }

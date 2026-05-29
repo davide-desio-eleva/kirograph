@@ -121,10 +121,12 @@ export function buildInstructionOpts(
   enableDocs?: boolean,
   enableData?: boolean,
   enableSecurity?: boolean,
+  enableArchitecture?: boolean,
 ): InstructionOptions {
   return {
     cavemanMode,
     shellCompressionLevel: (shellCompressionLevel as InstructionOptions['shellCompressionLevel']) ?? undefined,
+    enableArchitecture: enableArchitecture ?? false,
     enableMemory: enableMemory ?? false,
     enableDocs: enableDocs ?? false,
     enableData: enableData ?? false,

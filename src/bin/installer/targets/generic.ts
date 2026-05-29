@@ -20,10 +20,10 @@ export function makeGenericInstaller(config: GenericTargetConfig) {
     // No project-level MCP config for these targets.
   }
 
-  function installLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean): void {
+  function installLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean, enableArchitecture?: boolean): void {
     const instructionsPath = path.join(projectRoot, '.kirograph', `${config.id}.md`);
     ensureDir(path.dirname(instructionsPath));
-    fs.writeFileSync(instructionsPath, buildAgentInstructions(buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, undefined, enableDocs, enableData, enableSecurity)));
+    fs.writeFileSync(instructionsPath, buildAgentInstructions(buildInstructionOpts(cavemanMode, shellCompressionLevel, enableMemory, undefined, enableDocs, enableData, enableSecurity, enableArchitecture)));
     console.log(`  ✓ ${config.label} instructions written to ${instructionsPath}`);
   }
 
