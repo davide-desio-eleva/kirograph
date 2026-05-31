@@ -390,6 +390,8 @@ kirograph docs reembed                      # re-embed with current model
 
 ## Data *(requires `enableData: true`)*
 
+![KiroGraph Data](https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/data.png)
+
 ```bash
 # List datasets
 kirograph data list
