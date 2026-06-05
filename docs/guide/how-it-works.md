@@ -70,6 +70,39 @@ Zero LLM tokens on write. ~150-350 tokens per search (vs ~2000-5000 tokens to re
 }
 ```
 
+### Watchmen (opt-in)
+
+When `enableWatchmen: true` is set (requires `enableMemory: true`), KiroGraph automatically signals the active AI agent to synthesize accumulated memory observations into workspace brief files. Inspired by [watchmen](https://github.com/firstbatchxyz/watchmen) by [firstbatch](https://github.com/firstbatchxyz).
+
+After each `kirograph_mem_store` call, KiroGraph counts non-summary observations created since the last `kind: 'summary'`. When the count reaches `watchmenThreshold` (default: 5), the response includes a `watchmenReady` flag with synthesis instructions and a `targetFiles` list. The active AI agent then:
+
+1. Calls `kirograph_mem_search` for each observation kind
+2. Synthesizes patterns into a structured workspace brief
+3. Writes or updates the brief in each file listed in `targetFiles`
+4. Stores a `kind: 'summary'` observation to reset the counter
+
+Target file per installed tool:
+
+| Tool | File written |
+|------|-------------|
+| Kiro | `.kiro/steering/kirograph-watchmen.md` (`inclusion: always`) |
+| Claude Code | `CLAUDE.md` (`## KiroGraph Watchmen` section) |
+| Codex, Copilot CLI, Devin, Goose, Warp, Roo, OpenHands, Replit, Junie | `AGENTS.md` |
+| Gemini CLI / AntiGravity | `GEMINI.md` |
+| Aider | `CONVENTIONS.md` |
+| Augment | `augment-guidelines.md` |
+| Rules-based tools (Cursor, Cline, Windsurf…) | `AGENTS.md` fallback |
+
+Zero LLM tokens spent by KiroGraph — synthesis is done entirely by the active AI agent using its own intelligence and the existing `kirograph_mem_search` tool.
+
+```json
+{
+  "enableMemory": true,
+  "enableWatchmen": true,
+  "watchmenThreshold": 5
+}
+```
+
 ### Documentation indexing (opt-in)
 
 When `enableDocs: true` is set, KiroGraph indexes project documentation by heading hierarchy and section structure. Instead of reading entire doc files, agents retrieve exactly the section they need via stable section IDs. Inspired by [jDocMunch-MCP](https://github.com/jgravelle/jdocmunch-mcp) by [J. Gravelle](https://www.linkedin.com/in/j-gravelle-2778223/).

@@ -15,11 +15,13 @@ import type {
   MemTimelineOptions,
   MemStats,
   CompressResult,
+  WatchmenReadyResult,
 } from './types';
 import { MemoryDatabase } from './database';
 import { compressObservation, type CavemanMode } from './compress';
 import { detectSymbols } from './symbols';
 import { MemoryVectorManager } from './vectors';
+import { WatchmenChecker } from '../watchmen';
 import { logDebug } from '../errors';
 
 export { MemoryDatabase } from './database';
@@ -37,14 +39,20 @@ export class MemoryManager {
   private db: any; // raw sqlite handle for symbol detection
   private cavemanMode: CavemanMode;
   private excludePatterns: string[];
+  private watchmenChecker: WatchmenChecker | null;
+  private projectRoot: string;
 
-  constructor(config: KiroGraphConfig, db: any) {
+  constructor(config: KiroGraphConfig, db: any, projectRoot = process.cwd()) {
     this.config = config;
     this.db = db;
+    this.projectRoot = projectRoot;
     this.memDb = new MemoryDatabase(db);
     this.vectorMgr = new MemoryVectorManager(config, this.memDb);
     this.cavemanMode = (config as any).cavemanMode ?? 'off';
     this.excludePatterns = (config as any).memoryExcludePatterns ?? [];
+    this.watchmenChecker = config.enableWatchmen
+      ? new WatchmenChecker(config.watchmenThreshold)
+      : null;
   }
 
   /**
@@ -71,10 +79,11 @@ export class MemoryManager {
    * 4. Deduplication (content hash)
    * 5. Symbol detection and linking
    * 6. Embedding (if enabled)
+   * 7. Watchmen threshold check (if enabled) — returns WatchmenReadyResult when synthesis should run
    *
-   * Returns the observation ID, or null if skipped (duplicate or excluded).
+   * Returns the observation ID, a WatchmenReadyResult, or null if skipped (duplicate or excluded).
    */
-  async store(input: MemObservationInput, ide = 'kiro'): Promise<string | null> {
+  async store(input: MemObservationInput, ide = 'kiro'): Promise<string | WatchmenReadyResult | null> {
     let text = input.content;
 
     // 1. Strip <private> blocks
@@ -132,6 +141,14 @@ export class MemoryManager {
     const obs = this.memDb.getObservation(id);
     if (obs) {
       await this.vectorMgr.embedObservation(obs);
+    }
+
+    // 8. Watchmen threshold check
+    if (this.watchmenChecker && input.kind !== 'summary') {
+      const check = this.watchmenChecker.shouldSynthesize(this.memDb);
+      if (check.ready) {
+        return this.watchmenChecker.buildReadyResponse(id, check.pendingCount, this.projectRoot);
+      }
     }
 
     return id;

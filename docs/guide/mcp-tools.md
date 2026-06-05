@@ -246,6 +246,25 @@ Store an observation in project memory.
 | `kind` | string | `note` | `decision`, `error`, `pattern`, `architecture`, `summary`, `note` |
 | `projectPath` | string | cwd | Project root path |
 
+**Normal response:**
+```json
+{ "id": "obs_abc123" }
+```
+
+**Watchmen response** (when `enableWatchmen: true` and threshold is met):
+
+When enough observations have accumulated since the last `kind: 'summary'`, the response includes additional fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | The observation ID as usual |
+| `watchmenReady` | `true` | Present only when synthesis should run |
+| `pendingCount` | number | Observations since last `kind: 'summary'` |
+| `message` | string | Synthesis instructions for the agent |
+| `targetFiles` | string[] | Project-relative paths to write the brief to, based on installed targets |
+
+On receiving `watchmenReady: true`, the agent should call `kirograph_mem_search` for each kind, synthesize the brief, write to each file in `targetFiles`, then store a `kind: 'summary'` observation to reset the counter.
+
 ### `kirograph_mem_timeline`
 
 List recent sessions and their observations chronologically.

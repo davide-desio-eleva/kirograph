@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.20.0] - 2026-06-05: KiroGraph-Watchmen
+
+### Added
+- **KiroGraph-Watchmen** (`enableWatchmen: true`): opt-in module that auto-synthesizes accumulated memory observations into workspace brief files. When the observation count since the last synthesis reaches `watchmenThreshold` (default: 5), `kirograph_mem_store` returns a `watchmenReady` signal with a `targetFiles` list and synthesis instructions. The active AI agent writes the brief to the appropriate file for its tool — `.kiro/steering/kirograph-watchmen.md` for Kiro, `CLAUDE.md` for Claude Code, `AGENTS.md` for Codex/Copilot/Devin/Goose/Warp/Roo/OpenHands/Replit/Junie, and dedicated files for Gemini CLI, Aider, and Augment. Falls back to `AGENTS.md` for tools with no dedicated project memory file. No external API calls, no background daemon — synthesis is done by the active agent using the existing `kirograph_mem_search` tool.
+- `kirograph-watchmen.kiro.hook` — `askAgent` hook at `agentStop` that probes the threshold and instructs Kiro to synthesize when ready. Installed automatically when `enableWatchmen: true`.
+- `kirograph mem watchmen status` CLI — shows pending observation count, threshold, ready state, and which files would be written on next synthesis.
+- `kirograph mem watchmen reset` CLI — stores a `kind='summary'` observation to manually reset the threshold counter without triggering synthesis.
+- `enableWatchmen` and `watchmenThreshold` config fields.
+- `WatchmenReadyResult` type exported from `kirograph/memory`.
+- Installer prompt: "Enable Watchmen?" shown when memory is enabled during `kirograph install`.
+
 ## [0.19.1] - 2026-06-01: KiroGraph-Patterns (ast-grep integration)
 
 ### Added

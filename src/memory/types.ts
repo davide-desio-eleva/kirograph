@@ -89,6 +89,18 @@ export interface MemStats {
   currentModel?: string;
 }
 
+// ── Watchmen ──────────────────────────────────────────────────────────────────
+
+export interface WatchmenReadyResult {
+  id: string;
+  watchmenReady: true;
+  pendingCount: number;
+  /** Synthesis instructions for the active agent. */
+  message: string;
+  /** Project-relative paths to write the workspace brief to. */
+  targetFiles: string[];
+}
+
 // ── Compress ─────────────────────────────────────────────────────────────────
 
 export interface CompressResult {

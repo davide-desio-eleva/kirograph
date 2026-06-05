@@ -6,7 +6,7 @@ import * as readline from 'readline';
 import { KiroGraphConfig } from '../../config';
 type CavemanMode = 'lite' | 'full' | 'ultra';
 import { ask, askToggle, arrowSelect, printSection, printSeparator, dim, reset, violet } from './prompts';
-export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites' | 'enableArchitecture' | 'cavemanMode' | 'shellCompressionLevel' | 'enableMemory' | 'enableDocs' | 'docsContextLimit' | 'enableData' | 'dataContextLimit' | 'enableSecurity' | 'enablePatterns'> & { embeddingModel?: string; embeddingDim?: number };
+export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites' | 'enableArchitecture' | 'cavemanMode' | 'shellCompressionLevel' | 'enableMemory' | 'enableWatchmen' | 'watchmenThreshold' | 'enableDocs' | 'docsContextLimit' | 'enableData' | 'dataContextLimit' | 'enableSecurity' | 'enablePatterns'> & { embeddingModel?: string; embeddingDim?: number };
 export type SemanticEngine = KiroGraphConfig['semanticEngine'];
 
 export const DEFAULT_EMBEDDING_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
@@ -55,7 +55,7 @@ export async function promptConfigOptions(rl: readline.Interface): Promise<Confi
     'Enables natural-language code search via vector embeddings. A local model (~130MB) is downloaded on first use.',
   );
 
-  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, semanticEngine: 'cosine', typesenseDashboard: false, qdrantDashboard: false, extractDocstrings: true, trackCallSites: true, enableArchitecture: false, cavemanMode: 'off', shellCompressionLevel: 'normal', enableMemory: false, enableDocs: false, docsContextLimit: 0, enableData: false, dataContextLimit: 0, enableSecurity: false, enablePatterns: false };
+  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, semanticEngine: 'cosine', typesenseDashboard: false, qdrantDashboard: false, extractDocstrings: true, trackCallSites: true, enableArchitecture: false, cavemanMode: 'off', shellCompressionLevel: 'normal', enableMemory: false, enableWatchmen: false, watchmenThreshold: 5, enableDocs: false, docsContextLimit: 0, enableData: false, dataContextLimit: 0, enableSecurity: false, enablePatterns: false };
 
   if (enableEmbeddings) {
     // ── Model selection ────────────────────────────────────────────────────────
@@ -234,11 +234,19 @@ export async function promptConfigOptions(rl: readline.Interface): Promise<Confi
   // ── Memory ──────────────────────────────────────────────────────────────────
   printSection('🧠', 'Memory');
 
-  (patch as any).enableMemory = await askToggle(rl,
+  patch.enableMemory = await askToggle(rl,
     'Persistent memory (cross-session observations):',
     'Stores decisions, errors, and patterns across sessions. Compressed (if caveman is on), linked to code symbols, searchable via kirograph_mem_* tools. Zero LLM tokens on write.',
-    false, // Requires explicit enable
+    false,
   );
+
+  if (patch.enableMemory) {
+    patch.enableWatchmen = await askToggle(rl,
+      'Watchmen (auto-synthesize workspace briefs from memory):',
+      'When enough observations accumulate (default: 5), signals the active agent to synthesize them into .kiro/steering/kirograph-watchmen.md, CLAUDE.md, AGENTS.md, or the equivalent for your tool. Zero LLM tokens from KiroGraph — synthesis is done by the active agent.',
+      false,
+    );
+  }
 
   return patch;
 }

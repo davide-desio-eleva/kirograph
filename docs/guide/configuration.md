@@ -43,6 +43,9 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `memoryContextLimit` | number | `3` | Max observations surfaced in `kirograph_context` |
 | `memoryContextThreshold` | number | `0.3` | Min relevance score to surface in context |
 | `memoryExcludePatterns` | string[] | `[]` | Glob patterns for files to exclude from symbol linking |
+| **Watchmen** | | | |
+| `enableWatchmen` | boolean | `false` | Enable Watchmen — auto-synthesize workspace briefs from memory observations. Requires `enableMemory: true`. |
+| `watchmenThreshold` | number | `5` | Minimum new observations since last synthesis before `watchmenReady` fires. |
 | **Documentation** | | | |
 | `enableDocs` | boolean | `false` | Enable documentation indexing (section-level retrieval) |
 | `docsInclude` | string[] | `["**/*.md", ...]` | Glob patterns for doc files to include |

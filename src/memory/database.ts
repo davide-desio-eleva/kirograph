@@ -75,6 +75,26 @@ export class MemoryDatabase {
     }
   }
 
+  // ── Watchmen ─────────────────────────────────────────────────────────────
+
+  /**
+   * Count non-summary observations created after the most recent summary.
+   * Used by WatchmenChecker to decide if synthesis should trigger.
+   */
+  countSinceLastSummary(): number {
+    const lastSummary = this.db.get(
+      `SELECT created_at FROM mem_observations WHERE kind = 'summary' ORDER BY created_at DESC LIMIT 1`
+    ) as { created_at: number } | undefined;
+
+    const since = lastSummary?.created_at ?? 0;
+    const row = this.db.get(
+      `SELECT COUNT(*) as count FROM mem_observations WHERE kind != 'summary' AND created_at > ?`,
+      [since]
+    ) as { count: number };
+
+    return row?.count ?? 0;
+  }
+
   // ── Sessions ─────────────────────────────────────────────────────────────
 
   /**

@@ -491,6 +491,99 @@ export function register(program: Command): void {
       cg.close();
     });
 
+  // ── watchmen ──────────────────────────────────────────────────────────────
+
+  const watchmen = mem
+    .command('watchmen')
+    .description('Watchmen — workspace brief synthesis from memory observations (requires enableWatchmen: true)');
+
+  watchmen
+    .command('status')
+    .description('Show pending observation count and which files would be written on next synthesis')
+    .action(async () => {
+      const { MemoryManager } = await import('../../memory/index');
+      const { WatchmenChecker } = await import('../../watchmen/index');
+      const { MemoryDatabase } = await import('../../memory/database');
+      const { loadConfig } = await import('../../config');
+      const KiroGraph = (await import('../../index')).default;
+
+      const cwd = process.cwd();
+      if (!KiroGraph.isInitialized(cwd)) {
+        console.error('  ✖ KiroGraph is not initialized. Run `kirograph init` first.');
+        process.exit(1);
+      }
+      const config = await loadConfig(cwd);
+      if (!config.enableMemory) {
+        console.error('  ✖ Memory is not enabled. Set enableMemory: true in .kirograph/config.json');
+        process.exit(1);
+      }
+      if (!config.enableWatchmen) {
+        console.error('  ✖ Watchmen is not enabled. Set enableWatchmen: true in .kirograph/config.json');
+        process.exit(1);
+      }
+
+      const cg = await KiroGraph.open(cwd);
+      const db = cg.getDatabase();
+      db.applyMemorySchema();
+      const memDb = new MemoryDatabase(db.getRawDb());
+      memDb.initialize();
+
+      const checker = new WatchmenChecker(config.watchmenThreshold);
+      const { ready, pendingCount } = checker.shouldSynthesize(memDb);
+      const { targetFiles } = checker.buildReadyResponse('', pendingCount, cwd);
+
+      console.log(`\n  ${section('Watchmen Status')}\n`);
+      console.log(`  Pending observations: ${bold}${pendingCount}${reset} / ${config.watchmenThreshold} threshold`);
+      console.log(`  Ready to synthesize:  ${ready ? violet + 'yes' + reset : dim + 'no' + reset}`);
+      console.log(`  Target files:`);
+      for (const f of targetFiles) {
+        console.log(`    ${dim}·${reset} ${f}`);
+      }
+      console.log('');
+
+      cg.close();
+    });
+
+  watchmen
+    .command('reset')
+    .description('Store a summary observation to reset the synthesis counter without running synthesis')
+    .action(async () => {
+      const { MemoryManager } = await import('../../memory/index');
+      const { loadConfig } = await import('../../config');
+      const KiroGraph = (await import('../../index')).default;
+
+      const cwd = process.cwd();
+      if (!KiroGraph.isInitialized(cwd)) {
+        console.error('  ✖ KiroGraph is not initialized. Run `kirograph init` first.');
+        process.exit(1);
+      }
+      const config = await loadConfig(cwd);
+      if (!config.enableMemory) {
+        console.error('  ✖ Memory is not enabled.');
+        process.exit(1);
+      }
+      if (!config.enableWatchmen) {
+        console.error('  ✖ Watchmen is not enabled.');
+        process.exit(1);
+      }
+
+      const cg = await KiroGraph.open(cwd);
+      const db = cg.getDatabase();
+      db.applyMemorySchema();
+      const mgr = new MemoryManager(config, db.getRawDb(), cwd);
+      mgr.initialize();
+
+      // Bypass watchmen check by storing directly as summary
+      const id = await mgr.store({ content: 'Watchmen counter reset manually via CLI.', kind: 'summary', source: 'manual' });
+      if (id) {
+        console.log(`  ✓ Counter reset — pending observations set back to 0`);
+      } else {
+        console.log(`  ${dim}Already at zero — nothing to reset.${reset}`);
+      }
+
+      cg.close();
+    });
+
   // ── session management (for hooks) ─────────────────────────────────────────
 
   mem

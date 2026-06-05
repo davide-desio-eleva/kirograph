@@ -47,6 +47,19 @@ const HOOKS: Array<{ filename: string; hook: object }> = [
       },
     },
   },
+  {
+    filename: `kirograph-watchmen${HOOK_EXT}`,
+    hook: {
+      name: 'KiroGraph Watchmen',
+      version: '1.0.0',
+      description: 'After memory capture, check if enough observations have accumulated. If so, synthesize them into workspace brief files.',
+      when: { type: 'agentStop' },
+      then: {
+        type: 'askAgent',
+        prompt: 'Check if KiroGraph Watchmen synthesis should run: call kirograph_mem_store with kind=\'note\' and content=\'watchmen check\'. If the response includes watchmenReady: true, proceed with synthesis: call kirograph_mem_search for each kind (decision, error, pattern, architecture, note) with limit 20, identify recurring patterns and important context, then write or update the ## KiroGraph Watchmen section in each file listed in the targetFiles array of the response. For .kiro/steering/kirograph-watchmen.md use inclusion: always frontmatter and a full structured brief. For all other files upsert the ## KiroGraph Watchmen block. Finally store a kind=\'summary\' observation describing what was synthesized. If watchmenReady is not in the response, do nothing.',
+      },
+    },
+  },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -110,7 +123,7 @@ function migrateOnIdleHooks(hooksDir: string): void {
 
 // ── Public ────────────────────────────────────────────────────────────────────
 
-export function writeHooks(kiroDir: string, opts?: { enableCompression?: boolean; enableMemory?: boolean }): void {
+export function writeHooks(kiroDir: string, opts?: { enableCompression?: boolean; enableMemory?: boolean; enableWatchmen?: boolean }): void {
   const hooksDir = path.join(kiroDir, 'hooks');
   ensureDir(hooksDir);
 
@@ -141,6 +154,12 @@ export function writeHooks(kiroDir: string, opts?: { enableCompression?: boolean
     }
     // Skip memory hook if memory is disabled
     if (filename === `kirograph-mem-capture${HOOK_EXT}` && !opts?.enableMemory) {
+      const p = path.join(hooksDir, filename);
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+      continue;
+    }
+    // Skip watchmen hook if watchmen is disabled
+    if (filename === `kirograph-watchmen${HOOK_EXT}` && !opts?.enableWatchmen) {
       const p = path.join(hooksDir, filename);
       if (fs.existsSync(p)) fs.unlinkSync(p);
       continue;

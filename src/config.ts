@@ -65,6 +65,10 @@ export interface KiroGraphConfig {
   memoryContextThreshold: number;
   /** Glob patterns for paths to never capture in memory. Default: []. */
   memoryExcludePatterns: string[];
+  /** Enable watchmen — auto-synthesize workspace briefs from memory observations. Requires enableMemory. Default: false. */
+  enableWatchmen: boolean;
+  /** Minimum new observations since last synthesis before watchmenReady fires. Default: 5. */
+  watchmenThreshold: number;
   /** Enable documentation indexing and navigation. Default: false. */
   enableDocs: boolean;
   /** Glob patterns for documentation files to include. */
@@ -145,6 +149,7 @@ const KNOWN_FIELDS = new Set<string>([
   'enableArchitecture', 'architectureLayers', 'cavemanMode', 'shellCompressionLevel', 'syncWarningThreshold',
   'enableMemory', 'memorySearchAlpha', 'memoryKeepRaw', 'memoryMaxObservations',
   'memorySessionTimeout', 'memoryContextLimit', 'memoryContextThreshold', 'memoryExcludePatterns',
+  'enableWatchmen', 'watchmenThreshold',
   'enableDocs', 'docsInclude', 'docsExclude', 'docsLinkCode',
   'docsContextLimit', 'docsContextThreshold', 'docsMaxFileSize', 'docsSummarization',
   'enableData', 'dataInclude', 'dataExclude', 'dataLinkCode',
@@ -206,6 +211,8 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     memoryContextLimit: 3,
     memoryContextThreshold: 0.3,
     memoryExcludePatterns: [],
+    enableWatchmen: false,
+    watchmenThreshold: 5,
     enableDocs: false,
     docsInclude: ['**/*.md', '**/*.mdx', '**/*.rst', '**/*.adoc', '**/*.asciidoc', '**/*.rdoc', '**/*.org', '**/*.cheatmd', 'docs/**/*.txt', 'docs/**/*.html'],
     docsExclude: ['node_modules/**', '**/CHANGELOG*', '**/LICENSE*', '**/CHANGES*', 'dist/**', 'build/**', 'coverage/**', '.git/**', '**/generated/**', '**/auto-generated/**', '**/vendor/**', '_build/**'],
@@ -352,6 +359,14 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     && raw.memoryExcludePatterns.every((p: unknown) => typeof p === 'string')
     ? (raw.memoryExcludePatterns as string[])
     : defaults.memoryExcludePatterns;
+
+  // ── Watchmen config ───────────────────────────────────────────────────────
+  const enableWatchmen = typeof raw.enableWatchmen === 'boolean'
+    ? raw.enableWatchmen
+    : defaults.enableWatchmen;
+  const watchmenThreshold = typeof raw.watchmenThreshold === 'number' && raw.watchmenThreshold > 0
+    ? Math.round(raw.watchmenThreshold)
+    : defaults.watchmenThreshold;
 
   // ── Docs config ───────────────────────────────────────────────────────────
   const enableDocs = typeof raw.enableDocs === 'boolean'
@@ -554,6 +569,8 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     memoryContextLimit,
     memoryContextThreshold,
     memoryExcludePatterns,
+    enableWatchmen: enableWatchmen && enableMemory,
+    watchmenThreshold,
     enableDocs,
     docsInclude,
     docsExclude,

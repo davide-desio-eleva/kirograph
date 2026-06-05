@@ -42,6 +42,7 @@ The result is fewer tool calls, less context used, and faster responses on compl
 | 🔒 **Security (KiroGraph-Sec opt-in  module)** | Goes beyond "this dependency has a CVE" — uses the call graph to determine if vulnerable code is **actually reachable** from your entry points. Maps your **attack surface** (which HTTP routes reach vulnerable deps). Detects **hardcoded secrets** and shows how many entry points expose them. **SAST-lite** finds SQL injection, path traversal, and dangerous eval in your code. **AST-based SAST (opt-in via `enablePatterns`)** runs 10 bundled structural pattern rules via `@ast-grep/napi` — matches actual code structure, not just symbol names. **Supply chain health** checks OpenSSF Scorecard scores and detects dependency confusion attacks. Covers 14 ecosystems, outputs CycloneDX SBOM/VEX and CI-ready SARIF reports. |
 | <h4>Knowledge & Data</h4> | |
 | 🧠 **Persistent Memor (KiroGraph-Mem opt-in module)** | Cross-session observations — decisions, errors, patterns — auto-linked to code symbols |
+| 👁️ **Watchmen (KiroGraph-Watchmen opt-in module)** | Auto-synthesizes accumulated memory observations into workspace briefs — `.kiro/steering/kirograph-watchmen.md`, `CLAUDE.md`, `AGENTS.md`, or tool equivalent. Fires via the `watchmenReady` signal in `kirograph_mem_store` when threshold is reached. No external API calls, no daemon. |
 | 📖 **Documentation Indexing (KiroGraph-Doc opt-in  module)** | Section-level retrieval from Markdown, MDX, RST, AsciiDoc, OpenAPI — 92-97% token savings |
 | 📊 **Data Navigation (KiroGraph-Data opt-in  module)** | Query CSV/JSON/Excel/Parquet with filters, aggregations, joins — all server-side in SQLite |
 | <h4>Token Optimization</h4> | |
@@ -140,6 +141,7 @@ KiroGraph is inspired by [CodeGraph](https://github.com/colbymchenry/codegraph) 
 ### Inspirations
 
 - [cavemem](https://github.com/JuliusBrussee/cavemem) by [Julius Brussee](https://www.linkedin.com/in/julius-brussee/): the memory module's hook-based observation capture, deterministic compression, and SQLite storage pattern.
+- [watchmen](https://github.com/firstbatchxyz/watchmen) by [firstbatch](https://github.com/firstbatchxyz): the watchmen module's session-mining concept, workspace brief generation, and `AGENTS.md` mirroring pattern.
 - [jDocMunch-MCP](https://github.com/jgravelle/jdocmunch-mcp) by [J. Gravelle](https://www.linkedin.com/in/j-gravelle-2778223/): the documentation module's section-first retrieval approach, stable section IDs, and byte-offset addressing.
 - [jDataMunch-MCP](https://github.com/jgravelle/jdatamunch-mcp) by [J. Gravelle](https://www.linkedin.com/in/j-gravelle-2778223/): the data module's column profiling, streaming parsers, and server-side aggregation approach.
 - [code-review-graph](https://github.com/tirth8205/code-review-graph) by [Tirth Kanani](https://github.com/tirth8205): community detection, execution flow tracing, refactoring tools, and multi-platform auto-detection patterns.
