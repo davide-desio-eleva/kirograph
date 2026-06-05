@@ -108,7 +108,7 @@ export class VulnerabilityDatabaseClient {
 
     for (const adapter of this.adapters) {
       if (adapter.queryBatch) {
-        await this.enrichAllBatch(adapter, queryableDeps, result);
+        await this.enrichAllBatch(adapter as typeof adapter & Required<Pick<typeof adapter, 'queryBatch'>>, queryableDeps, result);
       } else {
         await this.enrichAllSequential(adapter, queryableDeps, result);
       }
