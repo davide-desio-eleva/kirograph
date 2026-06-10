@@ -1,0 +1,4 @@
+github.com/google/uuid v1.4.0 h1:MtMxsa51/r9yyhkyLsVeVt0B+BGQZzpQiTQ4eHZ8bc4=
+github.com/google/uuid v1.4.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
+pgregory.net/rapid v1.1.0 h1:CMa0sjHSru3puNx+J0MIAuPprQy1RCIiwSFY2cFEGGc=
+pgregory.net/rapid v1.1.0/go.mod h1:UYpPVyjFHzYBGHIxLFoupi8vwk6rXNzRY9OMvVxFIOU=

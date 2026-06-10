@@ -1,0 +1,30 @@
+version = 3
+
+[[package]]
+name = "mock-crate"
+version = "0.1.0"
+dependencies = [
+ "reqwest 0.11.22",
+ "serde 1.0.193",
+]
+
+[[package]]
+name = "reqwest"
+version = "0.11.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "046cd98826c46c2ac8ddecae268eb5c2e58628688a5fc7a2643704a73feba752"
+dependencies = [
+ "serde 1.0.193",
+]
+
+[[package]]
+name = "serde"
+version = "1.0.193"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25dd0975d2f087c2a7e53c63b4c3f108e2a787b04b3d8a7a97a6a99dc6c5ef3c"
+
+[[package]]
+name = "tokio"
+version = "1.35.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c89b4efa943be685f629b149f53829423f8f5531ea21249408e8e2f8671ec104"

@@ -1,0 +1,11 @@
+{
+  "name": "example/mock-app",
+  "description": "Mock PHP application",
+  "require": {
+    "symfony/http-foundation": "^6.4",
+    "monolog/monolog": "^3.4"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^10.5"
+  }
+}

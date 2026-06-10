@@ -20,6 +20,7 @@
     "test:watchmen": "bash scripts/watchmen/test.sh",
     "test:watchmen:skip-llm": "bash scripts/watchmen/test.sh --skip-llm",
     "test:patterns": "bash scripts/patterns/test.sh",
+    "test:sec": "bash scripts/sec/test.sh",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "release": "./scripts/release.sh",
     "docs": "npx serve docs"
