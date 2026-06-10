@@ -1,0 +1,44 @@
+{
+  "_readme": [
+    "This file is @generated automatically"
+  ],
+  "content-hash": "abc123def456ghi789",
+  "packages": [
+    {
+      "name": "monolog/monolog",
+      "version": "3.4.0",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/Seldaek/monolog.git",
+        "reference": "abc123"
+      },
+      "type": "library"
+    },
+    {
+      "name": "symfony/http-foundation",
+      "version": "v6.4.0",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/symfony/http-foundation.git",
+        "reference": "def456"
+      },
+      "type": "library"
+    }
+  ],
+  "packages-dev": [
+    {
+      "name": "phpunit/phpunit",
+      "version": "10.5.0",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/sebastianbergmann/phpunit.git",
+        "reference": "ghi789"
+      },
+      "type": "library"
+    }
+  ],
+  "stability-flags": [],
+  "prefer-stable": false,
+  "platform": [],
+  "platform-dev": []
+}

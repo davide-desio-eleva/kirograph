@@ -1,0 +1,26 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    actioncable (7.1.2)
+      actionpack (= 7.1.2)
+    actionpack (7.1.2)
+      rack (~> 2.2, >= 2.2.4)
+    pg (1.5.4)
+    rack (2.2.8)
+    rails (7.1.2)
+      actioncable (= 7.1.2)
+      actionpack (= 7.1.2)
+    rspec-core (3.12.2)
+    rspec-rails (6.1.0)
+      rspec-core (>= 3.12.0)
+
+PLATFORMS
+  x86_64-linux
+
+DEPENDENCIES
+  pg (~> 1.5)
+  rails (~> 7.1.2)
+  rspec-rails (~> 6.1)
+
+BUNDLED WITH
+   2.5.3

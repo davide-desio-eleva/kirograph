@@ -229,6 +229,39 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
           });
           if (astGrepResult.status === 0) {
             console.log(`  ✓ @ast-grep/napi installed`);
+
+            // Install tree-sitter grammar packages for languages beyond the built-in
+            // JS/TS/HTML/CSS set. These are optional — missing packages are silently
+            // skipped at runtime, so a failed install here isn't fatal.
+            const langPackages = [
+              '@ast-grep/lang-go',
+              '@ast-grep/lang-python',
+              '@ast-grep/lang-java',
+              '@ast-grep/lang-rust',
+              '@ast-grep/lang-c',
+              '@ast-grep/lang-cpp',
+              '@ast-grep/lang-csharp',
+              '@ast-grep/lang-kotlin',
+              '@ast-grep/lang-swift',
+              '@ast-grep/lang-ruby',
+              '@ast-grep/lang-php',
+              '@ast-grep/lang-bash',
+              '@ast-grep/lang-scala',
+              '@ast-grep/lang-dart',
+              '@ast-grep/lang-lua',
+              '@ast-grep/lang-elixir',
+              '@ast-grep/lang-haskell',
+            ];
+            const langResult = spawnSync('npm', ['install', ...langPackages, '--save-optional'], {
+              stdio: 'inherit',
+              shell: true,
+            });
+            if (langResult.status === 0) {
+              console.log(`  ✓ @ast-grep language grammars installed`);
+            } else {
+              console.warn(`  ✗ Language grammar install failed. Pattern matching will be limited to JS/TS/HTML/CSS.`);
+              console.warn(`    Run manually: npm install ${langPackages.join(' ')}`);
+            }
           } else {
             console.warn(`  ✗ @ast-grep/napi install failed. Run manually: npm install @ast-grep/napi`);
             console.warn(`  KiroGraph will continue but kirograph pattern and kirograph_live_search will be unavailable.`);

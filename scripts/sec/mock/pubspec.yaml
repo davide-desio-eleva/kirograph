@@ -1,0 +1,14 @@
+name: mock_app
+description: A mock Dart/Flutter application
+version: 1.0.0
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  http: ^1.1.2
+  provider: ^6.1.1
+
+dev_dependencies:
+  mockito: ^5.4.4
+  build_runner: ^2.4.7

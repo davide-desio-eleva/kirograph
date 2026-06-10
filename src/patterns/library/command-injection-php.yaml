@@ -1,0 +1,11 @@
+id: command-injection-php
+language: php
+severity: critical
+owaspCategory: A03
+description: system()/exec()/shell_exec()/passthru() — command injection vector
+fixHint: Use escapeshellarg() on every argument, or replace with a native PHP library that avoids shell invocation entirely.
+rule:
+  kind: function_call_expression
+  has:
+    kind: name
+    regex: '^(system|exec|shell_exec|passthru|popen|proc_open)$'

@@ -5,20 +5,43 @@
 import { PatternRule, PatternMatch, SEVERITY_ORDER } from './types';
 import { logWarn } from '../errors';
 
-// Languages supported by @ast-grep/napi tree-sitter grammars.
-// Calling parse() with an unsupported language throws a native C++ exception
-// that bypasses JS try/catch and corrupts the mutex — skip unsupported languages.
-const NAPI_SUPPORTED_LANGUAGES = new Set([
-  'javascript', 'typescript', 'tsx', 'jsx',
-  'python', 'go', 'rust', 'java', 'c', 'cpp', 'cs', 'swift', 'kotlin',
-  'html', 'css', 'json', 'yaml', 'bash', 'ruby', 'php', 'scala',
-  'haskell', 'lua', 'r', 'dart', 'elixir', 'erlang', 'ocaml',
+// Languages the @ast-grep/napi binary bundles natively (its built-in Lang enum).
+// napi.Lang is an empty object at runtime (values are type-only), so we enumerate
+// these explicitly rather than reading from the export.
+const NAPI_BUILTIN_LANGUAGES = new Set([
+  'html', 'javascript', 'jsx', 'typescript', 'tsx', 'css',
 ]);
 
 // Module-level cache: undefined = not yet attempted, null = missing, module = loaded
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _napi: any | null | undefined = undefined;
 let _napiWarnLogged = false;
+// Runtime-detected set of languages the installed @ast-grep/napi actually supports,
+// derived from its Lang enum on first load. Null until napi has been loaded.
+let _napiRuntimeLangs: Set<string> | null = null;
+
+// Optional language packages that extend napi beyond its built-in JS/TS/HTML/CSS set.
+// registerDynamicLanguage() loads a tree-sitter grammar .so for each entry.
+// Keys must match the language strings used in pattern rule files and the files table.
+const DYNAMIC_LANG_PACKAGES: Record<string, string> = {
+  go:     '@ast-grep/lang-go',
+  python: '@ast-grep/lang-python',
+  java:   '@ast-grep/lang-java',
+  rust:   '@ast-grep/lang-rust',
+  c:      '@ast-grep/lang-c',
+  cpp:    '@ast-grep/lang-cpp',
+  cs:     '@ast-grep/lang-csharp',
+  kotlin: '@ast-grep/lang-kotlin',
+  swift:  '@ast-grep/lang-swift',
+  ruby:   '@ast-grep/lang-ruby',
+  php:    '@ast-grep/lang-php',
+  bash:   '@ast-grep/lang-bash',
+  scala:  '@ast-grep/lang-scala',
+  dart:   '@ast-grep/lang-dart',
+  lua:    '@ast-grep/lang-lua',
+  elixir: '@ast-grep/lang-elixir',
+  haskell:'@ast-grep/lang-haskell',
+};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getNapi(): Promise<any | null> {
@@ -28,6 +51,30 @@ async function getNapi(): Promise<any | null> {
     require.resolve('@ast-grep/napi');
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     _napi = require('@ast-grep/napi');
+
+    // Register any installed dynamic language grammars. Must happen before the
+    // first parse() call and exactly once per process.
+    const registrations: Record<string, unknown> = {};
+    for (const [langName, pkgName] of Object.entries(DYNAMIC_LANG_PACKAGES)) {
+      try {
+        require.resolve(pkgName);
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        registrations[langName] = require(pkgName);
+      } catch {
+        // Package not installed — skip silently; language simply won't be supported.
+      }
+    }
+    if (Object.keys(registrations).length > 0 && typeof _napi.registerDynamicLanguage === 'function') {
+      _napi.registerDynamicLanguage(registrations);
+    }
+
+    // Build the runtime language set: built-in grammars + successfully registered
+    // dynamic ones. napi.Lang is {} at runtime (type-only enum), so we use the
+    // explicit NAPI_BUILTIN_LANGUAGES constant as the base.
+    _napiRuntimeLangs = new Set([
+      ...NAPI_BUILTIN_LANGUAGES,
+      ...Object.keys(registrations),
+    ]);
     return _napi;
   } catch {
     _napi = null;
@@ -71,7 +118,13 @@ export class PatternRunner {
    * native C++ exception that bypasses JS try/catch and corrupts internal mutexes.
    */
   isSupportedLanguage(language: string): boolean {
-    return NAPI_SUPPORTED_LANGUAGES.has(language.toLowerCase());
+    const lang = language.toLowerCase();
+    // After napi loads, _napiRuntimeLangs reflects exactly what this binary
+    // supports (built-ins + registered dynamic langs). Before that, we conservatively
+    // allow only the known built-in set so we don't accidentally call parse() on an
+    // unsupported language before registration has happened.
+    if (_napiRuntimeLangs !== null) return _napiRuntimeLangs.has(lang);
+    return NAPI_BUILTIN_LANGUAGES.has(lang);
   }
 
   /**
@@ -90,6 +143,9 @@ export class PatternRunner {
     if (!this.isSupportedLanguage(language)) return [];
     const napi = await getNapi();
     if (!napi) return [];
+    // Re-check after napi loads — _napiRuntimeLangs is now populated and may
+    // exclude languages the static list includes (e.g. Go in a JS-only build).
+    if (!this.isSupportedLanguage(language)) return [];
 
     try {
       const { parse } = napi;
@@ -133,6 +189,7 @@ export class PatternRunner {
     if (!this.isSupportedLanguage(language)) return [];
     const napi = await getNapi();
     if (!napi) return [];
+    if (!this.isSupportedLanguage(language)) return [];
 
     try {
       const { parse } = napi;
@@ -201,6 +258,7 @@ export class PatternRunner {
   async applyFix(filePath: string, fileContent: string, language: string, rule: PatternRule): Promise<string | null> {
     const napi = await this.getNapi();
     if (!napi || !rule.fix) return null;
+    if (!this.isSupportedLanguage(language)) return null;
     try {
       const { parse } = napi;
       const root = parse(language as any, fileContent);

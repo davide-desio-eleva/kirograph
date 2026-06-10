@@ -1,0 +1,15 @@
+id: process-run-dart
+language: dart
+severity: critical
+owaspCategory: A03
+description: Process.run() or Process.start() — command injection vector if arguments are user-controlled
+fixHint: Pass a fixed executable and a validated list of arguments. Never build arguments from unsanitised user input.
+rule:
+  kind: expression_statement
+  all:
+    - has:
+        kind: identifier
+        regex: '^Process$'
+    - has:
+        kind: selector
+        regex: '^\.run|^\.start'

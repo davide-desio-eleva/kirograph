@@ -1,0 +1,10 @@
+id: dynamic-load-lua
+language: lua
+severity: critical
+owaspCategory: A03
+description: load()/loadstring() executes arbitrary Lua code — code injection vector
+fixHint: Remove dynamic code loading; use explicit functions or a restricted sandbox. Never evaluate user-controlled strings.
+rule:
+  any:
+    - pattern: load($CODE)()
+    - pattern: loadstring($CODE)()

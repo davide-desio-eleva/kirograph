@@ -1,0 +1,8 @@
+id: subshell-injection-ruby
+language: ruby
+severity: critical
+owaspCategory: A03
+description: Backtick or %x{} subshell execution — command injection vector
+fixHint: Replace subshell calls with Open3.capture2e using an argument array. Never interpolate user input into shell strings.
+rule:
+  kind: subshell

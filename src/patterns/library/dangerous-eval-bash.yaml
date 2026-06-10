@@ -1,0 +1,11 @@
+id: dangerous-eval-bash
+language: bash
+severity: critical
+owaspCategory: A03
+description: eval command executes arbitrary shell code — command injection vector
+fixHint: Remove eval; use explicit variable assignments and function calls. Never evaluate user-controlled strings.
+rule:
+  kind: command
+  has:
+    kind: command_name
+    regex: '^eval$'

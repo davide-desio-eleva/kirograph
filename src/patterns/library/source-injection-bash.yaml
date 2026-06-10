@@ -1,0 +1,11 @@
+id: source-injection-bash
+language: bash
+severity: high
+owaspCategory: A03
+description: source/. with a variable path — arbitrary script execution
+fixHint: Hardcode the script path or validate it against an allowlist before sourcing.
+rule:
+  kind: command
+  has:
+    kind: command_name
+    regex: '^(source|\.)$'

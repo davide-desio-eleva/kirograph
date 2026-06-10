@@ -1,0 +1,16 @@
+id: os-cmd-elixir
+language: elixir
+severity: critical
+owaspCategory: A03
+description: ':os.cmd() or System.cmd() with a variable argument — command injection vector'
+fixHint: "Use System.cmd/2 with a fixed executable and a list of validated arguments. Never interpolate user input into shell strings."
+rule:
+  any:
+    - kind: call
+      has:
+        kind: dot
+        regex: '^:os\.cmd'
+    - kind: call
+      has:
+        kind: dot
+        regex: '^System\.cmd'

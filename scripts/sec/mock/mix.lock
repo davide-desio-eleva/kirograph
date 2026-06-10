@@ -1,0 +1,5 @@
+%{
+  "ecto" => {:hex, :ecto, "3.11.1", "4b4f5a1b7b73a3c8e96bee", [:mix], [{:decimal, "~> 1.6 or ~> 2.0", [hex: :decimal, repo: "hexpm", optional: false]}], "hexpm", "abc123def456"},
+  "ex_machina" => {:hex, :ex_machina, "2.7.0", "3c3f5b6c7d8e9f0a1b2c3d", [:mix], [{:ecto, ">= 2.2.0", [hex: :ecto, repo: "hexpm", optional: true]}], "hexpm", "ghi789jkl012"},
+  "phoenix" => {:hex, :phoenix, "1.7.10", "5f6g7h8i9j0k1l2m3n4o5p", [:mix], [{:plug, ">= 1.14.0", [hex: :plug, repo: "hexpm", optional: false]}], "hexpm", "mno345pqr678"},
+}

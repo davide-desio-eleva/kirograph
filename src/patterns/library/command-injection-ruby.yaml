@@ -1,0 +1,11 @@
+id: command-injection-ruby
+language: ruby
+severity: critical
+owaspCategory: A03
+description: system()/exec()/spawn() with variable argument — command injection vector
+fixHint: Pass an array of fixed arguments to system/exec to disable shell interpretation. Validate all user input.
+rule:
+  kind: call
+  has:
+    kind: identifier
+    regex: '^(system|exec|spawn)$'

@@ -1,0 +1,11 @@
+id: process-launch-swift
+language: swift
+severity: critical
+owaspCategory: A03
+description: Process.launch() — command injection vector if launchPath or arguments are user-controlled
+fixHint: Validate executableURL and all arguments against an allowlist before calling run(). Never set launchPath from user input.
+rule:
+  kind: call_expression
+  has:
+    kind: navigation_expression
+    regex: '\.launch$'

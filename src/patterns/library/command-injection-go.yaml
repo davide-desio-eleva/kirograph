@@ -4,8 +4,26 @@ severity: critical
 owaspCategory: A03
 description: exec.Command() with string concatenation — command injection vector
 fixHint: Use exec.Command() with separate arguments (never shell=true). Validate all inputs.
-fix: "exec.Command($CMD, args...)"
 rule:
   any:
-    - pattern: exec.Command($A + $B)
-    - pattern: exec.Command(fmt.Sprintf($$$))
+    - kind: call_expression
+      all:
+        - has:
+            kind: selector_expression
+            regex: '^exec\.Command$'
+        - has:
+            kind: argument_list
+            has:
+              kind: binary_expression
+    - kind: call_expression
+      all:
+        - has:
+            kind: selector_expression
+            regex: '^exec\.Command$'
+        - has:
+            kind: argument_list
+            has:
+              kind: call_expression
+              has:
+                kind: selector_expression
+                regex: '^fmt\.Sprintf$'

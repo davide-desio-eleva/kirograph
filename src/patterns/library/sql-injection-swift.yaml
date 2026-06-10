@@ -1,0 +1,11 @@
+id: sql-injection-swift
+language: swift
+severity: critical
+owaspCategory: A03
+description: SQL query built by string concatenation — SQL injection vector
+fixHint: Use parameterized queries with ? placeholders. Never concatenate user input into SQL strings.
+rule:
+  any:
+    - pattern: µDB.execute(µA + µB)
+    - pattern: µDB.query(µA + µB)
+    - pattern: µDB.run(µA + µB)

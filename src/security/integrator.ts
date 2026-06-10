@@ -16,7 +16,7 @@ import * as path from 'path';
 import type { GraphDatabase } from '../db/database';
 import type { Edge } from '../types';
 import type { IntegrationResult, TransitiveResult, CleanupResult } from './types';
-import { logWarn } from '../errors';
+import { logWarn, logDebug } from '../errors';
 
 // ── Lock File Parsers ─────────────────────────────────────────────────────────
 
@@ -464,18 +464,18 @@ export class DependencyGraphIntegrator {
     // Mark ecosystems without lock files as incomplete
     for (const [ecosystem, depsMap] of depsByEcosystem) {
       if (!ecosystemsWithLockFile.has(ecosystem)) {
-        // No lock file for this ecosystem — mark all deps as incomplete
-        for (const [pkgName, nodeId] of depsMap) {
+        // No lock file for this ecosystem — mark all deps as incomplete and log once per ecosystem.
+        for (const [, nodeId] of depsMap) {
           rawDb.run(
             `UPDATE sec_dependencies SET transitive_status = 'incomplete' WHERE node_id = ?`,
             [nodeId],
           );
           incompleteNodes.push(nodeId);
-          logWarn(
-            `[sec:integrator] Transitive resolution incomplete for "${pkgName}" (${ecosystem}): ` +
-            `no lock file found`,
-          );
         }
+        logDebug(
+          `[sec:integrator] No lock file parser for ${ecosystem} — transitive depth unavailable for ` +
+          `${depsMap.size} package(s). Direct vulnerability scanning is unaffected.`,
+        );
       }
     }
 
@@ -486,20 +486,22 @@ export class DependencyGraphIntegrator {
       if (!ecosystemDeps) continue;
 
       if (transitives.length === 0 && ecosystemDeps.size > 0) {
-        // Lock file exists but yielded no transitive info (e.g., go.sum)
-        // Mark deps as incomplete if the parser couldn't extract tree info
+        // Lock file exists but yielded no transitive info (e.g., go.sum has only checksums,
+        // pip requirements.txt has no tree). Mark all deps incomplete and log once per ecosystem.
         if (lockFile.ecosystem === 'go' || lockFile.ecosystem === 'python') {
-          for (const [pkgName, nodeId] of ecosystemDeps) {
+          for (const [, nodeId] of ecosystemDeps) {
             rawDb.run(
               `UPDATE sec_dependencies SET transitive_status = 'incomplete' WHERE node_id = ?`,
               [nodeId],
             );
             incompleteNodes.push(nodeId);
-            logWarn(
-              `[sec:integrator] Transitive resolution incomplete for "${pkgName}" (${lockFile.ecosystem}): ` +
-              `dependency tree not resolvable from lock file`,
-            );
           }
+          // Single debug note per ecosystem — known limitation, not an error.
+          logDebug(
+            `[sec:integrator] ${lockFile.ecosystem === 'go' ? 'go.sum' : 'requirements.txt'} does not encode a ` +
+            `dependency tree — transitive depth unavailable for ${ecosystemDeps.size} ${lockFile.ecosystem} ` +
+            `package(s). Direct vulnerability scanning is unaffected.`,
+          );
         }
         continue;
       }

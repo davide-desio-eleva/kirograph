@@ -93,6 +93,9 @@ export const EXTENSION_MAP: Record<string, Language> = {
   '.v': 'verilog',
   '.sv': 'verilog',
   '.svh': 'verilog',
+  // Haskell
+  '.hs': 'haskell',
+  '.lhs': 'haskell',
 };
 
 export const GRAMMAR_MAP: Record<Language, string> = {
@@ -145,6 +148,7 @@ export const GRAMMAR_MAP: Record<Language, string> = {
   gdscript: 'tree-sitter-gdscript',
   nix: 'tree-sitter-nix',
   verilog: 'tree-sitter-verilog',
+  haskell: 'tree-sitter-haskell',
   unknown: '',
 };
 

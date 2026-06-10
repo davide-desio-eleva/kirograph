@@ -1,0 +1,11 @@
+id: code-eval-elixir
+language: elixir
+severity: critical
+owaspCategory: A03
+description: Code.eval_string() executes arbitrary Elixir code — code injection vector
+fixHint: Remove Code.eval_string/eval_quoted; use pattern matching or a restricted DSL instead. Never evaluate user-controlled strings.
+rule:
+  kind: call
+  has:
+    kind: dot
+    regex: '^Code\.eval_string'

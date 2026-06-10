@@ -1,0 +1,11 @@
+[package]
+name = "mock-crate"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1.0.193", features = ["derive"] }
+reqwest = "0.11.22"
+
+[dev-dependencies]
+tokio = { version = "1.35.1", features = ["full"] }

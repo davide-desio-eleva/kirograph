@@ -1,0 +1,10 @@
+id: os-execute-lua
+language: lua
+severity: critical
+owaspCategory: A03
+description: os.execute() or io.popen() with a variable argument — command injection vector
+fixHint: Avoid shell execution; use Lua native I/O functions. If unavoidable, validate and escape all arguments.
+rule:
+  any:
+    - pattern: os.execute($CMD)
+    - pattern: io.popen($CMD)

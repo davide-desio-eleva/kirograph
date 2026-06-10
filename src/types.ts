@@ -22,6 +22,7 @@ export type Language =
   | 'yaml' | 'hcl' | 'css' | 'scss' | 'html'
   | 'jupyter'
   | 'rescript' | 'sql' | 'r' | 'julia' | 'powershell' | 'perl' | 'astro' | 'gdscript' | 'nix' | 'verilog'
+  | 'haskell'
   | 'unknown';
 
 export interface Node {
