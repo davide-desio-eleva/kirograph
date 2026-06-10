@@ -1,0 +1,11 @@
+id: command-injection-c
+language: [c, cpp]
+severity: critical
+owaspCategory: A03
+description: system() or popen() with a variable argument — command injection vector
+fixHint: Avoid system()/popen(); use execv/execvp with an array of fixed arguments. Validate all inputs.
+rule:
+  kind: call_expression
+  has:
+    kind: identifier
+    regex: '^(system|popen)$'

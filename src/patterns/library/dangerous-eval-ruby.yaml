@@ -1,0 +1,11 @@
+id: dangerous-eval-ruby
+language: ruby
+severity: critical
+owaspCategory: A03
+description: eval() executes arbitrary Ruby code — code injection vector
+fixHint: Remove eval(); use a safe parser (e.g. JSON.parse, Integer()) or explicit case/when logic instead.
+rule:
+  kind: call
+  has:
+    kind: identifier
+    regex: '^eval$'

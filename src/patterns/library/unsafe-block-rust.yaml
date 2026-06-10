@@ -1,0 +1,8 @@
+id: unsafe-block-rust
+language: rust
+severity: high
+owaspCategory: A04
+description: unsafe block — bypasses Rust memory-safety guarantees
+fixHint: Minimise unsafe surface; wrap raw pointer operations in a safe abstraction and document invariants.
+rule:
+  kind: unsafe_block

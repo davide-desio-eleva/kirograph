@@ -1,0 +1,11 @@
+id: unsafe-string-c
+language: [c, cpp]
+severity: high
+owaspCategory: A04
+description: Unsafe C string function (strcpy/strcat/gets/sprintf) — buffer overflow vector
+fixHint: Use strncpy/strncat/fgets/snprintf with explicit size limits. Prefer bounded alternatives everywhere.
+rule:
+  kind: call_expression
+  has:
+    kind: identifier
+    regex: '^(strcpy|strcat|gets|sprintf|vsprintf)$'

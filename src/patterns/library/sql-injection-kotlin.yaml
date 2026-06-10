@@ -1,0 +1,11 @@
+id: sql-injection-kotlin
+language: kotlin
+severity: critical
+owaspCategory: A03
+description: JDBC query built by string concatenation — SQL injection vector
+fixHint: Use PreparedStatement with ? placeholders. Never concatenate user input into SQL strings.
+rule:
+  any:
+    - pattern: µSTMT.executeQuery(µA + µB)
+    - pattern: µSTMT.execute(µA + µB)
+    - pattern: µSTMT.executeUpdate(µA + µB)

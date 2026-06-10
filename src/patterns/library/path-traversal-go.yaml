@@ -5,7 +5,7 @@ owaspCategory: A01
 description: os.Open() or ioutil.ReadFile() with user-controlled path — path traversal vector
 fixHint: Use filepath.Clean() and verify the result is within an allowed base directory.
 rule:
-  any:
-    - pattern: os.Open($PATH)
-    - pattern: ioutil.ReadFile($PATH)
-    - pattern: os.ReadFile($PATH)
+  kind: call_expression
+  has:
+    kind: selector_expression
+    regex: '^(os\.Open|ioutil\.ReadFile|os\.ReadFile)$'

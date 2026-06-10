@@ -240,6 +240,7 @@ function walkElixirCall(
 /** AST node types that should be descended without creating a symbol node */
 const TRANSPARENT_TYPES = new Set([
   'export_statement', 'program', 'source_file', 'module', 'translation_unit',
+  'chunk', // Lua root node type
 ]);
 
 /** Mapping from tree-sitter node types to graph NodeKind */
@@ -282,6 +283,12 @@ const KIND_MAP: Record<string, NodeKind> = {
   // Variables / constants (language-specific, see extractVariableKind)
   lexical_declaration: 'variable',    // TS/JS (const/let/var) — refined below
   variable_declaration: 'variable',   // TS/JS (var)
+  // Ruby
+  method: 'method',            // Ruby def (top-level and in class body)
+  class: 'class',              // Ruby class
+  // Lua
+  local_function_definition_statement: 'function',
+  function_definition_statement: 'function',
   // Import statements (all handled via extractImport)
 };
 
@@ -787,13 +794,35 @@ function extractName(node: any, source: string, _lang: Language, kind: NodeKind)
     }
   }
 
-  // Standard: look for first identifier/property_identifier/type_identifier child
+  // Lua function_definition_statement: name lives inside a `variable` child (e.g. M.greet)
+  // Extract the last identifier to get the function name (not the module prefix)
+  if (node.type === 'function_definition_statement') {
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child.type === 'variable') {
+        let lastId: string | null = null;
+        for (let j = 0; j < child.childCount; j++) {
+          const gc = child.child(j);
+          if (gc.type === 'identifier') lastId = source.slice(gc.startIndex, gc.endIndex);
+        }
+        if (lastId) return lastId;
+      }
+    }
+  }
+
+  // Standard: look for first named-identifier child
+  // Covers: identifier, property_identifier, type_identifier (most languages),
+  //         simple_identifier (Kotlin, Swift), word (Bash), name (PHP), constant (Ruby class)
   for (let i = 0; i < node.childCount; i++) {
     const child = node.child(i);
     if (
       child.type === 'identifier' ||
       child.type === 'property_identifier' ||
-      child.type === 'type_identifier'
+      child.type === 'type_identifier' ||
+      child.type === 'simple_identifier' ||
+      child.type === 'word' ||
+      child.type === 'name' ||
+      child.type === 'constant'
     ) {
       return source.slice(child.startIndex, child.endIndex);
     }

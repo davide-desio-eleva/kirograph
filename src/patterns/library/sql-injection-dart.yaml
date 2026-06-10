@@ -1,0 +1,9 @@
+id: sql-injection-dart
+language: dart
+severity: critical
+owaspCategory: A03
+description: SQL query built by string concatenation — SQL injection vector
+fixHint: Use parameterized queries with ? placeholder lists. Never concatenate user input into SQL strings.
+rule:
+  kind: additive_expression
+  regex: '(SELECT|INSERT|UPDATE|DELETE|UNION)'

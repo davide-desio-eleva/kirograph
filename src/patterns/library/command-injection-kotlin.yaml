@@ -1,0 +1,10 @@
+id: command-injection-kotlin
+language: kotlin
+severity: critical
+owaspCategory: A03
+description: Runtime.exec() or ProcessBuilder — command injection vector if arguments are user-controlled
+fixHint: Pass a fixed executable and a validated argument array. Never build command strings from user input.
+rule:
+  any:
+    - pattern: Runtime.getRuntime().exec($CMD)
+    - pattern: ProcessBuilder($CMD).start()

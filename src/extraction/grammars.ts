@@ -67,7 +67,7 @@ export const GRAMMAR_FILE_MAP: Record<Language, string> = {
   // Bundled WASMs — compiled from grammar sources, stored in src/extraction/wasm/
   // resolveWasmPath handles these via BUNDLED_WASM_LANGS set (no entry needed here)
   sql: '', r: '', julia: '', powershell: '', perl: '',
-  astro: '', gdscript: '', nix: '', verilog: '',
+  astro: '', gdscript: '', nix: '', verilog: '', haskell: '',
   unknown: '',
 };
 

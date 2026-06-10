@@ -1,0 +1,9 @@
+id: sql-injection-php
+language: php
+severity: critical
+owaspCategory: A03
+description: SQL query built by string concatenation (.) — SQL injection vector
+fixHint: Use PDO prepared statements with ? placeholders and bound parameters. Never concatenate user input into SQL.
+rule:
+  kind: binary_expression
+  regex: '(SELECT|INSERT|UPDATE|DELETE|UNION)'

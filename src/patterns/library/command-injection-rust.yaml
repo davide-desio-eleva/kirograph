@@ -1,0 +1,11 @@
+id: command-injection-rust
+language: rust
+severity: critical
+owaspCategory: A03
+description: std::process::Command built with a variable argument — command injection vector
+fixHint: Pass a fixed executable path and validate each argument individually. Never construct commands from user input.
+rule:
+  kind: call_expression
+  has:
+    kind: scoped_identifier
+    regex: 'Command::new'

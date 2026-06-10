@@ -1,0 +1,11 @@
+id: dangerous-eval-php
+language: php
+severity: critical
+owaspCategory: A03
+description: eval() executes arbitrary PHP code — code injection vector
+fixHint: Remove eval(); parse data with json_decode() or use explicit logic. Never evaluate user-supplied strings.
+rule:
+  kind: function_call_expression
+  has:
+    kind: name
+    regex: '^eval$'
