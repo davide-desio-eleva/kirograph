@@ -6,7 +6,7 @@ import * as readline from 'readline';
 import { KiroGraphConfig } from '../../config';
 type CavemanMode = 'lite' | 'full' | 'ultra';
 import { ask, askToggle, arrowSelect, printSection, printSeparator, dim, reset, violet } from './prompts';
-export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'turboquantMemDocs' | 'turboquantBits' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites' | 'enableArchitecture' | 'cavemanMode' | 'shellCompressionLevel' | 'enableMemory' | 'enableWatchmen' | 'watchmenThreshold' | 'watchmenSynthesisMode' | 'watchmenLocalModel' | 'enableDocs' | 'docsContextLimit' | 'enableData' | 'dataContextLimit' | 'enableSecurity' | 'enablePatterns'> & { embeddingModel?: string; embeddingDim?: number };
+export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'turboquantMemDocs' | 'turboquantBits' | 'turbovecMemDocs' | 'turbovecBits' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites' | 'enableArchitecture' | 'cavemanMode' | 'shellCompressionLevel' | 'enableMemory' | 'enableWatchmen' | 'watchmenThreshold' | 'watchmenSynthesisMode' | 'watchmenLocalModel' | 'enableDocs' | 'docsContextLimit' | 'enableData' | 'dataContextLimit' | 'enableSecurity' | 'enablePatterns'> & { embeddingModel?: string; embeddingDim?: number };
 export type SemanticEngine = KiroGraphConfig['semanticEngine'];
 
 export const DEFAULT_EMBEDDING_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
@@ -55,7 +55,7 @@ export async function promptConfigOptions(rl: readline.Interface): Promise<Confi
     'Enables natural-language code search via vector embeddings. A local model (~130MB) is downloaded on first use.',
   );
 
-  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, semanticEngine: 'cosine', turboquantMemDocs: false, turboquantBits: 3, typesenseDashboard: false, qdrantDashboard: false, extractDocstrings: true, trackCallSites: true, enableArchitecture: false, cavemanMode: 'off', shellCompressionLevel: 'normal', enableMemory: false, enableWatchmen: false, watchmenThreshold: 5, watchmenSynthesisMode: 'local', watchmenLocalModel: 'onnx-community/gemma-4-E4B-it-ONNX', enableDocs: false, docsContextLimit: 0, enableData: false, dataContextLimit: 0, enableSecurity: false, enablePatterns: false };
+  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, semanticEngine: 'cosine', turboquantMemDocs: false, turboquantBits: 3, turbovecMemDocs: false, turbovecBits: 4, typesenseDashboard: false, qdrantDashboard: false, extractDocstrings: true, trackCallSites: true, enableArchitecture: false, cavemanMode: 'off', shellCompressionLevel: 'normal', enableMemory: false, enableWatchmen: false, watchmenThreshold: 5, watchmenSynthesisMode: 'local', watchmenLocalModel: 'onnx-community/gemma-4-E4B-it-ONNX', enableDocs: false, docsContextLimit: 0, enableData: false, dataContextLimit: 0, enableSecurity: false, enablePatterns: false };
 
   if (enableEmbeddings) {
     // ── Model selection ────────────────────────────────────────────────────────
@@ -95,6 +95,7 @@ export async function promptConfigOptions(rl: readline.Interface): Promise<Confi
     const semanticEngine = await arrowSelect<SemanticEngine>(rl, 'Vector search engine:', [
       { value: 'cosine',      label: 'cosine',      description: 'In-process cosine similarity. No extra deps. Best for small/medium projects.' },
       { value: 'turboquant',  label: 'turboquant',  description: 'ANN index, zero native deps. Compresses embeddings 20–30× (Google TurboQuant). ANN without native binaries — ideal for CI, ARM, restricted envs. Optional: npm install turboquant-js.' },
+      { value: 'turbovec',   label: 'turbovec',   description: 'ANN search via Rust/SIMD (napi-rs). Same TurboQuant algorithm but NEON on ARM and AVX-512BW on x86 — faster than turboquant-js at the cost of a one-time Rust build. Requires Rust toolchain. Build: cd native/turbovec-node && npm install && npm run build.' },
       { value: 'sqlite-vec', label: 'sqlite-vec', description: 'ANN index. Sub-linear search. Best for large codebases. Needs: better-sqlite3, sqlite-vec (native).' },
       { value: 'orama',      label: 'orama',      description: 'Hybrid search (full-text + vector). Pure JS. Needs: @orama/orama, @orama/plugin-data-persistence.' },
       { value: 'pglite',     label: 'pglite',     description: 'Hybrid search via PostgreSQL + pgvector. Exact results. Pure WASM. Needs: @electric-sql/pglite.' },
@@ -105,12 +106,25 @@ export async function promptConfigOptions(rl: readline.Interface): Promise<Confi
     patch.semanticEngine = semanticEngine;
     patch.useVecIndex = semanticEngine === 'sqlite-vec';
 
-    // turboquant-js for memory & docs: ask when cosine is chosen (no ANN for mem/docs yet)
-    // or when turboquant is already the code-node engine (lib already installed)
+    // TurboQuant for memory & docs: offer when cosine or turboquant is the code-node engine
     if (semanticEngine === 'cosine' || semanticEngine === 'turboquant') {
       patch.turboquantMemDocs = await askToggle(rl,
         'TurboQuant for memory & docs search (optional):',
         'Replaces the default linear cosine scan in memory observations and doc sections with a compressed ANN index — no native deps required. Most useful when you accumulate many observations or large doc sets (1 000+ entries).',
+        false,
+      );
+    }
+
+    // TurboVec bit width
+    if (semanticEngine === 'turbovec') {
+      patch.turbovecBits = await arrowSelect<number>(rl, 'TurboVec bits per coordinate:', [
+        { value: 4, label: '4 bits (recommended)', description: 'Best quality, ~19× compression vs raw Float32. Default.' },
+        { value: 3, label: '3 bits',               description: 'Balanced — ~25× compression, slight quality drop.' },
+        { value: 2, label: '2 bits',               description: 'Highest compression (~38×), lowest accuracy.' },
+      ]);
+      patch.turbovecMemDocs = await askToggle(rl,
+        'TurboVec for memory & docs search (optional):',
+        'Replaces the default linear cosine scan in memory observations and doc sections with the TurboVec ANN index. Requires the addon to be built.',
         false,
       );
     }

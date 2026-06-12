@@ -24,6 +24,80 @@ import type { InstallTarget } from './common';
 import { getTargetInstaller } from './targets';
 import type { CavemanMode } from './caveman';
 
+function _findRustc(): string | null {
+  // Check PATH first, then the default rustup install location
+  const inPath = spawnSync('rustc', ['--version'], { encoding: 'utf8', shell: true });
+  if (inPath.status === 0) return 'rustc';
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
+  const cargoRustc = path.join(home, '.cargo', 'bin', 'rustc');
+  if (fs.existsSync(cargoRustc)) return cargoRustc;
+  return null;
+}
+
+function _installTurbovecAddon(): void {
+  const nativeDir = path.join(__dirname, '..', '..', '..', 'native', 'turbovec-node');
+  const hasAddon = fs.existsSync(nativeDir) &&
+    fs.readdirSync(nativeDir).some(f => f.startsWith('turbovec_node.') && f.endsWith('.node'));
+
+  if (hasAddon) {
+    console.log(`  ✓ turbovec-node addon already built`);
+    return;
+  }
+
+  // Ensure Rust toolchain — install via rustup if missing
+  let rustc = _findRustc();
+  if (!rustc) {
+    console.log(`\n  Rust toolchain not found. Installing via rustup...`);
+    const isWindows = process.platform === 'win32';
+    if (isWindows) {
+      console.warn(`  ✗ Automated rustup install is not supported on Windows.`);
+      console.warn(`    Download rustup-init.exe from https://rustup.rs and re-run kirograph install.`);
+      return;
+    }
+    const rustup = spawnSync(
+      'sh',
+      ['-c', 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path'],
+      { stdio: 'inherit', shell: false },
+    );
+    if (rustup.status !== 0) {
+      console.warn(`  ✗ rustup install failed. Install Rust manually: https://rustup.rs`);
+      console.warn(`    Then: cd native/turbovec-node && npm install && npm run build`);
+      return;
+    }
+    rustc = _findRustc();
+    if (!rustc) {
+      console.warn(`  ✗ rustc still not found after rustup install. Re-run kirograph install in a new shell.`);
+      return;
+    }
+    console.log(`  ✓ Rust installed: ${spawnSync(rustc, ['--version'], { encoding: 'utf8' }).stdout?.trim()}`);
+  } else {
+    console.log(`  ✓ Rust: ${spawnSync(rustc, ['--version'], { encoding: 'utf8' }).stdout?.trim()}`);
+  }
+
+  // Ensure ~/.cargo/bin is on PATH for child processes so cargo/napi-rs cli can find it
+  if (!process.env.PATH?.includes('.cargo')) {
+    const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
+    process.env.PATH = `${path.join(home, '.cargo', 'bin')}:${process.env.PATH ?? ''}`;
+  }
+
+  console.log(`\n  Building turbovec-node native addon (Rust/napi-rs)...`);
+  console.log(`  This may take a few minutes on first build.`);
+
+  const npmInstall = spawnSync('npm', ['install'], { cwd: nativeDir, stdio: 'inherit', shell: true });
+  if (npmInstall.status !== 0) {
+    console.warn(`  ✗ npm install failed in native/turbovec-node`);
+    return;
+  }
+
+  const build = spawnSync('npm', ['run', 'build'], { cwd: nativeDir, stdio: 'inherit', shell: true });
+  if (build.status === 0) {
+    console.log(`  ✓ turbovec-node addon built`);
+  } else {
+    console.warn(`  ✗ Build failed (exit ${build.status}). Run manually:`);
+    console.warn(`    cd native/turbovec-node && npm install && npm run build`);
+  }
+}
+
 export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?: boolean } = {}): Promise<void> {
   printBanner();
 
@@ -89,6 +163,9 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
               console.warn(`    npm install turboquant-js`);
             }
           }
+        }
+        if (config.enableEmbeddings && config.semanticEngine === 'turbovec') {
+          _installTurbovecAddon();
         }
         console.log(`  • enableArchitecture: ${config.enableArchitecture}`);
         console.log(`  • cavemanMode: ${cavemanMode}`);
@@ -186,6 +263,8 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
               console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
               console.warn(`    npm install turboquant-js`);
             }
+          } else if (patch.semanticEngine === 'turbovec') {
+            _installTurbovecAddon();
           }
         }
         console.log(`  • extractDocstrings: ${patch.extractDocstrings}`);

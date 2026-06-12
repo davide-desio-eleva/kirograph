@@ -128,7 +128,7 @@
           <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 0.5rem 0.6rem;">Persistent memory</td><td style="padding:0.5rem;text-align:center;color:#4caf50;">✅</td><td style="padding:0.5rem;text-align:center;color:#4caf50;">✅</td><td style="padding:0.5rem;text-align:center;color:#4caf50;">✅</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;color:#4caf50;">✅</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;color:#4caf50;">✅</td></tr>
           <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 0.5rem 0.6rem;">Documentation indexing</td><td style="padding:0.5rem;text-align:center;color:#4caf50;">✅</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;color:#4caf50;">✅</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td></tr>
           <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 0.5rem 0.6rem;">Shell + prose compression</td><td style="padding:0.5rem;text-align:center;color:#4caf50;">✅</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;color:#4caf50;">✅</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;color:#4caf50;">✅</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td></tr>
-          <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 0.5rem 0.6rem;">8 semantic engines</td><td style="padding:0.5rem;text-align:center;color:#4caf50;">✅</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td></tr>
+          <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 0.5rem 0.6rem;">9 semantic engines</td><td style="padding:0.5rem;text-align:center;color:#4caf50;">✅</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td></tr>
           <tr><td style="padding: 0.5rem 0.6rem;">Multi-platform (34 targets)</td><td style="padding:0.5rem;text-align:center;color:#4caf50;">✅</td><td style="padding:0.5rem;text-align:center;">7</td><td style="padding:0.5rem;text-align:center;">13</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;opacity:0.3;">—</td><td style="padding:0.5rem;text-align:center;">any</td><td style="padding:0.5rem;text-align:center;">28+</td></tr>
         </tbody>
       </table>
@@ -219,7 +219,7 @@
           <h3>Semantic Search</h3>
         </div>
         <div class="card-body">
-          <p>Opt-in embedding-based search with configurable models and eight pluggable engines: cosine, turboquant, sqlite-vec, orama, pglite, lancedb, qdrant, typesense.</p>
+          <p>Opt-in embedding-based search with configurable models and nine pluggable engines: cosine, turboquant, turbovec, sqlite-vec, orama, pglite, lancedb, qdrant, typesense.</p>
         </div>
       </div>
 
@@ -422,6 +422,21 @@
         </div>
       </div>
 
+      <!-- v0.23.0 -->
+      <div class="card" style="--card-color: 255, 140, 50;">
+        <div class="card-header">
+          <span class="card-icon"><img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/icons/turbovec.png"></span>
+          <h3>TurboVec (Rust/SIMD)</h3>
+          <span class="card-version">v0.23.0</span>
+        </div>
+        <div class="card-body">
+          <p>Same TurboQuant algorithm in Rust via <strong>napi-rs</strong> — NEON on ARM64 (Apple Silicon, Graviton), AVX-512BW on x86-64. Faster search than turboquant-js at the cost of a one-time Rust build. Built automatically by <code>kirograph install</code>. Set <code>semanticEngine: "turbovec"</code>.</p>
+        </div>
+        <div class="card-footer">
+          <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/turbovec.png" alt="KiroGraph TurboVec">
+        </div>
+      </div>
+
     </div>
   </div>
 </section>
@@ -432,7 +447,7 @@
   <div class="container">
     <div class="section-header">
       <span class="label">Changelog</span>
-      <h2>From v0.1 to v0.21 in three months</h2>
+      <h2>From v0.1 to v0.23 in three months</h2>
       <p>Drag or scroll to explore every release.</p>
     </div>
   </div>
@@ -478,6 +493,8 @@
       <div class="tl-item below"><div class="tl-dot"></div><div class="tl-connector"></div><div class="tl-content"><span class="tl-ver">v0.19.1</span><span class="tl-title">KiroGraph-Patterns (ast-grep)</span></div></div>
       <div class="tl-item above major"><div class="tl-content"><span class="tl-ver">v0.20.0</span><span class="tl-title">KiroGraph-Watchmen</span></div><div class="tl-connector"></div><div class="tl-dot"></div></div>
       <div class="tl-item below major"><div class="tl-dot"></div><div class="tl-connector"></div><div class="tl-content"><span class="tl-ver">v0.21.0</span><span class="tl-title">TurboQuant Compression</span></div></div>
+      <div class="tl-item above"><div class="tl-content"><span class="tl-ver">v0.22.0</span><span class="tl-title">Firecrawl PDF</span></div><div class="tl-connector"></div><div class="tl-dot"></div></div>
+      <div class="tl-item below major"><div class="tl-dot"></div><div class="tl-connector"></div><div class="tl-content"><span class="tl-ver">v0.23.0</span><span class="tl-title">TurboVec (Rust/SIMD)</span></div></div>
 
     </div>
   </div>
@@ -581,7 +598,7 @@
   <div class="container">
     <div class="section-header">
       <span class="label">Semantic Search</span>
-      <h2>Eight pluggable vector engines</h2>
+      <h2>Nine pluggable vector engines</h2>
       <p>Enable embeddings for natural-language search. Choose the engine that fits your project size and constraints; all fall back gracefully if deps are missing.</p>
     </div>
 
@@ -591,6 +608,7 @@
         <tbody>
           <tr><td><code>cosine</code> <em>(default)</em></td><td>Exact cosine, linear scan</td><td>None</td><td>Small/medium projects, zero setup</td></tr>
           <tr><td><code>turboquant</code></td><td>ANN, sub-linear</td><td>No (pure JS)</td><td>Large codebases, 20–30× RAM savings, no native deps</td></tr>
+          <tr><td><code>turbovec</code></td><td>ANN, sub-linear</td><td>Yes (Rust/napi-rs)</td><td>Fastest ANN; SIMD-accelerated; one-time Rust build; auto-built by installer</td></tr>
           <tr><td><code>sqlite-vec</code></td><td>ANN, sub-linear</td><td>Yes</td><td>Large codebases, fast ANN</td></tr>
           <tr><td><code>orama</code></td><td>Hybrid (full-text + vector)</td><td>No (pure JS)</td><td>Best result quality, no native deps</td></tr>
           <tr><td><code>pglite</code></td><td>Hybrid, exact (WASM pgvector)</td><td>No (WASM)</td><td>Exact results, PostgreSQL semantics</td></tr>

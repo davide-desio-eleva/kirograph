@@ -1,0 +1,24 @@
+{
+  "name": "turbovec-node",
+  "version": "0.1.0",
+  "description": "Node.js napi-rs bindings for turbovec — SIMD-accelerated quantized vector search",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "binaryName": "turbovec_node",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc"
+    ]
+  },
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@napi-rs/cli": "^3"
+  }
+}

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.23.0] - 2026-06-12: TurboVec — Rust/SIMD vector engine via napi-rs
+
+### Added
+
+- **TurboVec semantic engine** (`"semanticEngine": "turbovec"`): 9th vector search engine — a napi-rs native addon wrapping [turbovec](https://github.com/RyanCodrai/turbovec) by Ryan Codrai. Same TurboQuant compression algorithm as `turboquant-js`, implemented in Rust with **SIMD-accelerated search** (NEON on ARM64, AVX-512BW on x86-64). String IDs from KiroGraph are mapped to `u64` via FNV-1a hashing with a JSON sidecar (`.tvim.ids`) for round-trip persistence. Index file format: `.kirograph/turbovec.tvim`. On macOS, turbovec links the Accelerate framework (always available); on Linux, `libopenblas`; on Windows, pure-Rust matrixmultiply fallback (no extra deps).
+
+- **`turbovecBits` config field** (number, default `4`, valid: `2`, `3`, `4`): bits per coordinate. Tighter range than turboquant (which accepts 1–8) because turbovec's Rust codepaths are validated for 2–4 only. Changing this requires `kirograph index --force`.
+
+- **`turbovecMemDocs` config field** (boolean, default `false`): reserved for applying the TurboVec ANN index to memory observations and doc sections (mirrors `turboquantMemDocs`).
+
+- **`native/turbovec-node/`**: napi-rs Rust crate that compiles to a platform-specific `.node` binary. Build once with `cd native/turbovec-node && npm install && npm run build`. Requires Rust toolchain (`rustup`). Falls back silently to `cosine` if the addon is not built.
+
+- **`npm run test:turbovec`**: end-to-end test script in `scripts/turbovec/`. Covers Rust build detection, config + index + status + query + export + memory workflow, `validateConfig` turbovecBits validation, and a 14-step unit test of `TurboVecIndex` (construct → upsert → search → upsert-update → prepare → remove → save → load → round-trip → close, plus invalid-dim and invalid-bitwidth error checks). Flags: `--skip-unit`, `--no-build`, `--skip-native`.
+
+- **Installer**: when `turbovec` is selected as the engine, `kirograph install` checks for an existing `.node` binary, verifies the Rust toolchain, and runs `npm install && npm run build` inside `native/turbovec-node`. Falls back with clear instructions if `rustc` is not found.
+
 ## [0.22.0] - 2026-06-10: PDF support for the data module
 
 ### Added

@@ -33,8 +33,9 @@ The result is fewer tool calls, less context used, and faster responses on compl
 | 🧪 **Affected Tests** | Find test files impacted by source changes — useful in CI and pre-commit hooks |
 | 🌐 **Graph Export** | Interactive browser dashboard with search, clustering, path finding, and analytics |
 | <h4>Semantic Search</h4> | |
-| ⚡ **8 Semantic Engines** | Cosine, TurboQuant, sqlite-vec, Orama, PGlite, LanceDB, Qdrant, Typesense — pick the best fit for your project |
+| ⚡ **9 Semantic Engines** | Cosine, TurboQuant, TurboVec, sqlite-vec, Orama, PGlite, LanceDB, Qdrant, Typesense — pick the best fit for your project |
 | 🗜️ **TurboQuant Embedding Compression** | Compresses embeddings 20–30× at index time using [Google's TurboQuant algorithm](https://research.google/blog/turboquant-redefining-ai-efficiency-with-extreme-compression/) (Walsh-Hadamard rotation + Lloyd-Max quantization). A 768-dim `Float32` vector (3,072 bytes) becomes ~120 bytes — 300 MB of raw embeddings shrinks to ~12 MB in RAM. ANN search with **zero native dependencies**, pure TypeScript. Configurable via `turboquantBits`. Powered by [turboquant-js](https://github.com/danilodevhub/turboquant-js) by Danilo Dev. |
+| ⚡ **TurboVec (Rust/SIMD)** | Same TurboQuant algorithm in Rust via napi-rs — NEON on ARM64, AVX-512BW on x86. Faster search at the cost of a one-time Rust build. Configurable via `turbovecBits` (2–4). Powered by [turbovec](https://github.com/RyanCodrai/turbovec) by Ryan Codrai. The native addon (`native/turbovec-node/`) is a Rust crate with its own Cargo build — it lives outside `src/` because it is not TypeScript. `kirograph install` builds it automatically. |
 | 🤖 **Custom Embedding Models** | Use any HuggingFace `feature-extraction` model — nomic, Gemma, MiniLM, BGE, or bring your own |
 | <h4>Architecture (KiroGraph-Arch opt-in  module)</h4> | |
 | 🏛️ **Architecture Analysis** | Package graph, layer detection, coupling metrics (Ca/Ce/instability) |

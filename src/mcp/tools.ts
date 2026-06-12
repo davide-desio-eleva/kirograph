@@ -1567,6 +1567,8 @@ export class ToolHandler {
               `  Semantic search: enabled`,
               `  Semantic model:  ${stats.embeddingModel}`,
               `  Semantic engine: ${
+                stats.semanticEngine === 'turboquant' ? `turboquant (${stats.vecIndexCount} entries · ANN)` :
+                stats.semanticEngine === 'turbovec'   ? `turbovec (${stats.vecIndexCount} entries · ${stats.turbovecBits ?? 4} bits · Rust/SIMD)` :
                 stats.semanticEngine === 'sqlite-vec' ? `sqlite-vec (${stats.vecIndexCount} entries in ANN index)` :
                 stats.semanticEngine === 'orama'      ? `orama hybrid (${stats.vecIndexCount} docs in index)` :
                 stats.semanticEngine === 'pglite'     ? `pglite+pgvector (${stats.vecIndexCount} rows in DB)` :

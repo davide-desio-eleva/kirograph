@@ -79,6 +79,7 @@ export function register(program: Command): void {
           stats.semanticEngine === 'lancedb'    ? `lancedb  ${dim}(${stats.vecIndexCount} entries in ANN index)${reset}` :
           stats.semanticEngine === 'qdrant'     ? `qdrant  ${dim}(${stats.vecIndexCount} points in collection)${reset}` :
           stats.semanticEngine === 'typesense'  ? `typesense  ${dim}(${stats.vecIndexCount} documents in collection)${reset}` :
+          stats.semanticEngine === 'turbovec'   ? `turbovec  ${dim}(${stats.vecIndexCount} entries · ${stats.turbovecBits ?? 4} bits · Rust/SIMD)${reset}` :
           `in-process cosine`;
         const total = stats.embeddableNodeCount > 0 ? stats.embeddableNodeCount : stats.nodes;
         const displayed = Math.min(stats.embeddingCount, total);

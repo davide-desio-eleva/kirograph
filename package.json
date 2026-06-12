@@ -22,6 +22,7 @@
     "test:patterns": "bash scripts/patterns/test.sh",
     "test:sec": "bash scripts/sec/test.sh",
     "test:turboquant": "bash scripts/turboquant/test.sh",
+    "test:turbovec": "bash scripts/turbovec/test.sh",
     "test:data": "bash scripts/data/test.sh",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "release": "./scripts/release.sh",
@@ -75,6 +76,7 @@
     "qdrant-local": "^0.0.0-alpha.10",
     "sqlite-vec": "^0.1.9",
     "turboquant-js": "^0.2.0",
+    "turbovec-node": "file:native/turbovec-node",
     "typesense": "^3.0.6"
   },
   "devDependencies": {

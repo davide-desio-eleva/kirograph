@@ -25,6 +25,7 @@ import { LanceDBIndex } from './lancedb-index';
 import { QdrantIndex } from './qdrant-index';
 import { TypesenseIndex } from './typesense-index';
 import { TurboQuantIndex, writeTurboQuantStats } from './turboquant-index';
+import { TurboVecIndex } from './turbovec-index';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -109,6 +110,7 @@ export class VectorManager {
   private qdrantIndex: QdrantIndex | null = null;
   private typesenseIndex: TypesenseIndex | null = null;
   private turboquantIndex: TurboQuantIndex | null = null;
+  private turbovecIndex: TurboVecIndex | null = null;
   private _engineFallback: string | null = null;
 
   constructor(
@@ -279,6 +281,16 @@ export class VectorManager {
           this._engineFallback = 'turboquant unavailable — run: npm install turboquant-js';
           logDebug('VectorManager: TurboQuant unavailable, falling back to in-process cosine');
         }
+      } else if (engine === 'turbovec') {
+        const bits = this.config.turbovecBits ?? 4;
+        this.turbovecIndex = new TurboVecIndex(kirographDir, 'turbovec.tvim', embeddingDim, bits);
+        await this.turbovecIndex.initialize();
+        if (this.turbovecIndex.isAvailable()) {
+          logDebug('VectorManager: TurboVec ANN index ready', { bits });
+        } else {
+          this._engineFallback = 'turbovec unavailable — build it: cd native/turbovec-node && npm install && npm run build';
+          logDebug('VectorManager: TurboVec unavailable, falling back to in-process cosine');
+        }
       }
     }
   }
@@ -300,7 +312,7 @@ export class VectorManager {
       const output = await this.pipeline(text, { pooling: 'mean', normalize: true });
       const embedding = toFloat32Array(output.data);
       // non-cosine engines are sole stores of record when active — skip the SQLite vectors table
-      if (!this.vecIndex?.isAvailable() && !this.oramaIndex?.isAvailable() && !this.pgliteIndex?.isAvailable() && !this.lancedbIndex?.isAvailable() && !this.qdrantIndex?.isAvailable() && !this.typesenseIndex?.isAvailable() && !this.turboquantIndex?.isAvailable()) {
+      if (!this.vecIndex?.isAvailable() && !this.oramaIndex?.isAvailable() && !this.pgliteIndex?.isAvailable() && !this.lancedbIndex?.isAvailable() && !this.qdrantIndex?.isAvailable() && !this.typesenseIndex?.isAvailable() && !this.turboquantIndex?.isAvailable() && !this.turbovecIndex?.isAvailable()) {
         this.db.storeEmbedding(node.id, embedding, this.config.embeddingModel || DEFAULT_MODEL);
       }
       this.vecIndex?.upsert(node.id, embedding);
@@ -310,6 +322,7 @@ export class VectorManager {
       if (this.qdrantIndex?.isAvailable()) await this.qdrantIndex.upsert(node, embedding);
       if (this.typesenseIndex?.isAvailable()) await this.typesenseIndex.upsert(node, embedding);
       this.turboquantIndex?.upsert(node.id, embedding);
+      this.turbovecIndex?.upsert(node.id, embedding);
     } catch (err) {
       logWarn('Failed to embed node', { nodeId: node.id, error: String(err) });
     }
@@ -317,6 +330,7 @@ export class VectorManager {
 
   /** Number of entries currently in the active ANN/hybrid index (0 when not in use). */
   async vecIndexCount(): Promise<number> {
+    if (this.turbovecIndex?.isAvailable()) return this.turbovecIndex.count();
     if (this.turboquantIndex?.isAvailable()) return this.turboquantIndex.count();
     if (this.vecIndex?.isAvailable()) return this.vecIndex.count();
     if (this.oramaIndex?.isAvailable()) return this.oramaIndex.count();
@@ -342,6 +356,7 @@ export class VectorManager {
       if (this.qdrantIndex?.isAvailable()) await this.qdrantIndex.delete(id);
       if (this.typesenseIndex?.isAvailable()) await this.typesenseIndex.delete(id);
       this.turboquantIndex?.delete(id);
+      this.turbovecIndex?.delete(id);
     }
   }
 
@@ -384,7 +399,9 @@ export class VectorManager {
           ? await this.pgliteIndex.getEmbeddedNodeIds()
           : this.oramaIndex?.isAvailable()
             ? await this.oramaIndex.getEmbeddedNodeIds()
-            : this.turboquantIndex?.isAvailable()
+            : this.turbovecIndex?.isAvailable()
+              ? this.turbovecIndex.getEmbeddedIds()
+              : this.turboquantIndex?.isAvailable()
               ? this.turboquantIndex.getEmbeddedIds()
               : this.vecIndex?.isAvailable()
                 ? this.vecIndex.getEmbeddedNodeIds()
@@ -452,7 +469,7 @@ export class VectorManager {
         for (let j = 0; j < batch.length; j++) {
           const node = batch[j]!;
           const embedding = flat.slice(j * dim, (j + 1) * dim);
-          if (!this.vecIndex?.isAvailable() && !this.oramaIndex?.isAvailable() && !this.pgliteIndex?.isAvailable() && !this.lancedbIndex?.isAvailable() && !this.qdrantIndex?.isAvailable() && !this.typesenseIndex?.isAvailable() && !this.turboquantIndex?.isAvailable()) {
+          if (!this.vecIndex?.isAvailable() && !this.oramaIndex?.isAvailable() && !this.pgliteIndex?.isAvailable() && !this.lancedbIndex?.isAvailable() && !this.qdrantIndex?.isAvailable() && !this.typesenseIndex?.isAvailable() && !this.turboquantIndex?.isAvailable() && !this.turbovecIndex?.isAvailable()) {
             this.db.storeEmbedding(node.id, embedding, modelId);
           }
           this.vecIndex?.upsert(node.id, embedding);
@@ -462,6 +479,7 @@ export class VectorManager {
           if (this.qdrantIndex?.isAvailable()) { qdNodes.push(node); qdEmbeddings.push(embedding); }
           if (this.typesenseIndex?.isAvailable()) { tsNodes.push(node); tsEmbeddings.push(embedding); }
           this.turboquantIndex?.upsert(node.id, embedding);
+          this.turbovecIndex?.upsert(node.id, embedding);
         }
 
         if (qdNodes.length > 0) await this.qdrantIndex!.bulkUpsert(qdNodes, qdEmbeddings);
@@ -532,6 +550,14 @@ export class VectorManager {
       }
     }
 
+    if (this.turbovecIndex?.isAvailable()) {
+      await this.turbovecIndex.save();
+      logDebug('VectorManager: TurboVec index saved', {
+        count: this.turbovecIndex.count(),
+        bits: this.config.turbovecBits ?? 4,
+      });
+    }
+
     logDebug(`VectorManager: embedding complete — ${processed} processed, final batch size: ${currentBatchSize}`);
 
     return processed;
@@ -571,6 +597,9 @@ export class VectorManager {
       } else if (this.typesenseIndex?.isAvailable()) {
         // ANN search via Typesense — HNSW index, cosine metric
         nodeIds = await this.typesenseIndex.search(queryVec, topN);
+      } else if (this.turbovecIndex?.isAvailable()) {
+        // ANN search via TurboVec — Rust/SIMD NEON+AVX-512 quantized index
+        nodeIds = this.turbovecIndex.search(queryVec, topN);
       } else if (this.turboquantIndex?.isAvailable()) {
         // ANN search via TurboQuant — compressed in-memory index, zero native deps
         nodeIds = this.turboquantIndex.search(queryVec, topN);
@@ -604,5 +633,6 @@ export class VectorManager {
   close(): void {
     this.qdrantIndex?.close();
     this.typesenseIndex?.close();
+    this.turbovecIndex?.close();
   }
 }

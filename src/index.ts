@@ -248,6 +248,7 @@ export default class KiroGraph {
       embeddingModel: this.config.embeddingModel,
       useVecIndex: this.config.useVecIndex ?? false,
       semanticEngine: this.config.semanticEngine ?? 'cosine',
+      turbovecBits: this.config.turbovecBits,
       vecIndexCount,
       engineFallback: this.vectors.getEngineFallback(),
       frameworks: this.config.frameworkHints ?? [],

@@ -1,0 +1,8 @@
+# Rust build artifacts (can be several GB)
+target/
+
+# Compiled native addon — built per-platform, not committed
+*.node
+
+# npm
+node_modules/

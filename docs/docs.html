@@ -78,6 +78,7 @@
       <a href="#data" class="sidebar-link" style="display:flex;align-items:center;gap:6px;"><img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/icons/data.png" style="width:45px;height:45px;border-radius:20px;flex-shrink:0;border-radius:3px;">Data</a>
       <a href="#security" class="sidebar-link" style="display:flex;align-items:center;gap:6px;"><img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/icons/sec.png" style="width:45px;height:45px;border-radius:20px;flex-shrink:0;border-radius:3px;">Security</a>
       <a href="#turboquant" class="sidebar-link" style="display:flex;align-items:center;gap:6px;"><img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/icons/turboquadrant.png" style="width:45px;height:45px;border-radius:20px;flex-shrink:0;border-radius:3px;">TurboQuant</a>
+      <a href="#turbovec" class="sidebar-link" style="display:flex;align-items:center;gap:6px;padding-left:1.5rem;"><img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/icons/turbovec.png" style="width:45px;height:45px;border-radius:20px;flex-shrink:0;border-radius:3px;">TurboVec</a>
       <a href="#savings-heuristics" class="sidebar-link">Savings Heuristics</a>
       <a href="#credits" class="sidebar-link">Credits</a>
     </div>
@@ -425,13 +426,14 @@ kirograph install --target kiro   # install for a specific platform only</code><
     <h3 id="semantic-layer">Semantic layer (opt-in)</h3>
     <p>When <code>enableEmbeddings: true</code>, KiroGraph generates 768-dimensional vector embeddings for every embeddable symbol using <code>nomic-ai/nomic-embed-text-v1.5</code> (~130 MB, downloaded once to <code>~/.kirograph/models/</code>). Powers natural-language search in <code>kirograph_context</code>.</p>
 
-    <p>Seven pluggable semantic engines:</p>
+    <p>Nine pluggable semantic engines:</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Engine</th><th>Store</th><th>Search type</th><th>Extra deps</th></tr></thead>
         <tbody>
           <tr><td><code>cosine</code> <em>(default)</em></td><td><code>kirograph.db</code></td><td>Exact cosine, linear scan</td><td>none</td></tr>
           <tr><td><code>turboquant</code></td><td><code>.kirograph/turboquant.bin</code></td><td>ANN, sub-linear</td><td><code>turboquant-js</code> (pure JS)</td></tr>
+          <tr><td><code>turbovec</code></td><td><code>.kirograph/turbovec.tvim</code> + <code>.tvim.ids</code></td><td>ANN, sub-linear</td><td>napi-rs native addon (Rust build, auto-built by installer)</td></tr>
           <tr><td><code>sqlite-vec</code></td><td><code>.kirograph/vec.db</code></td><td>ANN, sub-linear</td><td><code>better-sqlite3</code>, <code>sqlite-vec</code></td></tr>
           <tr><td><code>orama</code></td><td><code>.kirograph/orama.json</code></td><td>Hybrid (full-text + vector)</td><td><code>@orama/orama</code></td></tr>
           <tr><td><code>pglite</code></td><td><code>.kirograph/pglite/</code></td><td>Hybrid, exact (WASM pgvector)</td><td><code>@electric-sql/pglite</code></td></tr>
@@ -853,9 +855,11 @@ kirograph install --target cursor      # Install for a specific platform only</c
           <tr><td><code>enableEmbeddings</code></td><td>boolean</td><td><code>false</code></td><td>Enable semantic (vector) search</td></tr>
           <tr><td><code>embeddingModel</code></td><td>string</td><td><code>"nomic-ai/nomic-embed-text-v1.5"</code></td><td>HuggingFace model ID</td></tr>
           <tr><td><code>embeddingDim</code></td><td>number</td><td><code>768</code></td><td>Embedding dimension</td></tr>
-          <tr><td><code>semanticEngine</code></td><td>string</td><td><code>"cosine"</code></td><td>Engine: <code>cosine</code>, <code>turboquant</code>, <code>sqlite-vec</code>, <code>orama</code>, <code>pglite</code>, <code>lancedb</code>, <code>qdrant</code>, <code>typesense</code></td></tr>
+          <tr><td><code>semanticEngine</code></td><td>string</td><td><code>"cosine"</code></td><td>Engine: <code>cosine</code>, <code>turboquant</code>, <code>turbovec</code>, <code>sqlite-vec</code>, <code>orama</code>, <code>pglite</code>, <code>lancedb</code>, <code>qdrant</code>, <code>typesense</code></td></tr>
           <tr><td><code>turboquantBits</code></td><td>number</td><td><code>3</code></td><td>TurboQuant bits per coordinate (1–8). Controls compression/quality tradeoff. Changing requires <code>kirograph index --force</code>.</td></tr>
           <tr><td><code>turboquantMemDocs</code></td><td>boolean</td><td><code>false</code></td><td>Use TurboQuant ANN index for memory and doc search (requires <code>turboquant-js</code>).</td></tr>
+          <tr><td><code>turbovecBits</code></td><td>number</td><td><code>4</code></td><td>TurboVec bits per coordinate (2, 3, or 4). Controls compression/quality tradeoff. Changing requires <code>kirograph index --force</code>.</td></tr>
+          <tr><td><code>turbovecMemDocs</code></td><td>boolean</td><td><code>false</code></td><td>Use TurboVec ANN index for memory and doc search (requires built addon).</td></tr>
           <tr><td><code>useVecIndex</code></td><td>boolean</td><td><code>false</code></td><td>Deprecated alias for <code>semanticEngine: "sqlite-vec"</code></td></tr>
           <tr><td><code>typesenseDashboard</code></td><td>boolean</td><td><code>false</code></td><td>Open Typesense dashboard after indexing</td></tr>
           <tr><td><code>qdrantDashboard</code></td><td>boolean</td><td><code>false</code></td><td>Open Qdrant dashboard after indexing</td></tr>
@@ -909,6 +913,82 @@ kirograph install --target cursor      # Install for a specific platform only</c
       });
     });
     </script>
+
+    <!-- ── Caveman Mode ── -->
+    <h2 id="caveman-mode">Caveman Mode</h2>
+
+    <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/caveman.png" alt="Caveman mode" style="border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 1.5rem; max-width: 100%;">
+
+    <p>Caveman mode compresses the agent's communication style, cutting token usage on responses without affecting tool calls or code output. Inspired by <a href="https://github.com/JuliusBrussee/caveman" target="_blank" rel="noopener">caveman</a> by JuliusBrussee.</p>
+
+    <p>The rules are injected at session start via the steering file (IDE) and the inline agent prompt (kiro-cli), so they're always in context with no extra tool calls.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Mode</th><th>Style</th></tr></thead>
+        <tbody>
+          <tr><td><code>off</code></td><td>Normal responses <em>(default)</em></td></tr>
+          <tr><td><code>lite</code></td><td>Compact, no filler, full sentences</td></tr>
+          <tr><td><code>full</code></td><td>Fragments, no articles, short synonyms</td></tr>
+          <tr><td><code>ultra</code></td><td>Maximum compression, abbreviations, → for causality</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Caveman mode never touches code blocks, file paths, URLs, or technical terms, only prose.</p>
+
+    <p><strong>Auto-clarity exceptions:</strong> the agent temporarily reverts to normal prose for security warnings, confirmations of irreversible actions (delete, overwrite, force-push), and multi-step sequences where fragment order could cause misunderstanding. Compressed style resumes immediately after.</p>
+
+    <pre><code>kirograph caveman lite    # set mode
+kirograph caveman         # show current mode</code></pre>
+
+    <div class="callout">
+      Takes effect on the <strong>next agent session</strong>. The steering file and CLI agent config are regenerated immediately when you run the command.
+    </div>
+
+    <!-- ── Shell Compression ── -->
+    <h2 id="shell-compression">Shell Compression</h2>
+
+    <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/rtk.png" alt="shell compression mode" style="border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 1.5rem; max-width: 100%;">
+
+    <p>KiroGraph includes a built-in shell compression engine inspired by <a href="https://github.com/rtk-ai/rtk" target="_blank" rel="noopener">rtk</a>. The <code>kirograph_exec</code> MCP tool runs shell commands and returns token-optimized output, saving 60-90% of tokens on verbose commands.</p>
+
+    <p>Supported command families: <strong>git</strong> (status, log, diff, push, pull, commit, add, fetch, branch), <strong>GitHub CLI</strong> (gh pr list/view, gh issue list, gh run list), <strong>test runners</strong> (jest, vitest, pytest, cargo test, go test, rspec, minitest, playwright), <strong>linters/build</strong> (eslint, tsc, ruff, clippy, cargo build, prettier, biome, golangci-lint, rubocop, next build), <strong>file listings</strong> (ls, find, tree), <strong>search</strong> (grep, rg, grouped by file), <strong>diff</strong> (condensed context), <strong>docker/k8s</strong> (docker ps, images, logs, compose ps, kubectl pods, logs, services), <strong>package managers</strong> (npm, pip, bundle, prisma generate), <strong>AWS</strong> (sts, ec2, lambda, logs, cloudformation, dynamodb, iam, s3, ecs, sqs, sns), <strong>network</strong> (curl, wget, strips progress).</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Level</th><th>Style</th></tr></thead>
+        <tbody>
+          <tr><td><code>normal</code></td><td>Balanced: removes noise, keeps structure (default)</td></tr>
+          <tr><td><code>aggressive</code></td><td>More compact: groups by category, limits output</td></tr>
+          <tr><td><code>ultra</code></td><td>Maximum compression: counts and summaries only</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <pre><code>kirograph compression normal     # balanced (default)
+kirograph compression aggressive # more compact
+kirograph compression ultra      # maximum compression
+kirograph compression off        # disable hook (tool still available)
+kirograph compression            # show current level
+kirograph gain                   # show token savings stats
+kirograph gain --graph           # ASCII graph (last 30 days)</code></pre>
+
+    <p>Set during <code>kirograph install</code> (interactive arrow-key menu) or any time after. The configured level is used as the default when the agent calls <code>kirograph_exec</code> without specifying one explicitly.</p>
+
+    <p><strong>Error preservation:</strong> Failed commands always show full diagnostic output regardless of compression level.</p>
+
+    <div class="callout">
+      Configure in <code>.kirograph/config.json</code>: <code>"shellCompressionLevel": "normal"</code> (default). Set to <code>"off"</code> to disable the hook and steering section. The <code>kirograph_exec</code> tool remains available regardless.
+    </div>
+
+    <h3 id="compression-caveman">Coexistence with Caveman Mode</h3>
+    <p>Compression and caveman mode are complementary, they compress different things:</p>
+    <ul>
+      <li><strong>Caveman mode</strong> compresses the agent's <em>prose responses</em> (the text it writes around tool results). It never touches code or tool output.</li>
+      <li><strong>Shell compression compresses <em>shell command output</em> (the raw data coming back from shell commands). It never touches how the agent communicates.</li>
+    </ul>
+    <p>They stack: with both enabled, shell commands return 60-90% fewer tokens <em>and</em> the agent's explanations around those results are also shorter. Pick both independently during <code>kirograph install</code>. The "ultra + ultra" combo gives maximum token savings on both fronts.</p>
 
     <!-- ── Memory ── -->
     <h2 id="memory">Memory (opt-in)</h2>
@@ -1398,81 +1478,67 @@ kirograph docs reembed                      # re-embed with current model</code>
 
     <p>The compressed index is serialized to <code>.kirograph/turboquant.bin</code> at the end of indexing and reloaded in milliseconds on startup. Run <code>kirograph status</code> to see live compression stats.</p>
 
-    <!-- ── Caveman Mode ── -->
-    <h2 id="caveman-mode">Caveman Mode</h2>
+    <!-- ── TurboVec ── -->
+    <h2 id="turbovec">TurboVec</h2>
 
-    <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/caveman.png" alt="Caveman mode" style="border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 1.5rem; max-width: 100%;">
+    <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/turbovec.png" alt="KiroGraph TurboVec" style="border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 1.5rem; max-width: 100%;">
 
-    <p>Caveman mode compresses the agent's communication style, cutting token usage on responses without affecting tool calls or code output. Inspired by <a href="https://github.com/JuliusBrussee/caveman" target="_blank" rel="noopener">caveman</a> by JuliusBrussee.</p>
+    <p>TurboVec is the Rust/SIMD counterpart of TurboQuant. It runs the same Walsh-Hadamard + Lloyd-Max quantization algorithm in Rust and exposes it to Node.js as a <strong>napi-rs native addon</strong> (<code>native/turbovec-node/</code>). SIMD-accelerated: <strong>NEON on ARM64</strong> (Apple Silicon, AWS Graviton), <strong>AVX-512BW on x86-64</strong>. On macOS it links Apple's Accelerate framework; on Linux it links OpenBLAS; on Windows it uses pure-Rust matrixmultiply.</p>
 
-    <p>The rules are injected at session start via the steering file (IDE) and the inline agent prompt (kiro-cli), so they're always in context with no extra tool calls.</p>
+    <p>Built on <a href="https://github.com/RyanCodrai/turbovec" target="_blank" rel="noopener">turbovec</a> by <a href="https://github.com/RyanCodrai" target="_blank" rel="noopener">Ryan Codrai</a>.</p>
 
+    <div class="callout">
+      <strong>Why is <code>native/turbovec-node/</code> outside <code>src/</code>?</strong> It is a Rust crate with its own build system (Cargo + napi-rs), not TypeScript compiled by <code>tsc</code>. It has its own <code>Cargo.toml</code>, <code>package.json</code>, and produces a platform-specific <code>.node</code> binary. The TypeScript wrapper that loads it lives at <code>src/vectors/turbovec-index.ts</code> — that is the integration boundary.
+    </div>
+
+    <h3>Compression at a glance</h3>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Mode</th><th>Style</th></tr></thead>
+        <thead><tr><th>Vectors</th><th>Raw Float32 in RAM</th><th>TurboVec (4 bit)</th><th>Reduction</th></tr></thead>
         <tbody>
-          <tr><td><code>off</code></td><td>Normal responses <em>(default)</em></td></tr>
-          <tr><td><code>lite</code></td><td>Compact, no filler, full sentences</td></tr>
-          <tr><td><code>full</code></td><td>Fragments, no articles, short synonyms</td></tr>
-          <tr><td><code>ultra</code></td><td>Maximum compression, abbreviations, → for causality</td></tr>
+          <tr><td>1,000</td><td>~3 MB</td><td>~160 KB</td><td>~19×</td></tr>
+          <tr><td>10,000</td><td>~30 MB</td><td>~1.6 MB</td><td>~19×</td></tr>
+          <tr><td>100,000</td><td>~300 MB</td><td>~16 MB</td><td>~19×</td></tr>
         </tbody>
       </table>
     </div>
 
-    <p>Caveman mode never touches code blocks, file paths, URLs, or technical terms, only prose.</p>
-
-    <p><strong>Auto-clarity exceptions:</strong> the agent temporarily reverts to normal prose for security warnings, confirmations of irreversible actions (delete, overwrite, force-push), and multi-step sequences where fragment order could cause misunderstanding. Compressed style resumes immediately after.</p>
-
-    <pre><code>kirograph caveman lite    # set mode
-kirograph caveman         # show current mode</code></pre>
-
-    <div class="callout">
-      Takes effect on the <strong>next agent session</strong>. The steering file and CLI agent config are regenerated immediately when you run the command.
-    </div>
-
-    <!-- ── Shell Compression ── -->
-    <h2 id="shell-compression">Shell Compression</h2>
-
-    <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/rtk.png" alt="shell compression mode" style="border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 1.5rem; max-width: 100%;">
-
-    <p>KiroGraph includes a built-in shell compression engine inspired by <a href="https://github.com/rtk-ai/rtk" target="_blank" rel="noopener">rtk</a>. The <code>kirograph_exec</code> MCP tool runs shell commands and returns token-optimized output, saving 60-90% of tokens on verbose commands.</p>
-
-    <p>Supported command families: <strong>git</strong> (status, log, diff, push, pull, commit, add, fetch, branch), <strong>GitHub CLI</strong> (gh pr list/view, gh issue list, gh run list), <strong>test runners</strong> (jest, vitest, pytest, cargo test, go test, rspec, minitest, playwright), <strong>linters/build</strong> (eslint, tsc, ruff, clippy, cargo build, prettier, biome, golangci-lint, rubocop, next build), <strong>file listings</strong> (ls, find, tree), <strong>search</strong> (grep, rg, grouped by file), <strong>diff</strong> (condensed context), <strong>docker/k8s</strong> (docker ps, images, logs, compose ps, kubectl pods, logs, services), <strong>package managers</strong> (npm, pip, bundle, prisma generate), <strong>AWS</strong> (sts, ec2, lambda, logs, cloudformation, dynamodb, iam, s3, ecs, sqs, sns), <strong>network</strong> (curl, wget, strips progress).</p>
-
+    <h3>When to use TurboVec vs TurboQuant</h3>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Level</th><th>Style</th></tr></thead>
+        <thead><tr><th>Situation</th><th>Recommendation</th></tr></thead>
         <tbody>
-          <tr><td><code>normal</code></td><td>Balanced: removes noise, keeps structure (default)</td></tr>
-          <tr><td><code>aggressive</code></td><td>More compact: groups by category, limits output</td></tr>
-          <tr><td><code>ultra</code></td><td>Maximum compression: counts and summaries only</td></tr>
+          <tr><td>No Rust toolchain, CI/ARM, restricted env</td><td><strong><code>turboquant</code></strong> — zero native deps</td></tr>
+          <tr><td>macOS/Linux, want fastest ANN, Rust build OK</td><td><strong><code>turbovec</code></strong> — SIMD acceleration</td></tr>
+          <tr><td>Windows</td><td><code>turbovec</code> works but installer requires manual <a href="https://rustup.rs" target="_blank" rel="noopener">rustup</a> first</td></tr>
         </tbody>
       </table>
     </div>
 
-    <pre><code>kirograph compression normal     # balanced (default)
-kirograph compression aggressive # more compact
-kirograph compression ultra      # maximum compression
-kirograph compression off        # disable hook (tool still available)
-kirograph compression            # show current level
-kirograph gain                   # show token savings stats
-kirograph gain --graph           # ASCII graph (last 30 days)</code></pre>
+    <h3>Setup</h3>
+    <p>The simplest path is <code>kirograph install</code> — it auto-installs Rust (via rustup) if missing on macOS/Linux, then builds the addon. Or manually:</p>
+    <pre><code>cd native/turbovec-node
+npm install
+npm run build   # requires Rust toolchain — https://rustup.rs</code></pre>
+    <pre><code>{
+  "enableEmbeddings": true,
+  "semanticEngine": "turbovec",
+  "turbovecBits": 4
+}</code></pre>
+    <p>Falls back silently to <code>cosine</code> if the addon is not built.</p>
 
-    <p>Set during <code>kirograph install</code> (interactive arrow-key menu) or any time after. The configured level is used as the default when the agent calls <code>kirograph_exec</code> without specifying one explicitly.</p>
-
-    <p><strong>Error preservation:</strong> Failed commands always show full diagnostic output regardless of compression level.</p>
-
-    <div class="callout">
-      Configure in <code>.kirograph/config.json</code>: <code>"shellCompressionLevel": "normal"</code> (default). Set to <code>"off"</code> to disable the hook and steering section. The <code>kirograph_exec</code> tool remains available regardless.
+    <h3>Configuration</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>turbovecBits</code></td><td>number</td><td><code>4</code></td><td>Bits per coordinate (2, 3, or 4 only — validated at Rust level). Lower = smaller, less accurate. Changing requires <code>kirograph index --force</code>.</td></tr>
+          <tr><td><code>turbovecMemDocs</code></td><td>boolean</td><td><code>false</code></td><td>Also use TurboVec ANN index for memory observations and doc sections.</td></tr>
+        </tbody>
+      </table>
     </div>
 
-    <h3 id="compression-caveman">Coexistence with Caveman Mode</h3>
-    <p>Compression and caveman mode are complementary, they compress different things:</p>
-    <ul>
-      <li><strong>Caveman mode</strong> compresses the agent's <em>prose responses</em> (the text it writes around tool results). It never touches code or tool output.</li>
-      <li><strong>Shell compression compresses <em>shell command output</em> (the raw data coming back from shell commands). It never touches how the agent communicates.</li>
-    </ul>
-    <p>They stack: with both enabled, shell commands return 60-90% fewer tokens <em>and</em> the agent's explanations around those results are also shorter. Pick both independently during <code>kirograph install</code>. The "ultra + ultra" combo gives maximum token savings on both fronts.</p>
+    <p>The index is stored as two files: <code>.kirograph/turbovec.tvim</code> (binary) and <code>.kirograph/turbovec.tvim.ids</code> (JSON sidecar mapping internal u64 hashes back to string symbol IDs). Both are written atomically at the end of indexing.</p>
 
     <h2 id="savings-heuristics">Savings Heuristics</h2>
     <p><code>kirograph gain</code> tracks two types of savings: compression (measured exactly) and graph tools (estimated via heuristics). For graph tools, the system estimates what the agent <em>would have spent</em> doing the same work without KiroGraph:</p>
@@ -1516,6 +1582,7 @@ kirograph gain --graph           # ASCII graph (last 30 days)</code></pre>
       <li><a href="https://github.com/rtk-ai/rtk" target="_blank" rel="noopener">rtk</a> by <a href="https://github.com/rtk-ai" target="_blank" rel="noopener">rtk-ai</a>: the shell compression module's command-family approach and token-optimized output patterns.</li>
       <li><a href="https://github.com/yvgude/lean-ctx" target="_blank" rel="noopener">lean-ctx</a> by <a href="https://github.com/yvgude" target="_blank" rel="noopener">Yves Gugger</a>: file read caching, multiple read modes, and context budget governance concepts.</li>
       <li><a href="https://github.com/danilodevhub/turboquant-js" target="_blank" rel="noopener">turboquant-js</a> by <a href="https://github.com/danilodevhub" target="_blank" rel="noopener">Danilo Dev</a>: the TurboQuant engine — TypeScript implementation of Google's Walsh-Hadamard + Lloyd-Max quantization algorithm used for embedding compression.</li>
+      <li><a href="https://github.com/RyanCodrai/turbovec" target="_blank" rel="noopener">turbovec</a> by <a href="https://github.com/RyanCodrai" target="_blank" rel="noopener">Ryan Codrai</a>: the TurboVec engine — Rust implementation of TurboQuant with SIMD acceleration, exposed to Node.js via a napi-rs native addon.</li>
     </ul>
 
     <h3 id="credits-contributors">Contributors</h3>

@@ -20,10 +20,12 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `enableEmbeddings` | boolean | `false` | Generate semantic embeddings (opt-in) |
 | `embeddingModel` | string | `nomic-ai/nomic-embed-text-v1.5` | HuggingFace `feature-extraction` model ID |
 | `embeddingDim` | number | `768` | Output dimension of the chosen embedding model |
-| `semanticEngine` | string | `cosine` | Engine: `cosine`, `turboquant`, `sqlite-vec`, `orama`, `pglite`, `lancedb`, `qdrant`, `typesense` |
+| `semanticEngine` | string | `cosine` | Engine: `cosine`, `turboquant`, `turbovec`, `sqlite-vec`, `orama`, `pglite`, `lancedb`, `qdrant`, `typesense` |
 | `useVecIndex` | boolean | `false` | Deprecated alias for `semanticEngine: "sqlite-vec"` |
 | `turboquantMemDocs` | boolean | `false` | Use TurboQuant ANN index for memory observation and doc section search (requires `turboquant-js`) |
 | `turboquantBits` | number | `3` | TurboQuant bits per coordinate (1–8). Controls compression/quality tradeoff. Changing this requires `kirograph index --force`. |
+| `turbovecMemDocs` | boolean | `false` | Use TurboVec ANN index for memory observation and doc section search (requires built addon) |
+| `turbovecBits` | number | `4` | TurboVec bits per coordinate (2, 3, or 4). Controls compression/quality tradeoff. Changing this requires `kirograph index --force`. |
 | `typesenseDashboard` | boolean | `false` | Open Typesense dashboard after indexing |
 | `qdrantDashboard` | boolean | `false` | Open Qdrant dashboard after indexing |
 | **Architecture** | | | |
@@ -120,6 +122,24 @@ npm install turboquant-js
 
 A 768-dim `Float32Array` (3,072 bytes) is stored as ~120 bytes at 3 bits — roughly **25× smaller**. Falls back silently to `cosine` if `turboquant-js` is not installed.
 
+#### turbovec
+
+Same TurboQuant algorithm implemented in Rust via [turbovec](https://github.com/RyanCodrai/turbovec) and exposed to Node.js via a **napi-rs native addon** (`native/turbovec-node/`). SIMD-accelerated: **NEON on ARM64** (Apple Silicon, AWS Graviton), **AVX-512BW on x86-64**. On macOS links Apple's Accelerate framework; on Linux links OpenBLAS; on Windows uses pure-Rust matrixmultiply (no extra deps).
+
+```json
+{ "enableEmbeddings": true, "semanticEngine": "turbovec", "turbovecBits": 4 }
+```
+
+```bash
+# Build the native addon once (requires Rust toolchain — https://rustup.rs)
+# Linux only: sudo apt install libopenblas-dev
+cd native/turbovec-node && npm install && npm run build
+```
+
+`turbovecBits` accepts 2, 3, or 4 (tighter range than turboquant's 1–8 due to Rust-level validation). Falls back silently to `cosine` if the addon is not built.
+
+**Why `native/turbovec-node/` is outside `src/`:** it is a separate Rust crate with its own build system (Cargo + napi-rs), not TypeScript compiled by `tsc`. It has its own `Cargo.toml`, `package.json`, and produces a platform-specific `.node` binary. The TypeScript wrapper that loads that binary lives at `src/vectors/turbovec-index.ts` — that is the integration boundary. The `kirograph install` command handles the Rust toolchain and addon build automatically on macOS and Linux; on Windows, install Rust manually from https://rustup.rs first.
+
 #### cosine (default)
 
 In-process cosine similarity over all stored embeddings. No extra dependencies.
@@ -206,6 +226,7 @@ npm install typesense
 |--------|-------------|------------|---------|----------|
 | `cosine` | Exact cosine, linear scan | none | - | Small/medium projects, zero setup |
 | `turboquant` | ANN, sub-linear | `turboquant-js` | no (pure JS) | ANN without native deps, CI/ARM, large codebases with 20–30× RAM savings |
+| `turbovec` | ANN, sub-linear | napi-rs build (`rustc`) | yes (Rust) | Faster SIMD search than turboquant-js; one-time Rust build; macOS/Linux/Windows |
 | `sqlite-vec` | ANN, sub-linear | `better-sqlite3`, `sqlite-vec` | yes | Large codebases, fast ANN |
 | `orama` | Hybrid (FTS + vector) | `@orama/orama`, `@orama/plugin-data-persistence` | no (JS) | Best result quality, no native deps |
 | `pglite` | Hybrid (FTS + vector), exact | `@electric-sql/pglite` | no (WASM) | Exact results, PostgreSQL semantics |
@@ -221,6 +242,7 @@ All non-cosine engines fall back silently to `cosine` if their optional dependen
 |--------|-------------|--------------|
 | `cosine` | `kirograph.db` (SQLite) | `kirograph.db` (`vectors` table) |
 | `turboquant` | `kirograph.db` (SQLite) | `.kirograph/turboquant.bin` (+ `turboquant-mem.bin`, `turboquant-doc.bin` if `turboquantMemDocs: true`) |
+| `turbovec` | `kirograph.db` (SQLite) | `.kirograph/turbovec.tvim` + `turbovec.tvim.ids` (string-ID sidecar) |
 | `sqlite-vec` | `kirograph.db` (SQLite) | `.kirograph/vec.db` |
 | `orama` | `kirograph.db` (SQLite) | `.kirograph/orama.json` |
 | `pglite` | `kirograph.db` (SQLite) | `.kirograph/pglite/` |
