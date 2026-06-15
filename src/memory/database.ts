@@ -17,6 +17,10 @@ import type {
   MemSearchOptions,
   MemTimelineOptions,
   MemStats,
+  MemRelation,
+  MemRelationInput,
+  MemPrompt,
+  RelationType,
 } from './types';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -50,6 +54,7 @@ export class MemoryDatabase {
 
     // Migration: add temporal columns if they don't exist (for existing databases)
     this.migrateTemporalColumns();
+    this.migrateRelationsAndPrompts();
 
     this.initialized = true;
   }
@@ -64,6 +69,8 @@ export class MemoryDatabase {
       { name: 'valid_until', type: 'INTEGER' },
       { name: 'superseded_by', type: 'TEXT' },
       { name: 'fact_type', type: "TEXT DEFAULT 'observation'" },
+      { name: 'topic_key', type: 'TEXT' },
+      { name: 'review_after', type: 'INTEGER' },
     ];
 
     for (const col of columnsToAdd) {
@@ -73,6 +80,34 @@ export class MemoryDatabase {
         // Column already exists — ignore
       }
     }
+  }
+
+  private migrateRelationsAndPrompts(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS mem_relations (
+        id TEXT PRIMARY KEY,
+        observation_a TEXT NOT NULL REFERENCES mem_observations(id) ON DELETE CASCADE,
+        observation_b TEXT NOT NULL REFERENCES mem_observations(id) ON DELETE CASCADE,
+        relation TEXT NOT NULL,
+        confidence REAL NOT NULL DEFAULT 1.0,
+        reason TEXT,
+        evidence TEXT,
+        judgment_status TEXT NOT NULL DEFAULT 'pending',
+        judged_at INTEGER,
+        created_at INTEGER NOT NULL,
+        UNIQUE(observation_a, observation_b)
+      );
+      CREATE INDEX IF NOT EXISTS idx_mem_rel_a ON mem_relations(observation_a);
+      CREATE INDEX IF NOT EXISTS idx_mem_rel_b ON mem_relations(observation_b);
+      CREATE INDEX IF NOT EXISTS idx_mem_rel_status ON mem_relations(judgment_status);
+      CREATE TABLE IF NOT EXISTS mem_prompts (
+        id TEXT PRIMARY KEY,
+        session_id TEXT REFERENCES mem_sessions(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_mem_prompts_session ON mem_prompts(session_id);
+    `);
   }
 
   // ── Watchmen ─────────────────────────────────────────────────────────────
@@ -186,6 +221,8 @@ export class MemoryDatabase {
       source?: string;
       tags?: string[];
       sessionId?: string;
+      topicKey?: string;
+      reviewAfter?: number;
     } = {}
   ): string | null {
     const id = generateId();
@@ -197,9 +234,9 @@ export class MemoryDatabase {
 
     try {
       this.db.run(
-        `INSERT INTO mem_observations (id, session_id, content, content_raw, content_hash, kind, source, tags, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, opts.sessionId ?? null, content, opts.contentRaw ?? null, contentHash, kind, source, tags, now]
+        `INSERT INTO mem_observations (id, session_id, content, content_raw, content_hash, kind, source, tags, created_at, topic_key, review_after)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, opts.sessionId ?? null, content, opts.contentRaw ?? null, contentHash, kind, source, tags, now, opts.topicKey ?? null, opts.reviewAfter ?? null]
       );
     } catch (err: any) {
       // Unique constraint on content_hash — duplicate, skip silently
@@ -399,6 +436,108 @@ export class MemoryDatabase {
     this.db.run('DELETE FROM mem_vectors');
   }
 
+  // ── Relations ────────────────────────────────────────────────────────────
+
+  insertRelation(input: MemRelationInput): string {
+    const id = generateId();
+    this.db.run(
+      `INSERT OR REPLACE INTO mem_relations (id, observation_a, observation_b, relation, confidence, reason, evidence, judgment_status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+      [id, input.observationA, input.observationB, input.relation, input.confidence ?? 1.0, input.reason ?? null, input.evidence ?? null, Date.now()]
+    );
+    return id;
+  }
+
+  judgeRelation(id: string, relation: RelationType, confidence: number, reason?: string, evidence?: string): void {
+    this.db.run(
+      `UPDATE mem_relations SET relation = ?, confidence = ?, reason = ?, evidence = ?, judgment_status = 'judged', judged_at = ? WHERE id = ?`,
+      [relation, confidence, reason ?? null, evidence ?? null, Date.now(), id]
+    );
+  }
+
+  ignoreRelation(id: string): void {
+    this.db.run(`UPDATE mem_relations SET judgment_status = 'ignored' WHERE id = ?`, [id]);
+  }
+
+  getPendingRelations(limit = 20): MemRelation[] {
+    return this.db.all(
+      `SELECT * FROM mem_relations WHERE judgment_status = 'pending' ORDER BY created_at DESC LIMIT ?`,
+      [limit]
+    ).map((row: any) => this.rowToRelation(row));
+  }
+
+  getRelationsForObservations(ids: string[]): Map<string, MemRelation[]> {
+    if (ids.length === 0) return new Map();
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = this.db.all(
+      `SELECT * FROM mem_relations WHERE observation_a IN (${placeholders}) OR observation_b IN (${placeholders})`,
+      [...ids, ...ids]
+    ) as any[];
+    const map = new Map<string, MemRelation[]>();
+    for (const row of rows) {
+      const rel = this.rowToRelation(row);
+      for (const obsId of [row.observation_a, row.observation_b]) {
+        if (ids.includes(obsId)) {
+          if (!map.has(obsId)) map.set(obsId, []);
+          map.get(obsId)!.push(rel);
+        }
+      }
+    }
+    return map;
+  }
+
+  resolveObservationByTopicKey(topicKey: string): MemObservation | null {
+    const row = this.db.get('SELECT * FROM mem_observations WHERE topic_key = ? LIMIT 1', [topicKey]);
+    return row ? this.rowToObservation(row) : null;
+  }
+
+  private rowToRelation(row: any): MemRelation {
+    return {
+      id: row.id,
+      observationA: row.observation_a,
+      observationB: row.observation_b,
+      relation: row.relation,
+      confidence: row.confidence,
+      reason: row.reason ?? undefined,
+      evidence: row.evidence ?? undefined,
+      judgmentStatus: row.judgment_status,
+      judgedAt: row.judged_at ?? undefined,
+      createdAt: row.created_at,
+    };
+  }
+
+  // ── Review ────────────────────────────────────────────────────────────────
+
+  getObservationsForReview(limit = 20): MemObservation[] {
+    const now = Date.now();
+    return this.db.all(
+      `SELECT * FROM mem_observations WHERE review_after IS NOT NULL AND review_after < ? AND superseded_by IS NULL ORDER BY review_after ASC LIMIT ?`,
+      [now, limit]
+    ).map((row: any) => this.rowToObservation(row));
+  }
+
+  markReviewed(id: string): void {
+    this.db.run(`UPDATE mem_observations SET review_after = NULL WHERE id = ?`, [id]);
+  }
+
+  // ── Prompts ───────────────────────────────────────────────────────────────
+
+  insertPrompt(sessionId: string | undefined, content: string): string {
+    const id = generateId();
+    this.db.run(
+      `INSERT INTO mem_prompts (id, session_id, content, created_at) VALUES (?, ?, ?, ?)`,
+      [id, sessionId ?? null, content, Date.now()]
+    );
+    return id;
+  }
+
+  getPromptsBySession(sessionId: string, limit = 20): MemPrompt[] {
+    return this.db.all(
+      `SELECT * FROM mem_prompts WHERE session_id = ? ORDER BY created_at DESC LIMIT ?`,
+      [sessionId, limit]
+    ).map((row: any) => ({ id: row.id, sessionId: row.session_id ?? undefined, content: row.content, createdAt: row.created_at }));
+  }
+
   // ── Stats ────────────────────────────────────────────────────────────────
 
   getStats(currentModel?: string): MemStats {
@@ -408,6 +547,8 @@ export class MemoryDatabase {
     const links = this.db.get('SELECT COUNT(*) as c FROM mem_links')?.c ?? 0;
     const vectors = this.db.get('SELECT COUNT(*) as c FROM mem_vectors')?.c ?? 0;
     const mismatch = currentModel ? this.getVectorModelMismatch(currentModel) : 0;
+    const relations = this.db.get('SELECT COUNT(*) as c FROM mem_relations')?.c ?? 0;
+    const pendingConflicts = this.db.get("SELECT COUNT(*) as c FROM mem_relations WHERE judgment_status = 'pending'")?.c ?? 0;
 
     return {
       sessions,
@@ -418,6 +559,8 @@ export class MemoryDatabase {
       embeddableCount: observations,
       modelMismatch: mismatch > 0,
       currentModel,
+      relations,
+      pendingConflicts,
     };
   }
 
@@ -522,6 +665,8 @@ export class MemoryDatabase {
       validUntil: row.valid_until ?? undefined,
       supersededBy: row.superseded_by ?? undefined,
       factType: row.fact_type ?? undefined,
+      topicKey: row.topic_key ?? undefined,
+      reviewAfter: row.review_after ?? undefined,
     };
   }
 }

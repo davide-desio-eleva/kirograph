@@ -502,6 +502,293 @@ export function register(program: Command): void {
       cg.close();
     });
 
+  // ── review ─────────────────────────────────────────────────────────────────
+
+  mem
+    .command('review')
+    .description('List observations past their review_after date')
+    .option('--limit <n>', 'Max results', '20')
+    .option('--format <fmt>', 'Output format: text, json', 'text')
+    .action(async (opts: { limit: string; format: string }) => {
+      const { MemoryManager } = await import('../../memory/index');
+      const { loadConfig } = await import('../../config');
+      const KiroGraph = (await import('../../index')).default;
+      const cwd = process.cwd();
+      if (!KiroGraph.isInitialized(cwd)) { console.error('  ✖ Not initialized.'); process.exit(1); }
+      const config = await loadConfig(cwd);
+      if (!config.enableMemory) { console.error('  ✖ Memory not enabled.'); process.exit(1); }
+      const cg = await KiroGraph.open(cwd);
+      const db = cg.getDatabase(); db.applyMemorySchema();
+      const mem = new MemoryManager(config, db.getRawDb()); mem.initialize();
+      const obs = mem.getObservationsForReview(parseInt(opts.limit));
+      if (opts.format === 'json') {
+        console.log(JSON.stringify(obs));
+      } else if (obs.length === 0) {
+        console.log(`\n  ${dim}No overdue observations.${reset}\n`);
+      } else {
+        console.log(`\n  ${section('Memory Review Queue')} — ${obs.length} overdue\n`);
+        const now = Date.now();
+        for (const o of obs) {
+          const daysOverdue = Math.floor((now - (o.reviewAfter ?? now)) / 86400000);
+          console.log(`  ${violet}[${o.kind}]${reset}${o.topicKey ? ` ${dim}(${o.topicKey})${reset}` : ''} ${o.content.slice(0, 120)}`);
+          console.log(`  ${dim}Overdue by ${daysOverdue}d · ID: ${o.id}${reset}\n`);
+        }
+      }
+      cg.close();
+    });
+
+  // ── mark-reviewed ──────────────────────────────────────────────────────────
+
+  mem
+    .command('mark-reviewed <id>')
+    .description('Mark an observation as reviewed — clears its review_after date')
+    .action(async (id: string) => {
+      const { MemoryManager } = await import('../../memory/index');
+      const { loadConfig } = await import('../../config');
+      const KiroGraph = (await import('../../index')).default;
+      const cwd = process.cwd();
+      if (!KiroGraph.isInitialized(cwd)) { console.error('  ✖ Not initialized.'); process.exit(1); }
+      const config = await loadConfig(cwd);
+      if (!config.enableMemory) { console.error('  ✖ Memory not enabled.'); process.exit(1); }
+      const cg = await KiroGraph.open(cwd);
+      const db = cg.getDatabase(); db.applyMemorySchema();
+      const mem = new MemoryManager(config, db.getRawDb()); mem.initialize();
+      mem.markReviewed(id);
+      console.log(`  ✓ Observation ${dim}${id}${reset} marked as reviewed`);
+      cg.close();
+    });
+
+  // ── suggest-topic-key ──────────────────────────────────────────────────────
+
+  mem
+    .command('suggest-topic-key')
+    .description('Suggest a stable topic_key for an observation')
+    .requiredOption('--kind <kind>', 'Observation kind: decision, error, pattern, architecture, summary, note')
+    .requiredOption('--title <title>', 'Short title or first sentence')
+    .action(async (opts: { kind: string; title: string }) => {
+      const { MemoryManager } = await import('../../memory/index');
+      const { loadConfig } = await import('../../config');
+      const KiroGraph = (await import('../../index')).default;
+      const cwd = process.cwd();
+      if (!KiroGraph.isInitialized(cwd)) { console.error('  ✖ Not initialized.'); process.exit(1); }
+      const config = await loadConfig(cwd);
+      if (!config.enableMemory) { console.error('  ✖ Memory not enabled.'); process.exit(1); }
+      const cg = await KiroGraph.open(cwd);
+      const db = cg.getDatabase(); db.applyMemorySchema();
+      const mem = new MemoryManager(config, db.getRawDb()); mem.initialize();
+      const key = mem.suggestTopicKey(opts.kind, opts.title);
+      console.log(`  ${violet}${key}${reset}`);
+      cg.close();
+    });
+
+  // ── capture ────────────────────────────────────────────────────────────────
+
+  mem
+    .command('capture [content]')
+    .description('Extract and store structured learnings from text (## Key Learnings, ## Decisions, etc.)')
+    .action(async (content: string | undefined) => {
+      const { MemoryManager } = await import('../../memory/index');
+      const { loadConfig } = await import('../../config');
+      const KiroGraph = (await import('../../index')).default;
+      const cwd = process.cwd();
+      if (!KiroGraph.isInitialized(cwd)) { console.error('  ✖ Not initialized.'); process.exit(1); }
+      const config = await loadConfig(cwd);
+      if (!config.enableMemory) { console.error('  ✖ Memory not enabled.'); process.exit(1); }
+      let text = content;
+      if (!text) {
+        const chunks: Buffer[] = [];
+        for await (const chunk of process.stdin) chunks.push(chunk);
+        text = Buffer.concat(chunks).toString('utf8').trim();
+      }
+      if (!text) { console.error('  ✖ No content provided.'); process.exit(1); }
+      const cg = await KiroGraph.open(cwd);
+      const db = cg.getDatabase(); db.applyMemorySchema();
+      const mem = new MemoryManager(config, db.getRawDb()); mem.initialize();
+      const results = mem.capturePassive(text);
+      if (results.length === 0) {
+        console.log(`  ${dim}No structured sections found. Use ## Key Learnings, ## Observations, ## Decisions headings.${reset}`);
+      } else {
+        console.log(`\n  ${section('Passive Capture')} — ${results.length} observation(s)\n`);
+        for (const r of results) {
+          console.log(`  ${violet}[${r.kind}]${reset} ${r.content.slice(0, 100)}${r.id ? '' : ` ${dim}(duplicate)${reset}`}`);
+        }
+        console.log('');
+      }
+      cg.close();
+    });
+
+  // ── save-prompt ────────────────────────────────────────────────────────────
+
+  mem
+    .command('save-prompt [content]')
+    .description('Save the current user prompt to session memory')
+    .action(async (content: string | undefined) => {
+      const { MemoryManager } = await import('../../memory/index');
+      const { loadConfig } = await import('../../config');
+      const KiroGraph = (await import('../../index')).default;
+      const cwd = process.cwd();
+      if (!KiroGraph.isInitialized(cwd)) { console.error('  ✖ Not initialized.'); process.exit(1); }
+      const config = await loadConfig(cwd);
+      if (!config.enableMemory) { console.error('  ✖ Memory not enabled.'); process.exit(1); }
+      let text = content;
+      if (!text) {
+        const chunks: Buffer[] = [];
+        for await (const chunk of process.stdin) chunks.push(chunk);
+        text = Buffer.concat(chunks).toString('utf8').trim();
+      }
+      if (!text) { console.error('  ✖ No content provided.'); process.exit(1); }
+      const cg = await KiroGraph.open(cwd);
+      const db = cg.getDatabase(); db.applyMemorySchema();
+      const mem = new MemoryManager(config, db.getRawDb()); mem.initialize();
+      const id = await mem.savePrompt(text);
+      console.log(`  ✓ Prompt saved ${dim}${id}${reset}`);
+      cg.close();
+    });
+
+  // ── conflicts ──────────────────────────────────────────────────────────────
+
+  const conflicts = mem
+    .command('conflicts')
+    .description('Manage conflict relations between memory observations');
+
+  conflicts
+    .command('list')
+    .description('List pending conflict relations')
+    .option('--limit <n>', 'Max results', '20')
+    .option('--format <fmt>', 'Output format: text, json', 'text')
+    .action(async (opts: { limit: string; format: string }) => {
+      const { MemoryManager } = await import('../../memory/index');
+      const { loadConfig } = await import('../../config');
+      const KiroGraph = (await import('../../index')).default;
+      const cwd = process.cwd();
+      if (!KiroGraph.isInitialized(cwd)) { console.error('  ✖ Not initialized.'); process.exit(1); }
+      const config = await loadConfig(cwd);
+      if (!config.enableMemory) { console.error('  ✖ Memory not enabled.'); process.exit(1); }
+      const cg = await KiroGraph.open(cwd);
+      const db = cg.getDatabase(); db.applyMemorySchema();
+      const mem = new MemoryManager(config, db.getRawDb()); mem.initialize();
+      const pending = mem.getPendingRelations(parseInt(opts.limit));
+      if (opts.format === 'json') {
+        console.log(JSON.stringify(pending, null, 2));
+      } else if (pending.length === 0) {
+        console.log(`\n  ${dim}No pending conflict relations.${reset}\n`);
+      } else {
+        console.log(`\n  ${section('Pending Relations')} — ${pending.length}\n`);
+        for (const r of pending) {
+          console.log(`  ${violet}${r.relation}${reset} [${dim}${r.id}${reset}]`);
+          console.log(`  A: ${r.observationA}`);
+          console.log(`  B: ${r.observationB}`);
+          if (r.reason) console.log(`  Reason: ${dim}${r.reason}${reset}`);
+          console.log('');
+        }
+      }
+      cg.close();
+    });
+
+  conflicts
+    .command('scan')
+    .description('Scan recent observations for potential conflicts using FTS similarity')
+    .option('--limit <n>', 'Max observations to scan', '50')
+    .option('--format <fmt>', 'Output format: text, json', 'text')
+    .action(async (opts: { limit: string; format: string }) => {
+      const { MemoryManager } = await import('../../memory/index');
+      const { loadConfig } = await import('../../config');
+      const KiroGraph = (await import('../../index')).default;
+      const cwd = process.cwd();
+      if (!KiroGraph.isInitialized(cwd)) { console.error('  ✖ Not initialized.'); process.exit(1); }
+      const config = await loadConfig(cwd);
+      if (!config.enableMemory) { console.error('  ✖ Memory not enabled.'); process.exit(1); }
+      const cg = await KiroGraph.open(cwd);
+      const db = cg.getDatabase(); db.applyMemorySchema();
+      const mem = new MemoryManager(config, db.getRawDb()); mem.initialize();
+      const candidates = mem.scanConflicts(parseInt(opts.limit));
+      if (opts.format === 'json') {
+        console.log(JSON.stringify(candidates.map(c => ({ a: c.observationA.id, b: c.observationB.id, similarity: c.similarity })), null, 2));
+      } else if (candidates.length === 0) {
+        console.log(`\n  ${dim}No potential conflicts found.${reset}\n`);
+      } else {
+        console.log(`\n  ${section('Conflict Scan')} — ${candidates.length} candidate(s)\n`);
+        for (const c of candidates) {
+          console.log(`  ${violet}↔${reset} [${c.observationA.kind}] "${c.observationA.content.slice(0, 80)}"`);
+          console.log(`     [${c.observationB.kind}] "${c.observationB.content.slice(0, 80)}"`);
+          console.log(`  ${dim}Similarity: ${c.similarity.toFixed(2)} · Use 'kirograph mem compare' to establish a relation${reset}\n`);
+        }
+      }
+      cg.close();
+    });
+
+  conflicts
+    .command('compare <observationA> <observationB>')
+    .description('Establish a typed relation between two observations (IDs or topic_keys)')
+    .requiredOption('--relation <type>', 'Relation: supersedes, conflicts_with, compatible, scoped, related, not_conflict')
+    .option('--confidence <n>', 'Confidence 0.0–1.0', '1.0')
+    .option('--reason <text>', 'Explanation')
+    .option('--evidence <text>', 'Supporting evidence')
+    .action(async (observationA: string, observationB: string, opts: { relation: string; confidence: string; reason?: string; evidence?: string }) => {
+      const { MemoryManager } = await import('../../memory/index');
+      const { loadConfig } = await import('../../config');
+      const KiroGraph = (await import('../../index')).default;
+      const cwd = process.cwd();
+      if (!KiroGraph.isInitialized(cwd)) { console.error('  ✖ Not initialized.'); process.exit(1); }
+      const config = await loadConfig(cwd);
+      if (!config.enableMemory) { console.error('  ✖ Memory not enabled.'); process.exit(1); }
+      const cg = await KiroGraph.open(cwd);
+      const db = cg.getDatabase(); db.applyMemorySchema();
+      const mem = new MemoryManager(config, db.getRawDb()); mem.initialize();
+      const id = mem.compareObservations({
+        observationA,
+        observationB,
+        relation: opts.relation as any,
+        confidence: parseFloat(opts.confidence),
+        reason: opts.reason,
+        evidence: opts.evidence,
+      });
+      console.log(`  ✓ Relation ${dim}${id}${reset} created: ${violet}${opts.relation}${reset} (confidence: ${opts.confidence})`);
+      cg.close();
+    });
+
+  conflicts
+    .command('judge <relationId>')
+    .description('Finalize a pending relation')
+    .requiredOption('--relation <type>', 'Final relation type')
+    .requiredOption('--confidence <n>', 'Final confidence 0.0–1.0')
+    .option('--reason <text>', 'Reasoning')
+    .option('--evidence <text>', 'Evidence')
+    .action(async (relationId: string, opts: { relation: string; confidence: string; reason?: string; evidence?: string }) => {
+      const { MemoryManager } = await import('../../memory/index');
+      const { loadConfig } = await import('../../config');
+      const KiroGraph = (await import('../../index')).default;
+      const cwd = process.cwd();
+      if (!KiroGraph.isInitialized(cwd)) { console.error('  ✖ Not initialized.'); process.exit(1); }
+      const config = await loadConfig(cwd);
+      if (!config.enableMemory) { console.error('  ✖ Memory not enabled.'); process.exit(1); }
+      const cg = await KiroGraph.open(cwd);
+      const db = cg.getDatabase(); db.applyMemorySchema();
+      const mem = new MemoryManager(config, db.getRawDb()); mem.initialize();
+      mem.judgeRelation(relationId, opts.relation as any, parseFloat(opts.confidence), opts.reason, opts.evidence);
+      console.log(`  ✓ Relation ${dim}${relationId}${reset} judged as ${violet}${opts.relation}${reset} (confidence: ${opts.confidence})`);
+      cg.close();
+    });
+
+  conflicts
+    .command('ignore <relationId>')
+    .description('Ignore a pending relation (mark as not relevant)')
+    .action(async (relationId: string) => {
+      const { MemoryManager } = await import('../../memory/index');
+      const { loadConfig } = await import('../../config');
+      const KiroGraph = (await import('../../index')).default;
+      const cwd = process.cwd();
+      if (!KiroGraph.isInitialized(cwd)) { console.error('  ✖ Not initialized.'); process.exit(1); }
+      const config = await loadConfig(cwd);
+      if (!config.enableMemory) { console.error('  ✖ Memory not enabled.'); process.exit(1); }
+      const cg = await KiroGraph.open(cwd);
+      const db = cg.getDatabase(); db.applyMemorySchema();
+      const mem = new MemoryManager(config, db.getRawDb()); mem.initialize();
+      mem.ignoreRelation(relationId);
+      console.log(`  ✓ Relation ${dim}${relationId}${reset} ignored`);
+      cg.close();
+    });
+
   // ── watchmen ──────────────────────────────────────────────────────────────
 
   const watchmen = mem

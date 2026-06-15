@@ -16,6 +16,10 @@ import type {
   MemStats,
   CompressResult,
   WatchmenReadyResult,
+  MemRelation,
+  MemRelationInput,
+  RelationType,
+  MemPrompt,
 } from './types';
 import { MemoryDatabase } from './database';
 import { compressObservation, type CavemanMode } from './compress';
@@ -114,6 +118,8 @@ export class MemoryManager {
       source: input.source ?? 'manual',
       tags: input.tags,
       sessionId,
+      topicKey: input.topicKey,
+      reviewAfter: input.reviewAfter,
     });
 
     if (!id) {
@@ -174,12 +180,40 @@ export class MemoryManager {
     }
 
     // If only one source has results, return it directly
-    if (vectorResults.length === 0) return ftsResults.slice(0, limit);
-    if (ftsResults.length === 0) return vectorResults.slice(0, limit);
+    if (vectorResults.length === 0) {
+      const sliced = ftsResults.slice(0, limit);
+      const ids = sliced.map(r => r.observation.id);
+      const relMap = this.memDb.getRelationsForObservations(ids);
+      for (const r of sliced) {
+        const rels = relMap.get(r.observation.id);
+        if (rels && rels.length > 0) r.relations = rels;
+      }
+      return sliced;
+    }
+    if (ftsResults.length === 0) {
+      const sliced = vectorResults.slice(0, limit);
+      const ids = sliced.map(r => r.observation.id);
+      const relMap = this.memDb.getRelationsForObservations(ids);
+      for (const r of sliced) {
+        const rels = relMap.get(r.observation.id);
+        if (rels && rels.length > 0) r.relations = rels;
+      }
+      return sliced;
+    }
 
     // Hybrid merge: normalize scores and blend
     const merged = this.mergeResults(ftsResults, vectorResults, alpha);
-    return merged.slice(0, limit);
+    const sliced = merged.slice(0, limit);
+
+    // Enrich with relations
+    const ids = sliced.map(r => r.observation.id);
+    const relMap = this.memDb.getRelationsForObservations(ids);
+    for (const r of sliced) {
+      const rels = relMap.get(r.observation.id);
+      if (rels && rels.length > 0) r.relations = rels;
+    }
+
+    return sliced;
   }
 
   /**
@@ -255,6 +289,133 @@ export class MemoryManager {
 
   removeStaleLinks(): number {
     return this.memDb.removeStaleLinks();
+  }
+
+  // ── Relations ─────────────────────────────────────────────────────────────
+
+  compareObservations(input: MemRelationInput): string {
+    // Resolve by topic_key if not found by ID
+    let obsA = input.observationA;
+    let obsB = input.observationB;
+    if (!this.memDb.getObservation(obsA)) {
+      const byKey = this.memDb.resolveObservationByTopicKey(obsA);
+      if (byKey) obsA = byKey.id;
+    }
+    if (!this.memDb.getObservation(obsB)) {
+      const byKey = this.memDb.resolveObservationByTopicKey(obsB);
+      if (byKey) obsB = byKey.id;
+    }
+    return this.memDb.insertRelation({ ...input, observationA: obsA, observationB: obsB });
+  }
+
+  judgeRelation(relationId: string, relation: RelationType, confidence: number, reason?: string, evidence?: string): void {
+    this.memDb.judgeRelation(relationId, relation, confidence, reason, evidence);
+  }
+
+  ignoreRelation(relationId: string): void {
+    this.memDb.ignoreRelation(relationId);
+  }
+
+  getPendingRelations(limit = 20): MemRelation[] {
+    return this.memDb.getPendingRelations(limit);
+  }
+
+  // ── Review ─────────────────────────────────────────────────────────────────
+
+  getObservationsForReview(limit = 20): MemObservation[] {
+    return this.memDb.getObservationsForReview(limit);
+  }
+
+  markReviewed(id: string): void {
+    this.memDb.markReviewed(id);
+  }
+
+  // ── Prompts ────────────────────────────────────────────────────────────────
+
+  async savePrompt(content: string, ide = 'kiro'): Promise<string> {
+    const cwd = process.cwd();
+    const sessionTimeout = (this.config as any).memorySessionTimeout ?? 7200;
+    const sessionId = this.memDb.getOrCreateSession(ide, cwd, sessionTimeout);
+    return this.memDb.insertPrompt(sessionId, content);
+  }
+
+  // ── Passive capture ────────────────────────────────────────────────────────
+
+  capturePassive(content: string, sessionId?: string): Array<{ id: string | null; kind: string; content: string }> {
+    const kindMap: Record<string, string> = {
+      'key learnings': 'pattern',
+      'learnings': 'pattern',
+      'observations': 'note',
+      'decisions': 'decision',
+      'key changes': 'pattern',
+      'errors': 'error',
+      'patterns': 'pattern',
+    };
+
+    const results: Array<{ id: string | null; kind: string; content: string }> = [];
+    const lines = content.split('\n');
+    let currentKind: string | null = null;
+
+    for (const line of lines) {
+      const headingMatch = line.match(/^#{1,3}\s+(.+)/);
+      if (headingMatch) {
+        const heading = headingMatch[1].toLowerCase().trim();
+        currentKind = kindMap[heading] ?? null;
+        continue;
+      }
+      if (!currentKind) continue;
+      const bulletMatch = line.match(/^[\s]*[-*•]\s+(.+)|^[\s]*\d+[.)]\s+(.+)/);
+      if (bulletMatch) {
+        const text = (bulletMatch[1] || bulletMatch[2]).trim();
+        if (text.length < 5) continue;
+        const id = this.memDb.insertObservation(text, { kind: currentKind, source: 'passive', sessionId });
+        const symbols = detectSymbols(text, this.db);
+        if (id && symbols.length > 0) this.memDb.linkToSymbols(id, symbols.map(s => s.qualifiedName));
+        results.push({ id, kind: currentKind, content: text });
+      }
+    }
+
+    return results;
+  }
+
+  // ── Topic key ──────────────────────────────────────────────────────────────
+
+  suggestTopicKey(kind: string, title: string): string {
+    const slug = title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 6)
+      .join('-');
+    return `${kind}/${slug}`;
+  }
+
+  // ── Conflict scan ──────────────────────────────────────────────────────────
+
+  scanConflicts(limit = 50): Array<{ observationA: MemObservation; observationB: MemObservation; similarity: number }> {
+    const recent = this.memDb.getObservationsByTimeRange(0, Date.now(), limit);
+    const candidates: Array<{ observationA: MemObservation; observationB: MemObservation; similarity: number }> = [];
+    const seen = new Set<string>();
+
+    for (const obs of recent) {
+      if (!obs.content || obs.content.length < 20) continue;
+      const words = obs.content.split(/\s+/).slice(0, 8).join(' ');
+      const similar = this.memDb.searchFTS(words, { limit: 5 });
+      for (const match of similar) {
+        if (match.observation.id === obs.id) continue;
+        const pairKey = [obs.id, match.observation.id].sort().join('|');
+        if (seen.has(pairKey)) continue;
+        seen.add(pairKey);
+        const existing = this.memDb.getRelationsForObservations([obs.id]);
+        const alreadyLinked = existing.get(obs.id)?.some(r => r.observationA === match.observation.id || r.observationB === match.observation.id);
+        if (!alreadyLinked && match.score > 0.3) {
+          candidates.push({ observationA: obs, observationB: match.observation, similarity: match.score });
+        }
+      }
+    }
+
+    return candidates.slice(0, 20);
   }
 
   // ── Private ────────────────────────────────────────────────────────────────

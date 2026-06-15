@@ -43,7 +43,7 @@ The result is fewer tool calls, less context used, and faster responses on compl
 | <h4>Security</h4> | |
 | 🔒 **Security (KiroGraph-Sec opt-in  module)** | Goes beyond "this dependency has a CVE" — uses the call graph to determine if vulnerable code is **actually reachable** from your entry points. Maps your **attack surface** (which HTTP routes reach vulnerable deps). Detects **hardcoded secrets** and shows how many entry points expose them. **SAST-lite** finds SQL injection, path traversal, and dangerous eval in your code. **AST-based SAST (opt-in via `enablePatterns`)** runs 10 bundled structural pattern rules via `@ast-grep/napi` — matches actual code structure, not just symbol names. **Supply chain health** checks OpenSSF Scorecard scores and detects dependency confusion attacks. Covers 14 ecosystems, outputs CycloneDX SBOM/VEX and CI-ready SARIF reports. |
 | <h4>Knowledge & Data</h4> | |
-| 🧠 **Persistent Memor (KiroGraph-Mem opt-in module)** | Cross-session observations — decisions, errors, patterns — auto-linked to code symbols |
+| 🧠 **Persistent Memor (KiroGraph-Mem opt-in module)** | Cross-session observations — decisions, errors, patterns — auto-linked to code symbols. **Conflict detection**: typed relations between observations (`supersedes`, `conflicts_with`, `compatible`) with agent judgment workflow (`kirograph_mem_compare`, `kirograph_mem_judge`). **Stale review**: schedule observations for re-evaluation (`review_after` + `kirograph_mem_review`). **Passive capture**: extract learnings from structured text. **Prompt saving**: session context reconstruction. **Topic key**: stable semantic addressing. Inspired by [Engram](https://github.com/Gentleman-Programming/engram). |
 | 👁️ **Watchmen (KiroGraph-Watchmen opt-in module)** ⚠️ *experimental* | Auto-synthesizes accumulated memory observations into workspace briefs and `inclusion: manual` skill files. Fires via the `watchmenReady` signal in `kirograph_mem_store` when threshold is reached. **Local model** (default, `watchmenSynthesisMode: 'local'`): runs `gemma-4-E4B-it-ONNX` on-device via `@huggingface/transformers` — ~3–4 GB one-time download, ~3–5 GB RAM, 8–15 s on Apple Silicon M1+. No API key, no background daemon, no external calls. **Agent mode** also available for Kiro (`watchmenSynthesisMode: 'agent'`, uses active session). ⚠️ **Experimental:** output quality in local mode depends heavily on the model chosen and your hardware. Smaller models or slower machines may produce incomplete briefs and lower-quality skill files. Use `agent` mode for best results. |
 | 📖 **Documentation Indexing (KiroGraph-Doc opt-in  module)** | Section-level retrieval from Markdown, MDX, RST, AsciiDoc, OpenAPI — 92-97% token savings |
 | 📊 **Data Navigation (KiroGraph-Data opt-in  module)** | Query CSV/JSON/Excel/Parquet/**PDF** with filters, aggregations, joins — all server-side in SQLite |
@@ -147,6 +147,7 @@ KiroGraph is inspired by [CodeGraph](https://github.com/colbymchenry/codegraph) 
 - [jDataMunch-MCP](https://github.com/jgravelle/jdatamunch-mcp) by [J. Gravelle](https://www.linkedin.com/in/j-gravelle-2778223/): the data module's column profiling, streaming parsers, and server-side aggregation approach.
 - [code-review-graph](https://github.com/tirth8205/code-review-graph) by [Tirth Kanani](https://github.com/tirth8205): community detection, execution flow tracing, refactoring tools, and multi-platform auto-detection patterns.
 - [lean-ctx](https://github.com/yvgude/lean-ctx) by [Yves Gugger](https://github.com/yvgude): file read caching, multiple read modes, and context budget governance concepts.
+- [Engram](https://github.com/Gentleman-Programming/engram) by [Gentleman-Programming](https://github.com/Gentleman-Programming): conflict detection (typed relations + judgment workflow), `topic_key` stable addressing, `review_after` stale observation scheduling, passive capture, and prompt saving patterns.
 
 ### Contributors
 
@@ -160,7 +161,7 @@ KiroGraph combines capabilities from 7 separate tools into one integrated MCP se
 | Capability | Inspired by | What KiroGraph adds |
 |-----------|-------------|---------------------|
 | Code graph | [CodeGraph](https://github.com/colbymchenry/codegraph) | Architecture metrics, community detection, execution flows |
-| Memory | [cavemem](https://github.com/JuliusBrussee/cavemem) | Symbol-linked observations, 7 semantic engines |
+| Memory | [cavemem](https://github.com/JuliusBrussee/cavemem) + [Engram](https://github.com/Gentleman-Programming/engram) | Symbol-linked observations, 9 semantic engines, conflict detection, stale review |
 | Docs | [jDocMunch-MCP](https://github.com/jgravelle/jdocmunch-mcp) | Code ↔ docs cross-references |
 | Data | [jDataMunch-MCP](https://github.com/jgravelle/jdatamunch-mcp) | Unified with code graph in one server |
 | Shell compression | [rtk](https://github.com/rtk-ai/rtk) | Integrated as MCP tool, no separate binary |

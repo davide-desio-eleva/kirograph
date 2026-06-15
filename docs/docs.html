@@ -1017,10 +1017,18 @@ kirograph gain --graph           # ASCII graph (last 30 days)</code></pre>
       <table>
         <thead><tr><th>Tool</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code>kirograph_mem_search</code></td><td>Hybrid search over observations (FTS + vector, configurable alpha blend)</td></tr>
-          <tr><td><code>kirograph_mem_store</code></td><td>Store an observation with auto-compression, symbol linking, and embedding</td></tr>
+          <tr><td><code>kirograph_mem_search</code></td><td>Hybrid search over observations (FTS + vector, configurable alpha blend). Results include inline relation annotations.</td></tr>
+          <tr><td><code>kirograph_mem_store</code></td><td>Store an observation with auto-compression, symbol linking, and embedding. Accepts <code>topicKey</code> and <code>reviewAfter</code>.</td></tr>
           <tr><td><code>kirograph_mem_timeline</code></td><td>List recent sessions and their observations chronologically</td></tr>
-          <tr><td><code>kirograph_mem_status</code></td><td>Memory subsystem health: sessions, observations, embedding coverage</td></tr>
+          <tr><td><code>kirograph_mem_status</code></td><td>Memory subsystem health: sessions, observations, embedding coverage, relations count, pending conflicts</td></tr>
+          <tr><td><code>kirograph_mem_review</code></td><td>List observations past their <code>review_after</code> date — stale facts for re-evaluation</td></tr>
+          <tr><td><code>kirograph_mem_mark_reviewed</code></td><td>Clear an observation's <code>review_after</code> date, removing it from the review queue</td></tr>
+          <tr><td><code>kirograph_mem_compare</code></td><td>Establish a typed relation between two observations (IDs or topic_keys). Types: <code>supersedes</code>, <code>conflicts_with</code>, <code>compatible</code>, <code>scoped</code>, <code>related</code>, <code>not_conflict</code></td></tr>
+          <tr><td><code>kirograph_mem_judge</code></td><td>Finalize a pending conflict relation — confirm, revise, or dismiss</td></tr>
+          <tr><td><code>kirograph_mem_capture</code></td><td>Extract and store structured learnings from text with <code>## Key Learnings</code>, <code>## Observations</code>, <code>## Decisions</code> sections</td></tr>
+          <tr><td><code>kirograph_mem_save_prompt</code></td><td>Save the current user prompt to session memory for context reconstruction</td></tr>
+          <tr><td><code>kirograph_mem_suggest_topic_key</code></td><td>Generate a deterministic <code>topic_key</code> slug (e.g. <code>"architecture/auth-model"</code>) from kind + title</td></tr>
+          <tr><td><code>kirograph_mem_conflicts_scan</code></td><td>Scan recent observations for potential conflicts using FTS similarity — returns candidate pairs</td></tr>
         </tbody>
       </table>
     </div>

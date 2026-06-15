@@ -14,6 +14,7 @@ A comparison of KiroGraph with the open-source projects that inspired it or oper
 | [cavemem](https://github.com/JuliusBrussee/cavemem) | JuliusBrussee | TypeScript | Persistent cross-agent memory | 457 ⭐ |
 | [rtk](https://github.com/rtk-ai/rtk) | rtk-ai | Rust | Shell output compression proxy | 54.8k ⭐ |
 | [lean-ctx](https://github.com/yvgude/lean-ctx) | yvgude | Rust | Cognitive context layer (cache + compress + memory) | 2.2k ⭐ |
+| [Engram](https://github.com/Gentleman-Programming/engram) | Gentleman-Programming | Go | Persistent memory MCP server | — ⭐ |
 
 > **Note:** jCodeMunch, jDocMunch, and jDataMunch are three separate MCP servers by the same author (J. Gravelle), each focused on a different data type. They share a design philosophy (token-efficient retrieval via structured indexing) but run as independent servers.
 
@@ -25,146 +26,153 @@ A comparison of KiroGraph with the open-source projects that inspired it or oper
 
 ### Code Graph & Analysis
 
-| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx |
-|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|
-| Tree-sitter AST parsing | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — | — |
-| SQLite local storage | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — | — |
-| Symbol search (FTS) | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — | — |
-| Call graph (callers/callees) | ✅ | ✅ | ✅ | — | — | — | — | — | — | — |
-| Impact/blast radius analysis | ✅ | ✅ | ✅ | — | — | — | — | — | — | — |
-| Type hierarchy traversal | ✅ | — | — | — | — | — | — | — | — | — |
-| Circular dependency detection | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Dead code detection | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Hotspot/hub detection | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Surprise/cross-module coupling | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Affected tests | ✅ | ✅ | ✅ | — | — | — | — | — | — | — |
-| Context building (one-call) | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — | ✅ |
-| Byte-level precision retrieval | — | — | — | ✅ | ✅ | — | — | — | — | — |
-| Trace (path between symbols) | ✅ | ✅ | — | — | — | — | — | — | — | — |
-| Execution flow tracing | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Community/cluster detection | ✅ (Leiden) | — | ✅ (Leiden) | — | — | — | — | — | — | — |
-| Edge confidence scoring | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Graph diff (snapshots) | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Framework-aware routes | ✅ (14+ frameworks) | ✅ (14 frameworks) | — | — | — | — | — | — | — | — |
-| Mixed iOS/RN/Android bridging | ✅ (incl. Android/Kotlin) | ✅ | — | — | — | — | — | — | — | — |
-| Dynamic reindexing | — | — | — | ✅ | — | — | — | — | — | — |
-| File read caching | ✅ | — | — | — | — | — | — | — | — | ✅ |
-| Context budget governance | ✅ | — | — | — | — | — | — | — | — | ✅ |
+| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx | engram |
+|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|:------:|
+| Tree-sitter AST parsing | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — | — | — |
+| SQLite local storage | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — | — | — |
+| Symbol search (FTS) | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — | — | — |
+| Call graph (callers/callees) | ✅ | ✅ | ✅ | — | — | — | — | — | — | — | — |
+| Impact/blast radius analysis | ✅ | ✅ | ✅ | — | — | — | — | — | — | — | — |
+| Type hierarchy traversal | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Circular dependency detection | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
+| Dead code detection | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
+| Hotspot/hub detection | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
+| Surprise/cross-module coupling | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
+| Affected tests | ✅ | ✅ | ✅ | — | — | — | — | — | — | — | — |
+| Context building (one-call) | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — | ✅ | — |
+| Byte-level precision retrieval | — | — | — | ✅ | ✅ | — | — | — | — | — | — |
+| Trace (path between symbols) | ✅ | ✅ | — | — | — | — | — | — | — | — | — |
+| Execution flow tracing | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
+| Community/cluster detection | ✅ (Leiden) | — | ✅ (Leiden) | — | — | — | — | — | — | — | — |
+| Edge confidence scoring | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
+| Graph diff (snapshots) | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
+| Framework-aware routes | ✅ (14+ frameworks) | ✅ (14 frameworks) | — | — | — | — | — | — | — | — | — |
+| Mixed iOS/RN/Android bridging | ✅ (incl. Android/Kotlin) | ✅ | — | — | — | — | — | — | — | — | — |
+| Dynamic reindexing | — | — | — | ✅ | — | — | — | — | — | — | — |
+| File read caching | ✅ | — | — | — | — | — | — | — | — | ✅ | — |
+| Context budget governance | ✅ | — | — | — | — | — | — | — | — | ✅ | — |
 
 ### Architecture
 
-| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx |
-|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|
-| Package graph | ✅ | — | — | — | — | — | — | — | — | — |
-| Layer detection | ✅ | — | — | — | — | — | — | — | — | — |
-| Coupling metrics (Ca/Ce/instability) | ✅ | — | — | — | — | — | — | — | — | — |
-| Architecture overview | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Refactoring suggestions | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Rename preview | ✅ | — | ✅ | — | — | — | — | — | — | — |
+| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx | engram |
+|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|:------:|
+| Package graph | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Layer detection | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Coupling metrics (Ca/Ce/instability) | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Architecture overview | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
+| Refactoring suggestions | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
+| Rename preview | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
 
 ### Security *(opt-in, requires `enableSecurity: true`)*
 
-| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx |
-|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|
-| Dependency vulnerability scanning | ✅ | — | — | — | — | — | — | — | — | — |
-| OSV vulnerability database | ✅ | — | — | — | — | — | — | — | — | — |
-| Batch OSV queries (1000 deps/request) | ✅ | — | — | — | — | — | — | — | — | — |
-| Call-graph reachability analysis | ✅ | — | — | — | — | — | — | — | — | — |
-| Combined risk score (CVSS + EPSS + reachability + staleness) | ✅ | — | — | — | — | — | — | — | — | — |
-| Architecture-layer impact (affected layers) | ✅ | — | — | — | — | — | — | — | — | — |
-| CycloneDX 1.5 SBOM export | ✅ | — | — | — | — | — | — | — | — | — |
-| CycloneDX 1.5 VEX export | ✅ | — | — | — | — | — | — | — | — | — |
-| EPSS exploitation probability | ✅ | — | — | — | — | — | — | — | — | — |
-| Attack surface mapping (routes → vulnerable deps) | ✅ | — | — | — | — | — | — | — | — | — |
-| Secrets detection with call-graph blast radius | ✅ | — | — | — | — | — | — | — | — | — |
-| SAST-lite (SQL injection, eval, path traversal, weak crypto) | ✅ | — | — | — | — | — | — | — | — | — |
-| OWASP Top 10 mapping | ✅ | — | — | — | — | — | — | — | — | — |
-| Supply chain health (OpenSSF Scorecard) | ✅ | — | — | — | — | — | — | — | — | — |
-| Dependency confusion detection | ✅ | — | — | — | — | — | — | — | — | — |
-| Remediation SLA tracking | ✅ | — | — | — | — | — | — | — | — | — |
-| CI/CD SARIF export (GitHub Security tab) | ✅ | — | — | — | — | — | — | — | — | — |
-| CVE suppression list | ✅ | — | — | — | — | — | — | — | — | — |
-| Fix suggestions per ecosystem | ✅ | — | — | — | — | — | — | — | — | — |
-| License compliance (SPDX + policy) | ✅ | — | — | — | — | — | — | — | — | — |
-| Dependency staleness score | ✅ | — | — | — | — | — | — | — | — | — |
-| Dashboard security overlay | ✅ | — | — | — | — | — | — | — | — | — |
-| Manual CVE registration | ✅ | — | — | — | — | — | — | — | — | — |
-| Queryable via MCP by AI agents | ✅ | — | — | — | — | — | — | — | — | — |
+| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx | engram |
+|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|:------:|
+| Dependency vulnerability scanning | ✅ | — | — | — | — | — | — | — | — | — | — |
+| OSV vulnerability database | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Batch OSV queries (1000 deps/request) | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Call-graph reachability analysis | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Combined risk score (CVSS + EPSS + reachability + staleness) | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Architecture-layer impact (affected layers) | ✅ | — | — | — | — | — | — | — | — | — | — |
+| CycloneDX 1.5 SBOM export | ✅ | — | — | — | — | — | — | — | — | — | — |
+| CycloneDX 1.5 VEX export | ✅ | — | — | — | — | — | — | — | — | — | — |
+| EPSS exploitation probability | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Attack surface mapping (routes → vulnerable deps) | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Secrets detection with call-graph blast radius | ✅ | — | — | — | — | — | — | — | — | — | — |
+| SAST-lite (SQL injection, eval, path traversal, weak crypto) | ✅ | — | — | — | — | — | — | — | — | — | — |
+| OWASP Top 10 mapping | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Supply chain health (OpenSSF Scorecard) | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Dependency confusion detection | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Remediation SLA tracking | ✅ | — | — | — | — | — | — | — | — | — | — |
+| CI/CD SARIF export (GitHub Security tab) | ✅ | — | — | — | — | — | — | — | — | — | — |
+| CVE suppression list | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Fix suggestions per ecosystem | ✅ | — | — | — | — | — | — | — | — | — | — |
+| License compliance (SPDX + policy) | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Dependency staleness score | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Dashboard security overlay | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Manual CVE registration | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Queryable via MCP by AI agents | ✅ | — | — | — | — | — | — | — | — | — | — |
 
 ### Semantic Search & Embeddings
 
-| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx |
-|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|
-| Vector embeddings | ✅ | — | ✅ | — | — | — | — | ✅ | — | — |
-| Multiple engine options | ✅ (7 engines) | — | — | — | — | — | — | — | — | — |
-| Custom HuggingFace models | ✅ | — | — | — | — | — | — | — | — | — |
-| Hybrid search (FTS + vector) | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Local-only (no API keys) | ✅ | ✅ | ✅ (optional cloud) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx | engram |
+|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|:------:|
+| Vector embeddings | ✅ | — | ✅ | — | — | — | — | ✅ | — | — | — |
+| Multiple engine options | ✅ (7 engines) | — | — | — | — | — | — | — | — | — | — |
+| Custom HuggingFace models | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Hybrid search (FTS + vector) | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
+| Local-only (no API keys) | ✅ | ✅ | ✅ (optional cloud) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 
 ### Memory & Knowledge
 
-| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx |
-|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|
-| Persistent cross-session memory | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — | ✅ |
-| Observations linked to symbols | ✅ | — | — | — | — | — | — | — | — | — |
-| Compressed storage | ✅ | — | — | — | — | — | — | ✅ | — | — |
-| Memory deduplication (SHA-256) | ✅ | — | — | — | — | — | — | ✅ | — | — |
-| Memory search (semantic) | ✅ | — | — | — | — | — | — | ✅ | — | — |
-| Zero LLM tokens on write | ✅ | — | — | — | — | — | — | ✅ | — | — |
-| Hook-based auto-capture | ✅ | — | — | — | — | — | — | ✅ | — | — |
+| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx | engram |
+|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|:------:|
+| Persistent cross-session memory | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — | ✅ | ✅ |
+| Observations linked to symbols | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Compressed storage | ✅ | — | — | — | — | — | — | ✅ | — | — | — |
+| Memory deduplication (SHA-256) | ✅ | — | — | — | — | — | — | ✅ | — | — | — |
+| Memory search (semantic) | ✅ | — | — | — | — | — | — | ✅ | — | — | — |
+| FTS search | ✅ | — | — | — | — | — | — | — | — | — | ✅ |
+| Zero LLM tokens on write | ✅ | — | — | — | — | — | — | ✅ | — | — | — |
+| Hook-based auto-capture | ✅ | — | — | — | — | — | — | ✅ | — | — | — |
+| Conflict detection (relations) | ✅ | — | — | — | — | — | — | — | — | — | ✅ |
+| Stale observation review | ✅ | — | — | — | — | — | — | — | — | — | ✅ |
+| Passive learning capture | ✅ | — | — | — | — | — | — | — | — | — | ✅ |
+| Prompt saving | ✅ | — | — | — | — | — | — | — | — | — | ✅ |
+| Stable topic key | ✅ | — | — | — | — | — | — | — | — | — | ✅ |
+| Cloud / git sync | — | — | — | — | — | — | — | — | — | — | ✅ |
 
 ### Documentation & Data
 
-| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx |
-|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|
-| Documentation indexing | ✅ | — | — | — | ✅ | — | — | — | — | — |
-| Section-level retrieval | ✅ | — | — | — | ✅ | — | — | — | — | — |
-| Stable section IDs | ✅ | — | — | — | ✅ | — | — | — | — | — |
-| Multiple doc formats | ✅ (9 formats) | — | — | — | ✅ (8+ formats) | — | — | — | — | — |
-| Code ↔ docs cross-references | ✅ | — | — | — | — | — | — | — | — | — |
-| Tabular data querying | ✅ | — | — | — | — | ✅ | — | — | — | — |
-| CSV/JSON/Excel/Parquet support | ✅ | — | — | — | — | ✅ | — | — | — | — |
-| Server-side aggregations | ✅ | — | — | — | — | ✅ | — | — | — | — |
-| Column profiling | ✅ | — | — | — | — | ✅ | — | — | — | — |
-| Streaming parsers | ✅ | — | — | — | — | ✅ | — | — | — | — |
+| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx | engram |
+|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|:------:|
+| Documentation indexing | ✅ | — | — | — | ✅ | — | — | — | — | — | — |
+| Section-level retrieval | ✅ | — | — | — | ✅ | — | — | — | — | — | — |
+| Stable section IDs | ✅ | — | — | — | ✅ | — | — | — | — | — | — |
+| Multiple doc formats | ✅ (9 formats) | — | — | — | ✅ (8+ formats) | — | — | — | — | — | — |
+| Code ↔ docs cross-references | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Tabular data querying | ✅ | — | — | — | — | ✅ | — | — | — | — | — |
+| CSV/JSON/Excel/Parquet support | ✅ | — | — | — | — | ✅ | — | — | — | — | — |
+| Server-side aggregations | ✅ | — | — | — | — | ✅ | — | — | — | — | — |
+| Column profiling | ✅ | — | — | — | — | ✅ | — | — | — | — | — |
+| Streaming parsers | ✅ | — | — | — | — | ✅ | — | — | — | — | — |
 
 ### Token Optimization
 
-| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx |
-|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|
-| Shell output compression | ✅ | — | — | — | — | — | — | — | ✅ | — |
-| Agent prose compression (caveman) | ✅ | — | — | — | — | — | ✅ | — | — | — |
-| Token analytics/tracking | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Estimated context savings | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Token benchmarking | ✅ | ✅ | ✅ | — | — | — | — | — | — | — |
-| Command family filters | ✅ (6 families) | — | — | — | — | — | — | — | ✅ (20+ families) | — |
-| Standalone CLI proxy | — | — | — | — | — | — | — | — | ✅ | — |
-| Token-efficient by design | ✅ | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx | engram |
+|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|:------:|
+| Shell output compression | ✅ | — | — | — | — | — | — | — | ✅ | — | — |
+| Agent prose compression (caveman) | ✅ | — | — | — | — | — | ✅ | — | — | — | — |
+| Token analytics/tracking | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
+| Estimated context savings | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
+| Token benchmarking | ✅ | ✅ | ✅ | — | — | — | — | — | — | — | — |
+| Command family filters | ✅ (6 families) | — | — | — | — | — | — | — | ✅ (20+ families) | — | — |
+| Standalone CLI proxy | — | — | — | — | — | — | — | — | ✅ | — | — |
+| Token-efficient by design | ✅ | — | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 
 ### Integration & Platform Support
 
-| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx |
-|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|
-| MCP server (stdio) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | — | — |
-| Primary target | Kiro | Claude Code | Claude Code | Any MCP client | Any MCP client | Any MCP client | Claude Code | Claude Code | Any shell | Any MCP client |
-| Multi-platform support | ✅ (34 targets) | ✅ (7 targets) | ✅ (13 targets) | — | — | — | — | — | ✅ (any agent) | — |
-| Auto-detection of platforms | ✅ | ✅ | ✅ | — | — | — | — | — | — | — |
-| Auto-sync hooks | ✅ | ✅ (file watcher) | ✅ (hooks + watch) | — | — | — | — | — | — | — |
-| Incremental updates | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — | — |
-| VS Code extension | — | ✅ | ✅ | — | — | — | — | — | — | — |
-| Interactive visualization | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Graph export (GraphML, Cypher, Obsidian) | ✅ | — | ✅ | — | — | — | — | — | — | — |
-| Multi-repo support | — | — | ✅ | — | — | — | — | — | — | — |
-| Uninit/uninstall | ✅ | ✅ | — | — | — | — | — | — | — | — |
+| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx | engram |
+|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|:------:|
+| MCP server (stdio) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | — | — | — |
+| Primary target | Kiro | Claude Code | Claude Code | Any MCP client | Any MCP client | Any MCP client | Claude Code | Claude Code | Any shell | Any MCP client | — |
+| Multi-platform support | ✅ (34 targets) | ✅ (7 targets) | ✅ (13 targets) | — | — | — | — | — | ✅ (any agent) | — | — |
+| Auto-detection of platforms | ✅ | ✅ | ✅ | — | — | — | — | — | — | — | — |
+| Auto-sync hooks | ✅ | ✅ (file watcher) | ✅ (hooks + watch) | — | — | — | — | — | — | — | — |
+| Incremental updates | ✅ | ✅ | ✅ | ✅ | — | — | — | — | — | — | — |
+| VS Code extension | — | ✅ | ✅ | — | — | — | — | — | — | — | — |
+| Interactive visualization | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
+| Graph export (GraphML, Cypher, Obsidian) | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
+| Multi-repo support | — | — | ✅ | — | — | — | — | — | — | — | — |
+| Uninit/uninstall | ✅ | ✅ | — | — | — | — | — | — | — | — | — |
 
 ### Language Support
 
-| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx |
-|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|
-| Languages supported | 33+ | 22 | 30+ | 20+ | N/A | N/A | N/A | N/A | N/A | N/A |
-| Framework detection | ✅ (26 frameworks) | ✅ (14 frameworks) | — | — | — | — | — | — | — | — |
-| Framework-aware route extraction | ✅ (14+ frameworks) | ✅ (14 frameworks) | — | — | — | — | — | — | — | — |
-| Jupyter notebook support | ✅ | — | ✅ | — | — | — | — | — | — | — |
+| Feature | KiroGraph | CodeGraph | code-review-graph | jCodeMunch | jDocMunch | jDataMunch | caveman | cavemem | rtk | lean-ctx | engram |
+|---------|:---------:|:---------:|:-----------------:|:----------:|:---------:|:----------:|:-------:|:-------:|:---:|:--------:|:------:|
+| Languages supported | 33+ | 22 | 30+ | 20+ | N/A | N/A | N/A | N/A | N/A | N/A | — |
+| Framework detection | ✅ (26 frameworks) | ✅ (14 frameworks) | — | — | — | — | — | — | — | — | — |
+| Framework-aware route extraction | ✅ (14+ frameworks) | ✅ (14 frameworks) | — | — | — | — | — | — | — | — | — |
+| Jupyter notebook support | ✅ | — | ✅ | — | — | — | — | — | — | — | — |
 
 ---
 
@@ -236,6 +244,9 @@ KiroGraph combines the capabilities of 8 separate tools/concepts into a single i
 - **Shell compression** inspired by [rtk](https://github.com/rtk-ai/rtk) — token-optimized command output with family-specific filters
 - **Prose compression** inspired by [caveman](https://github.com/JuliusBrussee/caveman) — agent communication compression (lite/full/ultra)
 - **Context layer** inspired by [lean-ctx](https://github.com/yvgude/lean-ctx) — file read caching, multiple read modes, context budget governance
+- **Conflict detection, topic key, stale review, passive capture, prompt saving** inspired by [Engram](https://github.com/Gentleman-Programming/engram) — typed relations between observations, judgment workflow, stable semantic addressing
+
+[Engram](https://github.com/Gentleman-Programming/engram) by [Gentleman-Programming](https://github.com/Gentleman-Programming): conflict detection (typed relations + judgment workflow), `topic_key` stable addressing, `review_after` stale observation scheduling, passive capture, and prompt saving patterns.
 - **Security** (KiroGraph-Sec) — dependency vulnerability scanning with call-graph reachability analysis and CycloneDX SBOM/VEX export; reachability leverages the existing call graph from the code indexing layer
 
 The [jCodeMunch-MCP](https://github.com/jgravelle/jcodemunch-mcp) family (jCodeMunch + jDocMunch + jDataMunch) represents the same "token-efficient retrieval" philosophy applied to three different data types: source code, documentation, and tabular data. KiroGraph unifies all three into a single MCP server with a shared graph database.
