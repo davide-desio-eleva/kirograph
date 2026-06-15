@@ -284,20 +284,26 @@ kirograph install --target kiro   # install for a specific platform only</code><
     <h3 id="cmp-memory">Semantic Search &amp; Memory</h3>
     <div style="overflow-x:auto;">
     <table class="config-table cmp-filterable">
-      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>cavemem</th><th>lean-ctx</th></tr></thead>
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>cavemem</th><th>lean-ctx</th><th>Engram</th></tr></thead>
       <tbody>
-        <tr><td>Vector embeddings</td><td>✅</td><td>—</td><td>✅</td><td>✅</td><td>—</td></tr>
-        <tr><td>9 pluggable semantic engines</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Custom HuggingFace models</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Embedding compression 20–30× (TurboQuant)</td><td>✅ (v0.21.0)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>SIMD-accelerated ANN (TurboVec/Rust)</td><td>✅ (v0.23.0)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Persistent cross-session memory</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Observations linked to symbols</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Session synthesis / workspace briefs</td><td>✅ (v0.20.0)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Compressed storage</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Zero LLM tokens on write</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Knowledge graph (temporal facts)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>Property graph (code edges)</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>✅</td></tr>
+        <tr><td>Vector embeddings</td><td>✅</td><td>—</td><td>✅</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td>9 pluggable semantic engines</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Custom HuggingFace models</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Embedding compression 20–30× (TurboQuant)</td><td>✅ (v0.21.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>SIMD-accelerated ANN (TurboVec/Rust)</td><td>✅ (v0.23.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Persistent cross-session memory</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Observations linked to symbols</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Conflict detection (relations)</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Stale observation review</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Passive learning capture</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Stable topic key</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Session synthesis / workspace briefs</td><td>✅ (v0.20.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Compressed storage</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>✅</td><td>—</td></tr>
+        <tr><td>Zero LLM tokens on write</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>✅</td><td>—</td></tr>
+        <tr><td>FTS search</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Cloud / git sync</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Knowledge graph (temporal facts)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Property graph (code edges)</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
       </tbody>
     </table>
     </div>
@@ -1587,6 +1593,7 @@ npm run build   # requires Rust toolchain — https://rustup.rs</code></pre>
     <h3 id="credits-inspirations">Inspirations</h3>
     <ul>
       <li><a href="https://github.com/JuliusBrussee/cavemem" target="_blank" rel="noopener">cavemem</a> by <a href="https://www.linkedin.com/in/julius-brussee/" target="_blank" rel="noopener">Julius Brussee</a>: the memory module's hook-based observation capture, deterministic compression, and SQLite storage pattern.</li>
+      <li><a href="https://github.com/Gentleman-Programming/engram" target="_blank" rel="noopener">Engram</a> by <a href="https://github.com/Gentleman-Programming" target="_blank" rel="noopener">Gentleman-Programming</a>: conflict detection (typed relations + judgment workflow), <code>topic_key</code> stable addressing, <code>review_after</code> stale observation scheduling, passive capture, and prompt saving patterns.</li>
       <li><a href="https://github.com/JuliusBrussee/caveman" target="_blank" rel="noopener">caveman</a> by <a href="https://www.linkedin.com/in/julius-brussee/" target="_blank" rel="noopener">Julius Brussee</a>: the caveman mode's agent prose compression concept, multi-level steering injection.</li>
       <li><a href="https://github.com/firstbatchxyz/watchmen" target="_blank" rel="noopener">watchmen</a> by <a href="https://github.com/firstbatchxyz" target="_blank" rel="noopener">firstbatch</a>: the watchmen module's session-mining concept, workspace brief generation, and <code>AGENTS.md</code> mirroring pattern.</li>
       <li><a href="https://github.com/jgravelle/jdocmunch-mcp" target="_blank" rel="noopener">jDocMunch-MCP</a> by <a href="https://www.linkedin.com/in/j-gravelle-2778223/" target="_blank" rel="noopener">J. Gravelle</a>: the documentation module's section-first retrieval approach, stable section IDs, and byte-offset addressing.</li>

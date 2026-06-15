@@ -24,6 +24,7 @@
     "test:turboquant": "bash scripts/turboquant/test.sh",
     "test:turbovec": "bash scripts/turbovec/test.sh",
     "test:data": "bash scripts/data/test.sh",
+    "test:mem": "bash scripts/mem/test.sh",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "release": "./scripts/release.sh",
     "docs": "npx serve docs"

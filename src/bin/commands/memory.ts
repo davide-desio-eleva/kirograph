@@ -91,7 +91,9 @@ export function register(program: Command): void {
     .command('store [content]')
     .description('Store an observation in memory')
     .option('--kind <kind>', 'Observation kind', 'note')
-    .action(async (content: string | undefined, opts: { kind: string }) => {
+    .option('--topic-key <key>', 'Stable semantic key (e.g. architecture/auth-model)')
+    .option('--review-after <ms>', 'Epoch ms: schedule re-evaluation after this timestamp')
+    .action(async (content: string | undefined, opts: { kind: string; topicKey?: string; reviewAfter?: string }) => {
       const { MemoryManager } = await import('../../memory/index');
       const { loadConfig } = await import('../../config');
       const KiroGraph = (await import('../../index')).default;
@@ -128,7 +130,13 @@ export function register(program: Command): void {
       const mem = new MemoryManager(config, db.getRawDb());
       mem.initialize();
 
-      const result = await mem.store({ content: text, kind: opts.kind as any, source: 'manual' });
+      const result = await mem.store({
+        content: text,
+        kind: opts.kind as any,
+        source: 'manual',
+        topicKey: opts.topicKey,
+        reviewAfter: opts.reviewAfter ? parseInt(opts.reviewAfter) : undefined,
+      });
 
       if (!result) {
         console.log(`  ${dim}Duplicate observation — already stored.${reset}`);

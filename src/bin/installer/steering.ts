@@ -267,6 +267,7 @@ Read file: .kiro/steering/kirograph-review.md
 | architecture, understand structure, package map | \`.kiro/steering/kirograph-architecture.md\` *(requires enableArchitecture)* |
 | onboard, understand this codebase | \`.kiro/steering/kirograph-onboard.md\` |
 | refactor, rename, safe refactoring | \`.kiro/steering/kirograph-refactor.md\` |
+| memory, recall decisions, conflict detection | \`.kiro/steering/kirograph-mem-workflow.md\` *(requires enableMemory)* |
 
 Each file contains numbered steps, exact tool calls, and an interpretation reference. Follow the steps in order.
 
@@ -398,18 +399,32 @@ function buildSteeringContent(opts?: SteeringOptions): string {
     const memorySection = `
 ## Memory
 
-KiroGraph has persistent memory. Use \`kirograph_mem_search\` to recall past decisions,
-errors, and patterns before making changes. Use \`kirograph_mem_store\` to save important
-observations (architecture decisions, bug root causes, patterns discovered).
+KiroGraph has persistent memory. Use it to recall past decisions and store new ones.
 
-Memory is searchable via hybrid FTS + vector search. Observations are automatically
-linked to code symbols in the graph and surface in \`kirograph_context\` and
-\`kirograph_impact\` results when relevant.
+| Question | Tool |
+|----------|------|
+| What did we decide about X? | \`kirograph_mem_search\` |
+| Store a decision / bug fix / pattern | \`kirograph_mem_store\` |
+| Does this contradict something stored? | \`kirograph_mem_conflicts_scan\` |
+| Two observations conflict — which wins? | \`kirograph_mem_compare\` → \`kirograph_mem_judge\` |
+| Extract observations from structured text | \`kirograph_mem_capture\` |
+| Which observations need re-evaluation? | \`kirograph_mem_review\` |
+| Mark an observation as still valid | \`kirograph_mem_mark_reviewed\` |
+
+Memory is searchable via hybrid FTS + vector search. Observations surface automatically in
+\`kirograph_context\` and \`kirograph_impact\` results when linked to relevant code symbols.
 
 **When to store:** After fixing a bug, making an architecture decision, discovering a pattern,
-encountering a non-obvious error, or learning something about the codebase that future sessions
-should know. Keep observations concise — one fact per store call. A hook will also remind you
+or learning something future sessions should know. One fact per store call. A hook reminds you
 at session end.
+
+**topicKey:** Use a stable semantic key (e.g. \`"architecture/auth-model"\`) when storing a
+decision that may be superseded or revisited. Lets you address the same concept across sessions.
+
+**reviewAfter:** Pass an epoch-ms timestamp when an observation should expire or be re-evaluated
+(e.g. after a planned migration, a library upgrade, or a time-boxed experiment).
+
+For the full conflict-detection workflow, load: \`.kiro/steering/kirograph-mem-workflow.md\`
 `;
     content = content.trimEnd() + '\n\n' + memorySection.trim() + '\n';
   }
@@ -940,9 +955,122 @@ rule:
     console.log(`  ✓ Patterns workflow steering file written`);
   }
 
+  // Memory workflow — only when enableMemory is true
+  if (opts?.enableMemory) {
+    fs.writeFileSync(path.join(steeringDir, 'kirograph-mem-workflow.md'), `---
+inclusion: manual
+---
+
+# KiroGraph: Memory Workflow
+
+Use this workflow to recall past knowledge, store new observations, and keep the memory base
+consistent by detecting and resolving conflicts.
+
+## 1. Recall before acting
+
+Before making an architecture decision or fixing a bug, search what's already known:
+
+\`\`\`
+kirograph_mem_search(query: "<topic or keywords>", kind: "decision")
+kirograph_mem_search(query: "<error symptom>", kind: "error")
+\`\`\`
+
+Results include inline conflict annotations (⚡) — review them before proceeding.
+
+## 2. Store a new observation
+
+After a decision, bug fix, or discovery:
+
+\`\`\`
+kirograph_mem_store(
+  content: "<one concise fact>",
+  kind: "decision" | "error" | "pattern" | "architecture" | "note",
+  topicKey: "<category/slug>",      // optional: stable semantic key for revisitable decisions
+  reviewAfter: <epoch-ms>           // optional: schedule re-evaluation after a migration/upgrade
+)
+\`\`\`
+
+**topicKey examples:** \`"architecture/auth-model"\`, \`"infra/db-choice"\`, \`"pattern/error-handling"\`
+
+## 3. Capture observations from structured text
+
+If you have a markdown block with bullet points under headings like \`## Key Learnings\` or
+\`## Decisions\`, extract them all at once:
+
+\`\`\`
+kirograph_mem_capture(content: "<markdown text>", kind: "decision")
+\`\`\`
+
+## 4. Detect conflicts
+
+After storing related observations, scan for potential contradictions:
+
+\`\`\`
+kirograph_mem_conflicts_scan(limit: 20)
+\`\`\`
+
+Returns candidate pairs ranked by similarity. Review each one.
+
+## 5. Compare two observations
+
+To understand if two observations conflict, are compatible, or one supersedes the other:
+
+\`\`\`
+kirograph_mem_compare(observationA: "<id or topicKey>", observationB: "<id or topicKey>")
+\`\`\`
+
+Returns both observations side by side. Read them, then judge.
+
+## 6. Judge a relation
+
+\`\`\`
+kirograph_mem_judge(
+  relationId: "<id>",
+  relation: "supersedes" | "conflicts_with" | "compatible" | "scoped" | "related" | "not_conflict",
+  confidence: 0.0–1.0,
+  reason: "<why>"
+)
+\`\`\`
+
+Use \`supersedes\` when a newer decision replaces an older one. Use \`not_conflict\` to dismiss
+false positives so they don't reappear in scans.
+
+## 7. Review stale observations
+
+Find observations scheduled for re-evaluation:
+
+\`\`\`
+kirograph_mem_review(limit: 20)
+\`\`\`
+
+For each: verify it's still accurate. If valid, mark it reviewed:
+
+\`\`\`
+kirograph_mem_mark_reviewed(id: "<observation-id>")
+\`\`\`
+
+If outdated, store a new observation with the correct information and judge the old one as
+superseded via \`kirograph_mem_judge\`.
+
+## Quick reference
+
+| Situation | Action |
+|-----------|--------|
+| About to make a decision | \`mem_search\` first |
+| Made a decision | \`mem_store\` with \`kind: "decision"\` and \`topicKey\` |
+| Fixed a non-obvious bug | \`mem_store\` with \`kind: "error"\` |
+| Two things seem to contradict | \`mem_compare\` → \`mem_judge\` |
+| Knowledge base getting stale | \`mem_review\` → \`mem_mark_reviewed\` |
+| Structured notes to extract | \`mem_capture\` |
+| Regular conflict hygiene | \`mem_conflicts_scan\` |
+`);
+    console.log(`  ✓ Memory workflow steering file written`);
+  }
+
   const written = ['review', 'debug', 'onboard', 'refactor'];
   if (opts?.enableArchitecture) written.push('architecture');
   if (opts?.enableSecurity) written.push('security');
   if (opts?.enablePatterns) written.push('patterns');
+  if (opts?.enableMemory) written.push('memory');
   console.log(`  ✓ Workflow steering files written (${written.join(', ')})`);
 }

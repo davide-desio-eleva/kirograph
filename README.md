@@ -142,12 +142,17 @@ KiroGraph is inspired by [CodeGraph](https://github.com/colbymchenry/codegraph) 
 ### Inspirations
 
 - [cavemem](https://github.com/JuliusBrussee/cavemem) by [Julius Brussee](https://www.linkedin.com/in/julius-brussee/): the memory module's hook-based observation capture, deterministic compression, and SQLite storage pattern.
+- [Engram](https://github.com/Gentleman-Programming/engram) by [Gentleman-Programming](https://github.com/Gentleman-Programming): conflict detection (typed relations + judgment workflow), `topic_key` stable addressing, `review_after` stale observation scheduling, passive capture, and prompt saving patterns.
+- [caveman](https://github.com/JuliusBrussee/caveman) by [Julius Brussee](https://www.linkedin.com/in/julius-brussee/): the caveman mode's agent prose compression concept, multi-level steering injection.
 - [watchmen](https://github.com/firstbatchxyz/watchmen) by [firstbatch](https://github.com/firstbatchxyz): the watchmen module's session-mining concept, workspace brief generation, and `AGENTS.md` mirroring pattern.
 - [jDocMunch-MCP](https://github.com/jgravelle/jdocmunch-mcp) by [J. Gravelle](https://www.linkedin.com/in/j-gravelle-2778223/): the documentation module's section-first retrieval approach, stable section IDs, and byte-offset addressing.
 - [jDataMunch-MCP](https://github.com/jgravelle/jdatamunch-mcp) by [J. Gravelle](https://www.linkedin.com/in/j-gravelle-2778223/): the data module's column profiling, streaming parsers, and server-side aggregation approach.
 - [code-review-graph](https://github.com/tirth8205/code-review-graph) by [Tirth Kanani](https://github.com/tirth8205): community detection, execution flow tracing, refactoring tools, and multi-platform auto-detection patterns.
+- [rtk](https://github.com/rtk-ai/rtk) by [rtk-ai](https://github.com/rtk-ai): the shell compression module's command-family approach and token-optimized output patterns.
 - [lean-ctx](https://github.com/yvgude/lean-ctx) by [Yves Gugger](https://github.com/yvgude): file read caching, multiple read modes, and context budget governance concepts.
-- [Engram](https://github.com/Gentleman-Programming/engram) by [Gentleman-Programming](https://github.com/Gentleman-Programming): conflict detection (typed relations + judgment workflow), `topic_key` stable addressing, `review_after` stale observation scheduling, passive capture, and prompt saving patterns.
+- [turboquant-js](https://github.com/danilodevhub/turboquant-js) by [Danilo Dev](https://github.com/danilodevhub): the TurboQuant engine — TypeScript implementation of Google's Walsh-Hadamard + Lloyd-Max quantization algorithm used for embedding compression.
+- [turbovec](https://github.com/RyanCodrai/turbovec) by [Ryan Codrai](https://github.com/RyanCodrai): the TurboVec engine — Rust implementation of TurboQuant with SIMD acceleration, exposed to Node.js via a napi-rs native addon.
+- [pdf-inspector](https://github.com/firecrawl/pdf-inspector) by [Firecrawl](https://github.com/firecrawl): the PDF parser used in the data module — pure Rust, no OCR, no network, prebuilt binaries for linux-x64 and macOS ARM64.
 
 ### Contributors
 
