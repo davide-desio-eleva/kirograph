@@ -38,6 +38,53 @@
 
 ---
 
+## [0.24.0] - 2026-06-15: KiroGraph-Mem — Conflict Detection + Engram Feature Parity
+
+Inspired by [Engram](https://github.com/Gentleman-Programming/engram) by Gentleman-Programming — persistent memory MCP server in Go.
+
+### Added
+
+- **`topic_key` on observations**: stable semantic key for an observation (e.g. `"architecture/auth-model"`). Pass as `topicKey` in `kirograph_mem_store`. `kirograph_mem_compare` and `kirograph_mem_judge` resolve both IDs and topic keys.
+
+- **`review_after` on observations**: schedule an observation for re-evaluation at a future timestamp. Appears in `kirograph_mem_review` once overdue.
+
+- **`kirograph_mem_review`** / `kirograph mem review`: list observations past their `review_after` date — stale facts the agent should re-evaluate, update, or supersede. Reports days overdue.
+
+- **`kirograph_mem_mark_reviewed`** / `kirograph mem mark-reviewed <id>`: clear an observation's `review_after` date, removing it from the review queue.
+
+- **Conflict detection — `mem_relations` table**: typed relations between pairs of observations. Relation types: `supersedes`, `conflicts_with`, `compatible`, `scoped`, `related`, `not_conflict`. Each carries `confidence` (0–1), optional `reason` and `evidence`, and a `judgment_status` (`pending` | `judged` | `ignored`).
+
+- **`kirograph_mem_compare`** / `kirograph mem conflicts compare <a> <b>`: establish a relation between two observations. Accepts IDs or `topic_key` values. Creates a `pending` relation for review.
+
+- **`kirograph_mem_judge`** / `kirograph mem conflicts judge <relationId>`: finalize a pending relation — confirm, revise, or dismiss.
+
+- **`kirograph_mem_conflicts_scan`** / `kirograph mem conflicts scan`: FTS-based scan of recent observations for potential conflicts. Returns candidate pairs for agent review.
+
+- **`kirograph mem conflicts list`**: list pending relations.
+
+- **`kirograph mem conflicts ignore <relationId>`**: mark a relation as irrelevant.
+
+- **Relation annotations on search**: `kirograph_mem_search` results now include active relation annotations inline (e.g. `⚡ conflicts_with`, `↩ supersedes`). Relations batch-fetched in a single query.
+
+- **`kirograph_mem_capture`** / `kirograph mem capture`: passive learning extraction. Pass a freeform text block with `## Key Learnings`, `## Observations`, `## Decisions`, or `## Key Changes` sections — each bullet saved as a typed observation. Pure structural parser, no LLM.
+
+- **`kirograph_mem_save_prompt`** / `kirograph mem save-prompt`: save the current user prompt to session memory for context reconstruction.
+
+- **`kirograph_mem_suggest_topic_key`** / `kirograph mem suggest-topic-key`: deterministic slug generation — returns `"kind/slugified-title"` for use as a stable `topic_key`.
+
+- **`kirograph_mem_status`** now reports `relations` count and `pendingConflicts` count.
+
+- **Structured session summary**: `kirograph_mem_store` with `kind: 'summary'` and `## Goal / ## Key Changes / ## Decisions / ## Unresolved` sections auto-extracts `## Decisions` items as `kind: 'decision'` observations.
+
+### Changed
+
+- `kirograph_mem_store` / `kirograph mem store`: new optional params `topicKey` and `reviewAfter`.
+- `ScoredObservation` type: new optional `relations: MemRelation[]` field.
+- `MemStats` type: new `relations` and `pendingConflicts` fields.
+- Schema migration: `topic_key`, `review_after` added to `mem_observations` via non-destructive `ALTER TABLE` (safe for existing databases).
+
+---
+
 ## [0.23.0] - 2026-06-12: TurboVec — Rust/SIMD vector engine via napi-rs
 
 ### Added

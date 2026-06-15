@@ -24,13 +24,17 @@ CREATE TABLE IF NOT EXISTS mem_observations (
   valid_from INTEGER,
   valid_until INTEGER,
   superseded_by TEXT,
-  fact_type TEXT DEFAULT 'observation'
+  fact_type TEXT DEFAULT 'observation',
+  topic_key TEXT,
+  review_after INTEGER
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mem_obs_hash ON mem_observations(content_hash);
 CREATE INDEX IF NOT EXISTS idx_mem_obs_session ON mem_observations(session_id);
 CREATE INDEX IF NOT EXISTS idx_mem_obs_kind ON mem_observations(kind);
 CREATE INDEX IF NOT EXISTS idx_mem_obs_created ON mem_observations(created_at);
+CREATE INDEX IF NOT EXISTS idx_mem_obs_topic ON mem_observations(topic_key);
+CREATE INDEX IF NOT EXISTS idx_mem_obs_review ON mem_observations(review_after);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS mem_fts USING fts5(
   id UNINDEXED,
@@ -53,3 +57,32 @@ CREATE TABLE IF NOT EXISTS mem_vectors (
   model TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+
+-- Relations between observations (conflict detection)
+CREATE TABLE IF NOT EXISTS mem_relations (
+  id TEXT PRIMARY KEY,
+  observation_a TEXT NOT NULL REFERENCES mem_observations(id) ON DELETE CASCADE,
+  observation_b TEXT NOT NULL REFERENCES mem_observations(id) ON DELETE CASCADE,
+  relation TEXT NOT NULL,
+  confidence REAL NOT NULL DEFAULT 1.0,
+  reason TEXT,
+  evidence TEXT,
+  judgment_status TEXT NOT NULL DEFAULT 'pending',
+  judged_at INTEGER,
+  created_at INTEGER NOT NULL,
+  UNIQUE(observation_a, observation_b)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mem_rel_a ON mem_relations(observation_a);
+CREATE INDEX IF NOT EXISTS idx_mem_rel_b ON mem_relations(observation_b);
+CREATE INDEX IF NOT EXISTS idx_mem_rel_status ON mem_relations(judgment_status);
+
+-- Saved prompts linked to sessions
+CREATE TABLE IF NOT EXISTS mem_prompts (
+  id TEXT PRIMARY KEY,
+  session_id TEXT REFERENCES mem_sessions(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_mem_prompts_session ON mem_prompts(session_id);

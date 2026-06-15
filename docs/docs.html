@@ -285,20 +285,26 @@ kirograph install --target kiro   # install for a specific platform only</code><
     <h3 id="cmp-memory">Semantic Search &amp; Memory</h3>
     <div style="overflow-x:auto;">
     <table class="config-table cmp-filterable">
-      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>cavemem</th><th>lean-ctx</th></tr></thead>
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>cavemem</th><th>lean-ctx</th><th>Engram</th></tr></thead>
       <tbody>
-        <tr><td>Vector embeddings</td><td>✅</td><td>—</td><td>✅</td><td>✅</td><td>—</td></tr>
-        <tr><td>9 pluggable semantic engines</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Custom HuggingFace models</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Embedding compression 20–30× (TurboQuant)</td><td>✅ (v0.21.0)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>SIMD-accelerated ANN (TurboVec/Rust)</td><td>✅ (v0.23.0)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Persistent cross-session memory</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Observations linked to symbols</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Session synthesis / workspace briefs</td><td>✅ (v0.20.0)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Compressed storage</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Zero LLM tokens on write</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Knowledge graph (temporal facts)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>Property graph (code edges)</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>✅</td></tr>
+        <tr><td>Vector embeddings</td><td>✅</td><td>—</td><td>✅</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td>9 pluggable semantic engines</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Custom HuggingFace models</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Embedding compression 20–30× (TurboQuant)</td><td>✅ (v0.21.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>SIMD-accelerated ANN (TurboVec/Rust)</td><td>✅ (v0.23.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Persistent cross-session memory</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Observations linked to symbols</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Conflict detection (relations)</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Stale observation review</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Passive learning capture</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Stable topic key</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Session synthesis / workspace briefs</td><td>✅ (v0.20.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Compressed storage</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>✅</td><td>—</td></tr>
+        <tr><td>Zero LLM tokens on write</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>✅</td><td>—</td></tr>
+        <tr><td>FTS search</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Cloud / git sync</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Knowledge graph (temporal facts)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Property graph (code edges)</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
       </tbody>
     </table>
     </div>
@@ -1000,7 +1006,7 @@ kirograph gain --graph           # ASCII graph (last 30 days)</code></pre>
 
     <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/mem.png" alt="KiroGraph Memory" style="border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 1.5rem; max-width: 100%;">
 
-    <p>When <code>enableMemory: true</code> is set in <code>.kirograph/config.json</code>, KiroGraph stores persistent observations across sessions. Decisions, errors, patterns, and architecture notes are captured with <strong>zero LLM tokens on write</strong> (compression is deterministic, symbol linking is programmatic, embedding uses the local model) and minimal tokens on read. Inspired by <a href="https://github.com/JuliusBrussee/cavemem" target="_blank" rel="noopener">cavemem</a> by <a href="https://www.linkedin.com/in/julius-brussee/" target="_blank" rel="noopener">Julius Brussee</a>.</p>
+    <p>When <code>enableMemory: true</code> is set in <code>.kirograph/config.json</code>, KiroGraph stores persistent observations across sessions. Decisions, errors, patterns, and architecture notes are captured with <strong>zero LLM tokens on write</strong> (compression is deterministic, symbol linking is programmatic, embedding uses the local model) and minimal tokens on read. Inspired by <a href="https://github.com/JuliusBrussee/cavemem" target="_blank" rel="noopener">cavemem</a> by <a href="https://www.linkedin.com/in/julius-brussee/" target="_blank" rel="noopener">Julius Brussee</a> and <a href="https://github.com/Gentleman-Programming/engram" target="_blank" rel="noopener">Engram</a> by <a href="https://github.com/Gentleman-Programming" target="_blank" rel="noopener">Gentleman-Programming</a>.</p>
 
     <h3>How it works</h3>
     <p>The write path runs entirely without LLM involvement:</p>
@@ -1011,17 +1017,40 @@ kirograph gain --graph           # ASCII graph (last 30 days)</code></pre>
       <li>Symbol names in the text are detected and linked to graph nodes via <code>qualified_name</code></li>
       <li>The observation is embedded using the same local model and semantic engine as code symbols</li>
     </ol>
-    <p>On read, <code>kirograph_mem_search</code> performs hybrid FTS + vector search. Linked observations also surface automatically in <code>kirograph_context</code> and <code>kirograph_impact</code> results.</p>
+    <p>On read, <code>kirograph_mem_search</code> performs hybrid FTS + vector search. Linked observations also surface automatically in <code>kirograph_context</code> and <code>kirograph_impact</code> results. Search results include inline relation annotations (⚡ conflict, ✓ compatible) so the agent sees contradictions without a separate query.</p>
+
+    <h3>Conflict detection and knowledge hygiene</h3>
+    <p>As the memory base grows, observations can contradict each other across sessions. KiroGraph provides a typed relation system to keep knowledge consistent:</p>
+    <ul>
+      <li><strong>Scan:</strong> <code>kirograph_mem_conflicts_scan</code> uses FTS similarity to find candidate contradiction pairs, skipping already-reviewed ones.</li>
+      <li><strong>Compare:</strong> <code>kirograph_mem_compare</code> places two observations side by side and creates a typed relation (<code>supersedes</code>, <code>conflicts_with</code>, <code>compatible</code>, <code>scoped</code>, <code>related</code>, <code>not_conflict</code>).</li>
+      <li><strong>Judge:</strong> <code>kirograph_mem_judge</code> finalizes a pending relation with a confidence score and reason — resolving the conflict or confirming compatibility.</li>
+    </ul>
+
+    <h3>Stable addressing and stale scheduling</h3>
+    <p><code>topicKey</code> is a stable semantic identifier (e.g. <code>"architecture/auth-model"</code>) that lets multiple sessions address the same concept without knowing its UUID. Pass it to <code>kirograph_mem_store</code> for any decision that may be revisited or superseded.</p>
+    <p><code>reviewAfter</code> is an epoch-ms timestamp that schedules an observation for re-evaluation — useful after a planned migration, a library upgrade, or a time-boxed experiment. <code>kirograph_mem_review</code> lists all overdue observations; <code>kirograph_mem_mark_reviewed</code> clears them once validated.</p>
+
+    <h3>Passive capture</h3>
+    <p><code>kirograph_mem_capture</code> extracts and stores observations from structured markdown text without LLM involvement. Bullets under headings like <code>## Key Learnings</code>, <code>## Decisions</code>, and <code>## Observations</code> are parsed and stored as individual observations. This lets agents dump their reasoning in a structured block at session end and have KiroGraph index it automatically.</p>
 
     <h3>MCP Tools</h3>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Tool</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code>kirograph_mem_search</code></td><td>Hybrid search over observations (FTS + vector, configurable alpha blend)</td></tr>
-          <tr><td><code>kirograph_mem_store</code></td><td>Store an observation with auto-compression, symbol linking, and embedding</td></tr>
+          <tr><td><code>kirograph_mem_search</code></td><td>Hybrid search over observations (FTS + vector, configurable alpha blend). Results include inline relation annotations.</td></tr>
+          <tr><td><code>kirograph_mem_store</code></td><td>Store an observation with auto-compression, symbol linking, and embedding. Accepts <code>topicKey</code> and <code>reviewAfter</code>.</td></tr>
           <tr><td><code>kirograph_mem_timeline</code></td><td>List recent sessions and their observations chronologically</td></tr>
-          <tr><td><code>kirograph_mem_status</code></td><td>Memory subsystem health: sessions, observations, embedding coverage</td></tr>
+          <tr><td><code>kirograph_mem_status</code></td><td>Memory subsystem health: sessions, observations, embedding coverage, relations count, pending conflicts</td></tr>
+          <tr><td><code>kirograph_mem_review</code></td><td>List observations past their <code>review_after</code> date — stale facts for re-evaluation</td></tr>
+          <tr><td><code>kirograph_mem_mark_reviewed</code></td><td>Clear an observation's <code>review_after</code> date, removing it from the review queue</td></tr>
+          <tr><td><code>kirograph_mem_compare</code></td><td>Establish a typed relation between two observations (IDs or topic_keys). Types: <code>supersedes</code>, <code>conflicts_with</code>, <code>compatible</code>, <code>scoped</code>, <code>related</code>, <code>not_conflict</code></td></tr>
+          <tr><td><code>kirograph_mem_judge</code></td><td>Finalize a pending conflict relation — confirm, revise, or dismiss</td></tr>
+          <tr><td><code>kirograph_mem_capture</code></td><td>Extract and store structured learnings from text with <code>## Key Learnings</code>, <code>## Observations</code>, <code>## Decisions</code> sections</td></tr>
+          <tr><td><code>kirograph_mem_save_prompt</code></td><td>Save the current user prompt to session memory for context reconstruction</td></tr>
+          <tr><td><code>kirograph_mem_suggest_topic_key</code></td><td>Generate a deterministic <code>topic_key</code> slug (e.g. <code>"architecture/auth-model"</code>) from kind + title</td></tr>
+          <tr><td><code>kirograph_mem_conflicts_scan</code></td><td>Scan recent observations for potential conflicts using FTS similarity — returns candidate pairs</td></tr>
         </tbody>
       </table>
     </div>
@@ -1689,6 +1718,7 @@ npm run build   # requires Rust toolchain — https://rustup.rs</code></pre>
     <h3 id="credits-inspirations">Inspirations</h3>
     <ul>
       <li><a href="https://github.com/JuliusBrussee/cavemem" target="_blank" rel="noopener">cavemem</a> by <a href="https://www.linkedin.com/in/julius-brussee/" target="_blank" rel="noopener">Julius Brussee</a>: the memory module's hook-based observation capture, deterministic compression, and SQLite storage pattern.</li>
+      <li><a href="https://github.com/Gentleman-Programming/engram" target="_blank" rel="noopener">Engram</a> by <a href="https://github.com/Gentleman-Programming" target="_blank" rel="noopener">Gentleman-Programming</a>: conflict detection (typed relations + judgment workflow), <code>topic_key</code> stable addressing, <code>review_after</code> stale observation scheduling, passive capture, and prompt saving patterns.</li>
       <li><a href="https://github.com/JuliusBrussee/caveman" target="_blank" rel="noopener">caveman</a> by <a href="https://www.linkedin.com/in/julius-brussee/" target="_blank" rel="noopener">Julius Brussee</a>: the caveman mode's agent prose compression concept, multi-level steering injection.</li>
       <li><a href="https://github.com/firstbatchxyz/watchmen" target="_blank" rel="noopener">watchmen</a> by <a href="https://github.com/firstbatchxyz" target="_blank" rel="noopener">firstbatch</a>: the watchmen module's session-mining concept, workspace brief generation, and <code>AGENTS.md</code> mirroring pattern.</li>
       <li><a href="https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f" target="_blank" rel="noopener">LLM Wiki</a> by <a href="https://karpathy.ai/" target="_blank" rel="noopener">Andrej Karpathy</a>: the wiki module's three-op pattern (ingest → apply → lint), WIKI_DIFF block format, two-tool ingest flow, and the principle of knowledge compounding rather than accumulating.</li>

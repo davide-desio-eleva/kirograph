@@ -43,7 +43,7 @@ The result is fewer tool calls, less context used, and faster responses on compl
 | <h4>Security</h4> | |
 | 🔒 **Security (KiroGraph-Sec opt-in  module)** | Goes beyond "this dependency has a CVE" — uses the call graph to determine if vulnerable code is **actually reachable** from your entry points. Maps your **attack surface** (which HTTP routes reach vulnerable deps). Detects **hardcoded secrets** and shows how many entry points expose them. **SAST-lite** finds SQL injection, path traversal, and dangerous eval in your code. **AST-based SAST (opt-in via `enablePatterns`)** runs 10 bundled structural pattern rules via `@ast-grep/napi` — matches actual code structure, not just symbol names. **Supply chain health** checks OpenSSF Scorecard scores and detects dependency confusion attacks. Covers 14 ecosystems, outputs CycloneDX SBOM/VEX and CI-ready SARIF reports. |
 | <h4>Knowledge & Data</h4> | |
-| 🧠 **Persistent Memory (KiroGraph-Mem opt-in module)** | Cross-session observations — decisions, errors, patterns — auto-linked to code symbols |
+| 🧠 **Persistent Memory (KiroGraph-Mem opt-in module)** | Cross-session observations — decisions, errors, patterns — auto-linked to code symbols. **Conflict detection**: typed relations between observations (`supersedes`, `conflicts_with`, `compatible`) with agent judgment workflow (`kirograph_mem_compare`, `kirograph_mem_judge`). **Stale review**: schedule observations for re-evaluation (`review_after` + `kirograph_mem_review`). **Passive capture**: extract learnings from structured text. **Prompt saving**: session context reconstruction. **Topic key**: stable semantic addressing. Inspired by [Engram](https://github.com/Gentleman-Programming/engram). |
 | 👁️ **Watchmen (KiroGraph-Watchmen opt-in module)** ⚠️ *experimental* | Auto-synthesizes accumulated memory observations into workspace briefs and `inclusion: manual` skill files. Fires via the `watchmenReady` signal in `kirograph_mem_store` when threshold is reached. **Local model** (default, `watchmenSynthesisMode: 'local'`): runs `gemma-4-E4B-it-ONNX` on-device via `@huggingface/transformers` — ~3–4 GB one-time download, ~3–5 GB RAM, 8–15 s on Apple Silicon M1+. No API key, no background daemon, no external calls. **Agent mode** also available for Kiro (`watchmenSynthesisMode: 'agent'`, uses active session). ⚠️ **Experimental:** output quality in local mode depends heavily on the model chosen and your hardware. Smaller models or slower machines may produce incomplete briefs and lower-quality skill files. Use `agent` mode for best results. |
 | 📚 **Wiki (KiroGraph-Wiki opt-in module)** | Karpathy-style LLM wiki — a set of markdown pages that compound knowledge across sessions. Three ops: **ingest** (build structured prompt from source text), **apply-diff** (write LLM-generated WIKI_DIFF to SQLite + disk), **lint** (broken links, orphan pages, contradictions). Context enrichment: `kirograph_context` auto-includes relevant wiki pages above score threshold. Two synthesis modes: `agent` (IDE LLM) or `local` (HuggingFace, same infra as Watchmen). Conflict resolution: deterministic by source date when `wikiAutoResolveConflicts: true`. Inspired by [Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f). |
 | 📖 **Documentation Indexing (KiroGraph-Doc opt-in  module)** | Section-level retrieval from Markdown, MDX, RST, AsciiDoc, OpenAPI — 92-97% token savings |
@@ -143,6 +143,7 @@ KiroGraph is inspired by [CodeGraph](https://github.com/colbymchenry/codegraph) 
 ### Inspirations
 
 - [cavemem](https://github.com/JuliusBrussee/cavemem) by [Julius Brussee](https://www.linkedin.com/in/julius-brussee/): the memory module's hook-based observation capture, deterministic compression, and SQLite storage pattern.
+- [Engram](https://github.com/Gentleman-Programming/engram) by [Gentleman-Programming](https://github.com/Gentleman-Programming): conflict detection (typed relations + judgment workflow), `topic_key` stable addressing, `review_after` stale observation scheduling, passive capture, and prompt saving patterns.
 - [caveman](https://github.com/JuliusBrussee/caveman) by [Julius Brussee](https://www.linkedin.com/in/julius-brussee/): the caveman mode's agent prose compression concept, multi-level steering injection.
 - [watchmen](https://github.com/firstbatchxyz/watchmen) by [firstbatch](https://github.com/firstbatchxyz): the watchmen module's session-mining concept, workspace brief generation, and `AGENTS.md` mirroring pattern.
 - [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) by [Andrej Karpathy](https://karpathy.ai/): the wiki module's three-op pattern (ingest → apply → lint), WIKI_DIFF block format, two-tool ingest flow, and the principle of knowledge compounding rather than accumulating.
@@ -162,13 +163,13 @@ KiroGraph is inspired by [CodeGraph](https://github.com/colbymchenry/codegraph) 
 
 ## How It Compares
 
-KiroGraph combines capabilities from 12 separate projects into one integrated MCP server:
+KiroGraph combines capabilities from 13 separate projects into one integrated MCP server:
 
 | Capability | Inspired by | What KiroGraph adds |
 |-----------|-------------|---------------------|
 | Code graph | [CodeGraph](https://github.com/colbymchenry/codegraph) | Architecture metrics, execution flows, layered dependency view |
 | Community detection | [code-review-graph](https://github.com/tirth8205/code-review-graph) | Coupling metrics (Ca/Ce/instability), refactoring tools, multi-platform auto-detect |
-| Memory | [cavemem](https://github.com/JuliusBrussee/cavemem) | Symbol-linked observations, 7 semantic engines |
+| Memory | [cavemem](https://github.com/JuliusBrussee/cavemem) + [Engram](https://github.com/Gentleman-Programming/engram) | Symbol-linked observations, 9 semantic engines, conflict detection, stale review |
 | Watchmen synthesis | [watchmen](https://github.com/firstbatchxyz/watchmen) | Local-model synthesis on-device, auto threshold, steering + skill file generation |
 | LLM Wiki | [Karpathy's LLM Wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) | WIKI_DIFF format, FTS5 search, conflict resolution, local model mode |
 | Docs | [jDocMunch-MCP](https://github.com/jgravelle/jdocmunch-mcp) | Code ↔ docs cross-references |

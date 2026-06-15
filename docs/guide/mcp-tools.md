@@ -278,10 +278,92 @@ List recent sessions and their observations chronologically.
 
 ### `kirograph_mem_status`
 
-Memory subsystem health: session count, observations, embedding coverage, model mismatch detection.
+Memory subsystem health: session count, observations, embedding coverage, model mismatch detection, relations count and pending conflicts.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
+| `projectPath` | string | cwd | Project root path |
+
+### `kirograph_mem_review`
+
+List observations past their `review_after` date — stale facts the agent should re-evaluate, update, or supersede. Reports days overdue.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | number | 20 | Max results |
+| `projectPath` | string | cwd | Project root path |
+
+### `kirograph_mem_mark_reviewed`
+
+Mark an observation as reviewed — clears its `review_after` date, removing it from the review queue.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `id` | string | required | Observation ID |
+| `projectPath` | string | cwd | Project root path |
+
+### `kirograph_mem_compare`
+
+Establish a typed relation between two observations. Accepts observation IDs or `topic_key` values. Creates a `pending` relation for agent review via `kirograph_mem_judge`.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `observationA` | string | required | First observation ID or topic_key |
+| `observationB` | string | required | Second observation ID or topic_key |
+| `relation` | string | required | `supersedes`, `conflicts_with`, `compatible`, `scoped`, `related`, `not_conflict` |
+| `confidence` | number | 1.0 | Confidence 0.0–1.0 |
+| `reason` | string | - | Explanation for the relation |
+| `evidence` | string | - | Supporting evidence text |
+| `projectPath` | string | cwd | Project root path |
+
+### `kirograph_mem_judge`
+
+Finalize a pending conflict relation — confirm, revise, or dismiss it. Changes `judgment_status` from `pending` to `judged`.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `relationId` | string | required | Relation ID (from `kirograph_mem_compare`) |
+| `relation` | string | required | Final relation type |
+| `confidence` | number | required | Final confidence 0.0–1.0 |
+| `reason` | string | - | Reasoning for judgment |
+| `evidence` | string | - | Supporting evidence |
+| `projectPath` | string | cwd | Project root path |
+
+### `kirograph_mem_capture`
+
+Extract and store structured learnings from a freeform text block. Looks for `## Key Learnings`, `## Observations`, `## Decisions`, `## Key Changes` sections and saves each bullet as a separate typed observation. Pure structural parser — no LLM.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `content` | string | required | Text block with structured sections |
+| `projectPath` | string | cwd | Project root path |
+
+### `kirograph_mem_save_prompt`
+
+Save the current user prompt to session memory for context reconstruction.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `content` | string | required | Prompt content to save |
+| `projectPath` | string | cwd | Project root path |
+
+### `kirograph_mem_suggest_topic_key`
+
+Suggest a stable `topic_key` for an observation based on its kind and content. Returns a deterministic slug like `"architecture/auth-model"`.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `kind` | string | required | `decision`, `error`, `pattern`, `architecture`, `summary`, `note` |
+| `title` | string | required | Short title or first sentence of the observation |
+| `projectPath` | string | cwd | Project root path |
+
+### `kirograph_mem_conflicts_scan`
+
+Scan recent observations for potential conflicts using FTS similarity. Returns candidate pairs that may need a relation established via `kirograph_mem_compare`.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | number | 50 | Max observations to scan |
 | `projectPath` | string | cwd | Project root path |
 
 ---
