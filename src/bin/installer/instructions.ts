@@ -9,6 +9,7 @@ export interface InstructionOptions {
   enableData?: boolean;
   enableSecurity?: boolean;
   enablePatterns?: boolean;
+  enableWiki?: boolean;
   hasHooks?: boolean;
 }
 
@@ -54,6 +55,7 @@ export function buildAgentInstructions(cavemanModeOrOpts?: CavemanMode | 'off' |
   const enableData = opts.enableData ?? false;
   const enableSecurity = opts.enableSecurity ?? false;
   const enablePatterns = opts.enablePatterns ?? false;
+  const enableWiki = opts.enableWiki ?? false;
 
   let content = `# KiroGraph
 
@@ -79,7 +81,7 @@ KiroGraph builds a local semantic knowledge graph of this codebase. When the \`k
 | Any unexpected cross-module coupling? | \`kirograph_surprising\` |
 | What changed since the last snapshot? | \`kirograph_diff\` |
 ${enableArchitecture ? '| What packages/layers exist? | `kirograph_architecture` |\n| How coupled is package X? | `kirograph_coupling` |\n| What does package X depend on? | `kirograph_package` |\n' : ''}
-${enableCompression ? '| Run a command with token savings | `kirograph_exec` |\n| Check token savings stats | `kirograph_gain` |\n' : ''}${enableMemory ? '| Search past decisions/patterns | `kirograph_mem_search` |\n| Store an observation | `kirograph_mem_store` |\n' : ''}${enableDocs ? '| Find a doc section | `kirograph_docs_search` |\n| Get doc table of contents | `kirograph_docs_toc` |\n' : ''}${enableData ? '| What datasets are indexed? | `kirograph_data_list` |\n| Query rows with filters | `kirograph_data_query` |\n| Aggregate data server-side | `kirograph_data_aggregate` |\n' : ''}${enableSecurity ? '| Are there vulnerable dependencies? | `kirograph_security` |\n| Which CVEs affect my project? | `kirograph_vulns` |\n| Is this vulnerability reachable? | `kirograph_reachability` |\n| What licenses do my deps use? | `kirograph_licenses` |\n| Are dependencies outdated? | `kirograph_staleness` |\n' : ''}${enablePatterns ? '| Find structural code patterns? | `kirograph_live_search` |\n| Browse SAST rules | `kirograph pattern --list` |\n' : ''}
+${enableCompression ? '| Run a command with token savings | `kirograph_exec` |\n| Check token savings stats | `kirograph_gain` |\n' : ''}${enableMemory ? '| Search past decisions/patterns | `kirograph_mem_search` |\n| Store an observation | `kirograph_mem_store` |\n' : ''}${enableDocs ? '| Find a doc section | `kirograph_docs_search` |\n| Get doc table of contents | `kirograph_docs_toc` |\n' : ''}${enableData ? '| What datasets are indexed? | `kirograph_data_list` |\n| Query rows with filters | `kirograph_data_query` |\n| Aggregate data server-side | `kirograph_data_aggregate` |\n' : ''}${enableSecurity ? '| Are there vulnerable dependencies? | `kirograph_security` |\n| Which CVEs affect my project? | `kirograph_vulns` |\n| Is this vulnerability reachable? | `kirograph_reachability` |\n| What licenses do my deps use? | `kirograph_licenses` |\n| Are dependencies outdated? | `kirograph_staleness` |\n' : ''}${enablePatterns ? '| Find structural code patterns? | `kirograph_live_search` |\n| Browse SAST rules | `kirograph pattern --list` |\n' : ''}${enableWiki ? '| Look up project knowledge | `kirograph_wiki_search` |\n| Update wiki with new knowledge | `kirograph_wiki_ingest` + `kirograph_wiki_apply_diff` |\n' : ''}
 ## Tool selection
 
 - Start code tasks with \`kirograph_context\`.
@@ -237,6 +239,33 @@ production deploy, or when the user asks about security/compliance.
 **EPSS scores:** >= 0.5 = patch immediately; 0.1–0.5 = elevated risk; < 0.1 = low probability.
 
 **Workflow:** \`kirograph_security\` → \`kirograph_vulns --verdict affected\` → \`kirograph_reachability <cve>\` → fix → \`kirograph_vulns --refresh\`
+`;
+  }
+
+  // Wiki section
+  if (enableWiki) {
+    content += `
+## Wiki
+
+KiroGraph maintains a structured LLM wiki — a set of markdown pages that compound knowledge
+across sessions. Consult it before starting a complex task, and update it after sessions that
+produce durable knowledge.
+
+**Available tools:**
+- \`kirograph_wiki_search\` — full-text search over wiki pages
+- \`kirograph_wiki_page\` — retrieve a page by slug
+- \`kirograph_wiki_list\` — list all pages
+- \`kirograph_wiki_ingest\` — build an ingest prompt for a source text
+- \`kirograph_wiki_apply_diff\` — apply a WIKI_DIFF to create or update pages
+- \`kirograph_wiki_lint\` — health check: broken links, orphans, contradictions
+
+**Ingest workflow (two-tool):**
+1. \`kirograph_wiki_ingest(source: "...", sourceName: "...")\` — get the structured prompt
+2. Generate a \`WIKI_DIFF_START ... WIKI_DIFF_END\` block from the prompt
+3. \`kirograph_wiki_apply_diff(diff: "...")\` — apply it; review conflicts in the response
+
+**When to consult:** Before starting complex work, search for relevant wiki pages.
+**When to update:** After sessions with architecture decisions, API contracts, or process knowledge.
 `;
   }
 

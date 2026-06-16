@@ -24,7 +24,7 @@ let genPipeline: any = null;
 let genPipelineModel: string | null = null;
 let genProcessor: any = null;
 
-async function getGenPipeline(modelName: string, quiet = false) {
+export async function getGenPipeline(modelName: string, quiet = false) {
   if (genPipeline && genPipelineModel === modelName) return genPipeline;
   const cacheDir = path.join(os.homedir(), '.kirograph', 'models');
 

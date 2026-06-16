@@ -142,6 +142,18 @@ export class GraphDatabase {
   }
 
   /**
+   * Apply wiki schema tables. Called when enableWiki is true.
+   * Safe to call multiple times (CREATE IF NOT EXISTS).
+   */
+  applyWikiSchema(): void {
+    const schemaPath = path.join(__dirname, '../db/wiki-schema.sql');
+    if (fs.existsSync(schemaPath)) {
+      const sql = fs.readFileSync(schemaPath, 'utf8');
+      this.db.exec(sql);
+    }
+  }
+
+  /**
    * Get the raw database handle (for MemoryDatabase).
    */
   getRawDb(): any {

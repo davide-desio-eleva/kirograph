@@ -1,6 +1,6 @@
 {
   "name": "kirograph",
-  "version": "0.23.0",
+  "version": "0.25.0",
   "description": "Semantic code knowledge graph for Kiro: fewer tool calls, instant symbol lookups, 100% local.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -24,6 +24,8 @@
     "test:turboquant": "bash scripts/turboquant/test.sh",
     "test:turbovec": "bash scripts/turbovec/test.sh",
     "test:data": "bash scripts/data/test.sh",
+    "test:wiki": "bash scripts/wiki/test.sh",
+    "test:mem": "bash scripts/mem/test.sh",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "release": "./scripts/release.sh",
     "docs": "npx serve docs"

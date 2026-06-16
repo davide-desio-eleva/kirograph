@@ -267,6 +267,8 @@ Read file: .kiro/steering/kirograph-review.md
 | architecture, understand structure, package map | \`.kiro/steering/kirograph-architecture.md\` *(requires enableArchitecture)* |
 | onboard, understand this codebase | \`.kiro/steering/kirograph-onboard.md\` |
 | refactor, rename, safe refactoring | \`.kiro/steering/kirograph-refactor.md\` |
+| memory, recall decisions, conflict detection | \`.kiro/steering/kirograph-mem-workflow.md\` *(requires enableMemory)* |
+| wiki, update knowledge base, ingest docs | \`.kiro/steering/kirograph-wiki-workflow.md\` *(requires enableWiki)* |
 
 Each file contains numbered steps, exact tool calls, and an interpretation reference. Follow the steps in order.
 
@@ -348,6 +350,7 @@ export interface SteeringOptions {
   enableData?: boolean;
   enableSecurity?: boolean;
   enablePatterns?: boolean;
+  enableWiki?: boolean;
 }
 
 function buildSteeringContent(opts?: SteeringOptions): string {
@@ -398,18 +401,32 @@ function buildSteeringContent(opts?: SteeringOptions): string {
     const memorySection = `
 ## Memory
 
-KiroGraph has persistent memory. Use \`kirograph_mem_search\` to recall past decisions,
-errors, and patterns before making changes. Use \`kirograph_mem_store\` to save important
-observations (architecture decisions, bug root causes, patterns discovered).
+KiroGraph has persistent memory. Use it to recall past decisions and store new ones.
 
-Memory is searchable via hybrid FTS + vector search. Observations are automatically
-linked to code symbols in the graph and surface in \`kirograph_context\` and
-\`kirograph_impact\` results when relevant.
+| Question | Tool |
+|----------|------|
+| What did we decide about X? | \`kirograph_mem_search\` |
+| Store a decision / bug fix / pattern | \`kirograph_mem_store\` |
+| Does this contradict something stored? | \`kirograph_mem_conflicts_scan\` |
+| Two observations conflict — which wins? | \`kirograph_mem_compare\` → \`kirograph_mem_judge\` |
+| Extract observations from structured text | \`kirograph_mem_capture\` |
+| Which observations need re-evaluation? | \`kirograph_mem_review\` |
+| Mark an observation as still valid | \`kirograph_mem_mark_reviewed\` |
+
+Memory is searchable via hybrid FTS + vector search. Observations surface automatically in
+\`kirograph_context\` and \`kirograph_impact\` results when linked to relevant code symbols.
 
 **When to store:** After fixing a bug, making an architecture decision, discovering a pattern,
-encountering a non-obvious error, or learning something about the codebase that future sessions
-should know. Keep observations concise — one fact per store call. A hook will also remind you
+or learning something future sessions should know. One fact per store call. A hook reminds you
 at session end.
+
+**topicKey:** Use a stable semantic key (e.g. \`"architecture/auth-model"\`) when storing a
+decision that may be superseded or revisited. Lets you address the same concept across sessions.
+
+**reviewAfter:** Pass an epoch-ms timestamp when an observation should expire or be re-evaluated
+(e.g. after a planned migration, a library upgrade, or a time-boxed experiment).
+
+For the full conflict-detection workflow, load: \`.kiro/steering/kirograph-mem-workflow.md\`
 `;
     content = content.trimEnd() + '\n\n' + memorySection.trim() + '\n';
   }
@@ -486,6 +503,40 @@ KiroGraph can search for structural code patterns using @ast-grep/napi.
 **When to use:** When you need to find code patterns that can't be expressed as symbol names or semantic queries — "all eval() calls", "all SQL string concatenation", "all readFile with request parameters".
 `;
     content = content.trimEnd() + '\n\n' + patternsSection.trim() + '\n';
+  }
+
+  // Wiki section
+  if (opts?.enableWiki) {
+    const wikiSection = `
+## Wiki
+
+KiroGraph maintains a structured LLM wiki — a set of markdown pages that compound knowledge
+across sessions. Use it to look up project decisions, architecture facts, and domain knowledge
+before starting work. Use it to save knowledge that should survive context resets.
+
+**Available tools:**
+- \`kirograph_wiki_ingest\` — build an ingest prompt for a source text; pass the result to yourself to generate a WIKI_DIFF
+- \`kirograph_wiki_apply_diff\` — apply a WIKI_DIFF to create or update wiki pages
+- \`kirograph_wiki_search\` — full-text search over wiki pages
+- \`kirograph_wiki_page\` — retrieve the full content of a page by slug
+- \`kirograph_wiki_list\` — list all pages with metadata
+- \`kirograph_wiki_lint\` — health check: broken links, orphan pages, contradictions
+
+**When to consult the wiki:**
+- Before starting a complex feature or bug fix: \`kirograph_wiki_search(query: "<topic>")\`
+- When the user references a concept you don't recognize from the code graph alone
+- After \`kirograph_context\` returns wiki enrichments (pages above threshold score)
+
+**When to update the wiki:**
+- End of a session that produced durable knowledge (architecture decision, API contract, process)
+- The ingest hook will remind you at agentStop if \`enableWiki: true\` is set
+
+**Quick workflow:**
+1. \`kirograph_wiki_ingest\` — get the prompt with SCHEMA + MANIFEST + your source text
+2. Generate a \`WIKI_DIFF\` block (create/upsert/append per page)
+3. \`kirograph_wiki_apply_diff\` — apply it; review any pending conflicts in the response
+`;
+    content = content.trimEnd() + '\n\n' + wikiSection.trim() + '\n';
   }
 
   // Security section
@@ -940,9 +991,233 @@ rule:
     console.log(`  ✓ Patterns workflow steering file written`);
   }
 
+  // Wiki workflow — only when enableWiki is true
+  if (opts?.enableWiki) {
+    fs.writeFileSync(path.join(steeringDir, 'kirograph-wiki-workflow.md'), `---
+inclusion: manual
+---
+
+# KiroGraph: Wiki Workflow
+
+Use this workflow when you need to consult or update the project wiki.
+Activate with \`/kirograph-wiki-workflow\` in Kiro IDE or read the file directly.
+
+## When to use
+
+- Before a complex task: look up relevant wiki pages
+- After a session with durable knowledge: ingest it into the wiki
+- After a source file is added: run ingest to capture its content
+- Periodically: run lint to catch broken links or contradictions
+
+## Steps
+
+### 1. Look up existing knowledge before starting work
+
+\`\`\`
+kirograph_wiki_search(query: "<topic or keyword>")
+\`\`\`
+
+Read any relevant pages:
+
+\`\`\`
+kirograph_wiki_page(slug: "<slug from search results>")
+\`\`\`
+
+### 2. Ingest new knowledge (two-tool flow)
+
+**a. Get the ingest prompt:**
+
+\`\`\`
+kirograph_wiki_ingest(source: "<text, notes, or paste from docs>", sourceName: "<descriptive name>")
+\`\`\`
+
+The tool returns a structured prompt containing the wiki SCHEMA, the current MANIFEST, and your source text.
+
+**b. Generate the WIKI_DIFF:**
+
+Pass the returned prompt to yourself. Produce a \`WIKI_DIFF_START ... WIKI_DIFF_END\` block following the schema. Each entry should have a JSON header with \`action\`, \`slug\`, \`title\`, and \`section\` (optional), followed by markdown content.
+
+**c. Apply the diff:**
+
+\`\`\`
+kirograph_wiki_apply_diff(diff: "<the WIKI_DIFF block you generated>")
+\`\`\`
+
+Review the response for any pending conflicts and resolve them.
+
+### 3. List all pages
+
+\`\`\`
+kirograph_wiki_list()
+\`\`\`
+
+### 4. Health check (periodic)
+
+\`\`\`
+kirograph_wiki_lint()
+\`\`\`
+
+Issues to look for:
+- \`broken_link\`: a \`[[slug]]\` reference that points to a non-existent page → fix the slug or create the page
+- \`orphan\`: a page with no Related section and no incoming links → add Related or merge into another page
+- \`stale_source\`: a source with no date metadata → add a date to the source header
+- \`contradiction\`: two pages make semantically opposite claims → resolve via ingest or manual edit
+
+## WIKI_DIFF format reference
+
+\`\`\`
+WIKI_DIFF_START
+{"action": "create", "slug": "auth-flow", "title": "Authentication Flow"}
+# Authentication Flow
+
+The login flow validates credentials via JWT...
+
+## Related
+- [[user-model]]
+WIKI_DIFF_END
+\`\`\`
+
+Supported actions: \`create\`, \`upsert\` (merge into existing), \`append\` (add to specific section).
+
+For append, include \`"section": "Known Issues"\` in the header.
+
+## Conflict handling
+
+If a diff contradicts an existing page, the tool reports it as a conflict:
+- With \`wikiAutoResolveConflicts: true\`: the newer source wins automatically
+- Without: the conflict is listed in the response — read both sides and ingest a resolution
+
+## CLI commands
+
+\`\`\`bash
+kirograph wiki search "<query>"
+kirograph wiki page <slug>
+kirograph wiki list
+kirograph wiki lint
+kirograph wiki status
+kirograph wiki reindex
+\`\`\`
+`);
+    console.log(`  ✓ Wiki workflow steering file written`);
+  }
+
+  // Memory workflow — only when enableMemory is true
+  if (opts?.enableMemory) {
+    fs.writeFileSync(path.join(steeringDir, 'kirograph-mem-workflow.md'), `---
+inclusion: manual
+---
+
+# KiroGraph: Memory Workflow
+
+Use this workflow to recall past knowledge, store new observations, and keep the memory base
+consistent by detecting and resolving conflicts.
+
+## 1. Recall before acting
+
+Before making an architecture decision or fixing a bug, search what's already known:
+
+\`\`\`
+kirograph_mem_search(query: "<topic or keywords>", kind: "decision")
+kirograph_mem_search(query: "<error symptom>", kind: "error")
+\`\`\`
+
+Results include inline conflict annotations (⚡) — review them before proceeding.
+
+## 2. Store a new observation
+
+After a decision, bug fix, or discovery:
+
+\`\`\`
+kirograph_mem_store(
+  content: "<one concise fact>",
+  kind: "decision" | "error" | "pattern" | "architecture" | "note",
+  topicKey: "<category/slug>",      // optional: stable semantic key for revisitable decisions
+  reviewAfter: <epoch-ms>           // optional: schedule re-evaluation after a migration/upgrade
+)
+\`\`\`
+
+**topicKey examples:** \`"architecture/auth-model"\`, \`"infra/db-choice"\`, \`"pattern/error-handling"\`
+
+## 3. Capture observations from structured text
+
+If you have a markdown block with bullet points under headings like \`## Key Learnings\` or
+\`## Decisions\`, extract them all at once:
+
+\`\`\`
+kirograph_mem_capture(content: "<markdown text>", kind: "decision")
+\`\`\`
+
+## 4. Detect conflicts
+
+After storing related observations, scan for potential contradictions:
+
+\`\`\`
+kirograph_mem_conflicts_scan(limit: 20)
+\`\`\`
+
+Returns candidate pairs ranked by similarity. Review each one.
+
+## 5. Compare two observations
+
+To understand if two observations conflict, are compatible, or one supersedes the other:
+
+\`\`\`
+kirograph_mem_compare(observationA: "<id or topicKey>", observationB: "<id or topicKey>")
+\`\`\`
+
+Returns both observations side by side. Read them, then judge.
+
+## 6. Judge a relation
+
+\`\`\`
+kirograph_mem_judge(
+  relationId: "<id>",
+  relation: "supersedes" | "conflicts_with" | "compatible" | "scoped" | "related" | "not_conflict",
+  confidence: 0.0–1.0,
+  reason: "<why>"
+)
+\`\`\`
+
+Use \`supersedes\` when a newer decision replaces an older one. Use \`not_conflict\` to dismiss
+false positives so they don't reappear in scans.
+
+## 7. Review stale observations
+
+Find observations scheduled for re-evaluation:
+
+\`\`\`
+kirograph_mem_review(limit: 20)
+\`\`\`
+
+For each: verify it's still accurate. If valid, mark it reviewed:
+
+\`\`\`
+kirograph_mem_mark_reviewed(id: "<observation-id>")
+\`\`\`
+
+If outdated, store a new observation with the correct information and judge the old one as
+superseded via \`kirograph_mem_judge\`.
+
+## Quick reference
+
+| Situation | Action |
+|-----------|--------|
+| About to make a decision | \`mem_search\` first |
+| Made a decision | \`mem_store\` with \`kind: "decision"\` and \`topicKey\` |
+| Fixed a non-obvious bug | \`mem_store\` with \`kind: "error"\` |
+| Two things seem to contradict | \`mem_compare\` → \`mem_judge\` |
+| Knowledge base getting stale | \`mem_review\` → \`mem_mark_reviewed\` |
+| Structured notes to extract | \`mem_capture\` |
+| Regular conflict hygiene | \`mem_conflicts_scan\` |
+`);
+    console.log(`  ✓ Memory workflow steering file written`);
+  }
+
   const written = ['review', 'debug', 'onboard', 'refactor'];
   if (opts?.enableArchitecture) written.push('architecture');
   if (opts?.enableSecurity) written.push('security');
   if (opts?.enablePatterns) written.push('patterns');
+  if (opts?.enableMemory) written.push('memory');
+  if (opts?.enableWiki) written.push('wiki');
   console.log(`  ✓ Workflow steering files written (${written.join(', ')})`);
 }

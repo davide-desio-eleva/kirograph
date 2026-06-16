@@ -12,7 +12,7 @@ export interface PromptConfigOptions {
   projectRoot?: string;
   offerHookImport?: boolean;
 }
-export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'turboquantMemDocs' | 'turboquantBits' | 'turbovecMemDocs' | 'turbovecBits' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites' | 'enableArchitecture' | 'cavemanMode' | 'shellCompressionLevel' | 'enableMemory' | 'enableWatchmen' | 'watchmenThreshold' | 'watchmenSynthesisMode' | 'watchmenLocalModel' | 'enableDocs' | 'docsContextLimit' | 'enableData' | 'dataContextLimit' | 'enableSecurity' | 'enablePatterns'> & { embeddingModel?: string; embeddingDim?: number };
+export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'turboquantMemDocs' | 'turboquantBits' | 'turbovecMemDocs' | 'turbovecBits' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites' | 'enableArchitecture' | 'cavemanMode' | 'shellCompressionLevel' | 'enableMemory' | 'enableWatchmen' | 'watchmenThreshold' | 'watchmenSynthesisMode' | 'watchmenLocalModel' | 'enableDocs' | 'docsContextLimit' | 'enableData' | 'dataContextLimit' | 'enableSecurity' | 'enablePatterns' | 'enableWiki' | 'wikiSynthesisMode' | 'wikiLocalModel'> & { embeddingModel?: string; embeddingDim?: number };
 export type SemanticEngine = KiroGraphConfig['semanticEngine'];
 
 export const DEFAULT_EMBEDDING_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
@@ -64,7 +64,7 @@ export async function promptConfigOptions(
     'Enables natural-language code search via vector embeddings. A local model (~130MB) is downloaded on first use.',
   );
 
-  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, semanticEngine: 'cosine', turboquantMemDocs: false, turboquantBits: 3, turbovecMemDocs: false, turbovecBits: 4, typesenseDashboard: false, qdrantDashboard: false, extractDocstrings: true, trackCallSites: true, enableArchitecture: false, cavemanMode: 'off', shellCompressionLevel: 'normal', enableMemory: false, enableWatchmen: false, watchmenThreshold: 5, watchmenSynthesisMode: 'local', watchmenLocalModel: 'onnx-community/gemma-4-E4B-it-ONNX', enableDocs: false, docsContextLimit: 0, enableData: false, dataContextLimit: 0, enableSecurity: false, enablePatterns: false };
+  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, semanticEngine: 'cosine', turboquantMemDocs: false, turboquantBits: 3, turbovecMemDocs: false, turbovecBits: 4, typesenseDashboard: false, qdrantDashboard: false, extractDocstrings: true, trackCallSites: true, enableArchitecture: false, cavemanMode: 'off', shellCompressionLevel: 'normal', enableMemory: false, enableWatchmen: false, watchmenThreshold: 5, watchmenSynthesisMode: 'local', watchmenLocalModel: 'onnx-community/gemma-4-E4B-it-ONNX', enableDocs: false, docsContextLimit: 0, enableData: false, dataContextLimit: 0, enableSecurity: false, enablePatterns: false, enableWiki: false, wikiSynthesisMode: 'agent', wikiLocalModel: 'onnx-community/gemma-4-E4B-it-ONNX' };
 
   if (enableEmbeddings) {
     // ── Model selection ────────────────────────────────────────────────────────
@@ -350,6 +350,74 @@ export async function promptConfigOptions(
         } else {
           patch.watchmenLocalModel = modelChoice;
         }
+      }
+    }
+  }
+
+  // ── Wiki ─────────────────────────────────────────────────────────────────────
+  printSection('📖', 'Wiki');
+
+  patch.enableWiki = await askToggle(rl,
+    'LLM Wiki (Karpathy-style structured knowledge base):',
+    'Maintains a set of markdown pages that compound knowledge across sessions. Supports search, ingest (two-tool flow), conflict resolution, and health checks via kirograph_wiki_* tools.',
+    false,
+  );
+
+  if (patch.enableWiki) {
+    const wikiMode = await arrowSelect<KiroGraphConfig['wikiSynthesisMode']>(
+      rl,
+      'Wiki synthesis mode:',
+      [
+        {
+          value: 'agent',
+          label: 'Active agent (recommended)',
+          description: 'Uses the active LLM agent to generate WIKI_DIFF blocks. Works with any AI tool. Consumes API tokens on ingest.',
+        },
+        {
+          value: 'local',
+          label: 'Local model',
+          description: 'Runs a local HuggingFace model to generate diffs. Zero API cost, no data leaves your machine. Same infra as Watchmen.',
+        },
+      ],
+    );
+    patch.wikiSynthesisMode = wikiMode;
+
+    if (wikiMode === 'local') {
+      // ── Local model selection ──────────────────────────────────────────
+      const WIKI_LOCAL_MODELS = [
+        {
+          value: 'onnx-community/gemma-4-E4B-it-ONNX',
+          label: 'Gemma 4 E4B (recommended)',
+          description: '~3–4 GB · Google DeepMind Gemma 4 · 4.5B params · 128K context · Best quality · Apache 2.0',
+        },
+        {
+          value: 'onnx-community/Qwen2.5-1.5B-Instruct',
+          label: 'Qwen2.5-1.5B',
+          description: '~1.5 GB · Lighter option if RAM is limited · Acceptable quality',
+        },
+        {
+          value: 'HuggingFaceTB/SmolLM2-1.7B-Instruct',
+          label: 'SmolLM2-1.7B',
+          description: '~1.7 GB · HuggingFace compact model · Good at following structured formats',
+        },
+        {
+          value: '__other__',
+          label: 'Other',
+          description: 'Enter a custom HuggingFace model ID (must have ONNX weights on onnx-community)',
+        },
+      ] as const;
+
+      const wikiModelChoice = await arrowSelect<string>(rl, 'Local wiki synthesis model:', WIKI_LOCAL_MODELS.map(m => ({ value: m.value, label: m.label, description: m.description })));
+
+      if (wikiModelChoice === '__other__') {
+        console.log(`\n  ${dim}Enter a HuggingFace model ID (e.g. onnx-community/gemma-4-E4B-it-ONNX).${reset}`);
+        while (true) {
+          const raw = (await ask(rl, `  ${violet}Model identifier:${reset} `)).trim();
+          if (raw.includes('/')) { patch.wikiLocalModel = raw; break; }
+          console.log(`  Expected a HuggingFace model ID in the format org/model-name.`);
+        }
+      } else {
+        patch.wikiLocalModel = wikiModelChoice;
       }
     }
   }

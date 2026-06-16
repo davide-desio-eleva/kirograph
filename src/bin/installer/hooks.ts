@@ -140,7 +140,7 @@ function migrateOnIdleHooks(hooksDir: string): void {
 
 // ── Public ────────────────────────────────────────────────────────────────────
 
-export function writeHooks(kiroDir: string, opts?: { enableCompression?: boolean; enableMemory?: boolean; enableWatchmen?: boolean; watchmenSynthesisMode?: 'local' | 'agent' }): void {
+export function writeHooks(kiroDir: string, opts?: { enableCompression?: boolean; enableMemory?: boolean; enableWatchmen?: boolean; watchmenSynthesisMode?: 'local' | 'agent'; enableWiki?: boolean; wikiSynthesisMode?: 'local' | 'agent'; wikiLintFrequency?: number }): void {
   const hooksDir = path.join(kiroDir, 'hooks');
   ensureDir(hooksDir);
 
@@ -185,6 +185,50 @@ export function writeHooks(kiroDir: string, opts?: { enableCompression?: boolean
     writeJson(watchmenHookPath, buildWatchmenHook(mode));
   } else {
     if (fs.existsSync(watchmenHookPath)) fs.unlinkSync(watchmenHookPath);
+  }
+
+  // Wiki hooks — ingest trigger + periodic lint
+  const wikiIngestHookPath = path.join(hooksDir, `kirograph-wiki-ingest${HOOK_EXT}`);
+  const wikiLintHookPath = path.join(hooksDir, `kirograph-wiki-lint${HOOK_EXT}`);
+  if (opts?.enableWiki) {
+    const lintFreq = opts.wikiLintFrequency ?? 10;
+    const wikiMode = opts.wikiSynthesisMode ?? 'agent';
+
+    if (wikiMode === 'local') {
+      writeJson(wikiIngestHookPath, {
+        name: 'KiroGraph Wiki Synthesize',
+        version: '1.0.0',
+        description: 'After each session, run local-model wiki synthesis over queued sources.',
+        when: { type: 'agentStop' },
+        then: { type: 'runCommand', command: 'kirograph wiki synthesize --quiet 2>&1 || true' },
+      });
+    } else {
+      writeJson(wikiIngestHookPath, {
+        name: 'KiroGraph Wiki Ingest',
+        version: '1.0.0',
+        description: 'At the end of each session, prompt the agent to ingest any relevant knowledge into the wiki.',
+        when: { type: 'agentStop' },
+        then: {
+          type: 'askAgent',
+          prompt: `If this session produced durable knowledge (design decisions, architecture insights, API contracts, process steps, domain facts), consider updating the wiki:
+1. Call kirograph_wiki_ingest with the key findings as source text.
+2. The tool returns a structured prompt. Pass it to yourself to generate a WIKI_DIFF.
+3. Call kirograph_wiki_apply_diff with your generated diff.
+Skip if the session was trivial (simple bug fix, no new knowledge).`,
+        },
+      });
+    }
+
+    writeJson(wikiLintHookPath, {
+      name: 'KiroGraph Wiki Lint',
+      version: '1.0.0',
+      description: `Run wiki health check every ${lintFreq} sessions to catch broken links, orphan pages, and contradictions.`,
+      when: { type: 'agentStop' },
+      then: { type: 'runCommand', command: `kirograph wiki lint 2>&1 || true` },
+    });
+  } else {
+    if (fs.existsSync(wikiIngestHookPath)) fs.unlinkSync(wikiIngestHookPath);
+    if (fs.existsSync(wikiLintHookPath)) fs.unlinkSync(wikiLintHookPath);
   }
 
   console.log(`  ✓ Auto-sync hooks written to ${hooksDir}`);

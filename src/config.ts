@@ -102,6 +102,22 @@ export interface KiroGraphConfig {
   docsMaxFileSize: number;
   /** Summarization strategy. Default: 'first-sentence'. */
   docsSummarization: 'embedding' | 'first-sentence' | 'off';
+  /** Enable LLM-maintained wiki (entity pages in .kirograph/wiki/). Default: false. */
+  enableWiki: boolean;
+  /** Wiki synthesis mode. Default: 'agent'. */
+  wikiSynthesisMode: 'agent' | 'local';
+  /** HuggingFace model for local wiki synthesis. */
+  wikiLocalModel: string;
+  /** Glob patterns for auto-ingest wiki sources. Default: ['docs/']. */
+  wikiSources: string[];
+  /** Auto-resolve wiki conflicts by source date. Default: false. */
+  wikiAutoResolveConflicts: boolean;
+  /** Lint frequency: 'weekly' (every ~20 sessions) or 'off'. Default: 'off'. */
+  wikiLintFrequency: 'weekly' | 'off';
+  /** Max wiki pages to include in kirograph_context. Default: 3. */
+  wikiContextLimit: number;
+  /** Min FTS score to include wiki page in context. Default: 0.4. */
+  wikiContextThreshold: number;
   /** Enable tabular data indexing and querying. Default: false. */
   enableData: boolean;
   /** Glob patterns for data files to include. */
@@ -167,6 +183,8 @@ const KNOWN_FIELDS = new Set<string>([
   'enableMemory', 'memorySearchAlpha', 'memoryKeepRaw', 'memoryMaxObservations',
   'memorySessionTimeout', 'memoryContextLimit', 'memoryContextThreshold', 'memoryExcludePatterns',
   'enableWatchmen', 'watchmenThreshold', 'watchmenSynthesisMode', 'watchmenLocalModel',
+  'enableWiki', 'wikiSynthesisMode', 'wikiLocalModel', 'wikiSources',
+  'wikiAutoResolveConflicts', 'wikiLintFrequency', 'wikiContextLimit', 'wikiContextThreshold',
   'enableDocs', 'docsInclude', 'docsExclude', 'docsLinkCode',
   'docsContextLimit', 'docsContextThreshold', 'docsMaxFileSize', 'docsSummarization',
   'enableData', 'dataInclude', 'dataExclude', 'dataLinkCode',
@@ -236,6 +254,14 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     watchmenThreshold: 5,
     watchmenSynthesisMode: 'local',
     watchmenLocalModel: 'onnx-community/gemma-4-E4B-it-ONNX',
+    enableWiki: false,
+    wikiSynthesisMode: 'agent' as const,
+    wikiLocalModel: 'onnx-community/gemma-4-E4B-it-ONNX',
+    wikiSources: ['docs/'],
+    wikiAutoResolveConflicts: false,
+    wikiLintFrequency: 'off' as const,
+    wikiContextLimit: 3,
+    wikiContextThreshold: 0.4,
     enableDocs: false,
     docsInclude: ['**/*.md', '**/*.mdx', '**/*.rst', '**/*.adoc', '**/*.asciidoc', '**/*.rdoc', '**/*.org', '**/*.cheatmd', 'docs/**/*.txt', 'docs/**/*.html'],
     docsExclude: ['node_modules/**', '**/CHANGELOG*', '**/LICENSE*', '**/CHANGES*', 'dist/**', 'build/**', 'coverage/**', '.git/**', '**/generated/**', '**/auto-generated/**', '**/vendor/**', '_build/**'],
@@ -411,6 +437,16 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const watchmenLocalModel = typeof raw.watchmenLocalModel === 'string' && raw.watchmenLocalModel.length > 0
     ? raw.watchmenLocalModel
     : defaults.watchmenLocalModel;
+
+  // ── Wiki config ───────────────────────────────────────────────────────────
+  const enableWiki = typeof raw.enableWiki === 'boolean' ? raw.enableWiki : defaults.enableWiki;
+  const wikiSynthesisMode = raw.wikiSynthesisMode === 'local' ? 'local' as const : 'agent' as const;
+  const wikiLocalModel = typeof raw.wikiLocalModel === 'string' ? raw.wikiLocalModel : defaults.wikiLocalModel;
+  const wikiSources = Array.isArray(raw.wikiSources) ? raw.wikiSources : defaults.wikiSources;
+  const wikiAutoResolveConflicts = typeof raw.wikiAutoResolveConflicts === 'boolean' ? raw.wikiAutoResolveConflicts : defaults.wikiAutoResolveConflicts;
+  const wikiLintFrequency = raw.wikiLintFrequency === 'weekly' ? 'weekly' as const : 'off' as const;
+  const wikiContextLimit = typeof raw.wikiContextLimit === 'number' ? raw.wikiContextLimit : defaults.wikiContextLimit;
+  const wikiContextThreshold = typeof raw.wikiContextThreshold === 'number' ? raw.wikiContextThreshold : defaults.wikiContextThreshold;
 
   // ── Docs config ───────────────────────────────────────────────────────────
   const enableDocs = typeof raw.enableDocs === 'boolean'
@@ -621,6 +657,14 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     watchmenThreshold,
     watchmenSynthesisMode,
     watchmenLocalModel,
+    enableWiki,
+    wikiSynthesisMode,
+    wikiLocalModel,
+    wikiSources,
+    wikiAutoResolveConflicts,
+    wikiLintFrequency,
+    wikiContextLimit,
+    wikiContextThreshold,
     enableDocs,
     docsInclude,
     docsExclude,

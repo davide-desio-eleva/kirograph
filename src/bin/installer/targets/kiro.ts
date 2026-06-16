@@ -11,11 +11,11 @@ export function installKiroEarly(projectRoot: string): void {
   writeHooks(kiroDir);
 }
 
-export function installKiroLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean, enableArchitecture?: boolean, enablePatterns?: boolean, enableWatchmen?: boolean, watchmenSynthesisMode?: 'local' | 'agent'): void {
+export function installKiroLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean, enableArchitecture?: boolean, enablePatterns?: boolean, enableWatchmen?: boolean, watchmenSynthesisMode?: 'local' | 'agent', enableWiki?: boolean, wikiSynthesisMode?: 'local' | 'agent', wikiLocalModel?: string): void {
   const kiroDir = path.join(projectRoot, '.kiro');
   const enableCompression = shellCompressionLevel !== 'off';
-  writeHooks(kiroDir, { enableCompression, enableMemory, enableWatchmen, watchmenSynthesisMode });
-  writeSteering(kiroDir, { cavemanMode, enableCompression, shellCompressionLevel: shellCompressionLevel as any, enableMemory, enableDocs, enableData, enableSecurity, enableArchitecture, enablePatterns });
+  writeHooks(kiroDir, { enableCompression, enableMemory, enableWatchmen, watchmenSynthesisMode, enableWiki, wikiSynthesisMode });
+  writeSteering(kiroDir, { cavemanMode, enableCompression, shellCompressionLevel: shellCompressionLevel as any, enableMemory, enableDocs, enableData, enableSecurity, enableArchitecture, enablePatterns, enableWiki });
   writeCliAgent(kiroDir, { enableSecurity, enableArchitecture, enablePatterns });
 }
 

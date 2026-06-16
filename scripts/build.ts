@@ -52,6 +52,7 @@ function copyAssets(): void {
   fs.copyFileSync(path.join(src, 'db', 'data-schema.sql'), path.join(dist, 'db', 'data-schema.sql'));
   fs.copyFileSync(path.join(src, 'db', 'security-schema.sql'), path.join(dist, 'db', 'security-schema.sql'));
   fs.copyFileSync(path.join(src, 'db', 'patterns-schema.sql'), path.join(dist, 'db', 'patterns-schema.sql'));
+  fs.copyFileSync(path.join(src, 'db', 'wiki-schema.sql'), path.join(dist, 'db', 'wiki-schema.sql'));
 
   // patterns library yaml files
   const patternLibSrc = path.join(src, 'patterns', 'library');

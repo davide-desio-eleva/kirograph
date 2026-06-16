@@ -467,6 +467,8 @@ export const tools: ToolDefinition[] = [
           default: 'note',
         },
         projectPath: { type: 'string', description: 'Project root path (optional)' },
+        topicKey: { type: 'string', description: "Stable semantic key for this observation (e.g. 'architecture/auth-model'). Enables addressing by concept." },
+        reviewAfter: { type: 'number', description: 'Epoch ms: schedule this observation for re-evaluation after this timestamp.' },
       },
       required: ['content'],
     },
@@ -486,6 +488,182 @@ export const tools: ToolDefinition[] = [
   {
     name: 'kirograph_mem_status',
     description: 'Memory subsystem health: session count, observations, embedding coverage, storage size.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+    },
+  },
+  // ── Engram-parity mem tools ──────────────────────────────────────────────────
+  {
+    name: 'kirograph_mem_review',
+    description: 'List observations past their review_after date — stale facts the agent should re-evaluate, update, or supersede.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Max results (default: 20)', default: 20 },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+    },
+  },
+  {
+    name: 'kirograph_mem_mark_reviewed',
+    description: 'Mark an observation as reviewed — clears its review_after date.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Observation ID' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'kirograph_mem_compare',
+    description: 'Establish a typed relation between two observations (supersedes, conflicts_with, compatible, scoped, related, not_conflict). Accepts observation IDs or topic_key values.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        observationA: { type: 'string', description: 'First observation ID or topic_key' },
+        observationB: { type: 'string', description: 'Second observation ID or topic_key' },
+        relation: { type: 'string', enum: ['supersedes', 'conflicts_with', 'compatible', 'scoped', 'related', 'not_conflict'], description: 'Relation type' },
+        confidence: { type: 'number', description: 'Confidence 0.0–1.0 (default: 1.0)' },
+        reason: { type: 'string', description: 'Explanation for the relation' },
+        evidence: { type: 'string', description: 'Supporting evidence text' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['observationA', 'observationB', 'relation'],
+    },
+  },
+  {
+    name: 'kirograph_mem_judge',
+    description: 'Finalize a pending conflict relation — confirm, revise, or dismiss it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        relationId: { type: 'string', description: 'Relation ID (from kirograph_mem_compare or kirograph_mem_search)' },
+        relation: { type: 'string', enum: ['supersedes', 'conflicts_with', 'compatible', 'scoped', 'related', 'not_conflict'], description: 'Final relation type' },
+        confidence: { type: 'number', description: 'Final confidence 0.0–1.0' },
+        reason: { type: 'string', description: 'Reasoning for judgment' },
+        evidence: { type: 'string', description: 'Supporting evidence' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['relationId', 'relation', 'confidence'],
+    },
+  },
+  {
+    name: 'kirograph_mem_capture',
+    description: 'Extract and store structured learnings from a freeform text block. Looks for ## Key Learnings, ## Observations, ## Decisions, ## Key Changes sections and saves each bullet as a separate observation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        content: { type: 'string', description: 'Text block with structured sections' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['content'],
+    },
+  },
+  {
+    name: 'kirograph_mem_save_prompt',
+    description: 'Save the current user prompt to session memory for context reconstruction.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        content: { type: 'string', description: 'Prompt content to save' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['content'],
+    },
+  },
+  {
+    name: 'kirograph_mem_suggest_topic_key',
+    description: 'Suggest a stable topic_key for an observation based on its kind and content. Returns a deterministic slug like "architecture/auth-model".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['decision', 'error', 'pattern', 'architecture', 'summary', 'note'], description: 'Observation kind' },
+        title: { type: 'string', description: 'Short title or first sentence of the observation' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['kind', 'title'],
+    },
+  },
+  {
+    name: 'kirograph_mem_conflicts_scan',
+    description: 'Scan recent observations for potential conflicts using FTS similarity. Returns candidate pairs that may need a relation established via kirograph_mem_compare.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Max observations to scan (default: 50)', default: 50 },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+    },
+  },
+  // ── Wiki tools (require enableWiki=true) ────────────────────────────────────
+  {
+    name: 'kirograph_wiki_ingest',
+    description: 'Returns an ingest prompt (SCHEMA + MANIFEST + source content) for the LLM to produce a WIKI_DIFF. Call kirograph_wiki_apply_diff with the result.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', description: 'Source content to ingest (markdown, notes, ADR text, etc.)' },
+        sourceName: { type: 'string', description: 'Name or path of the source (e.g. "ADR-001.md")', default: 'source' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['source'],
+    },
+  },
+  {
+    name: 'kirograph_wiki_apply_diff',
+    description: 'Apply a WIKI_DIFF string (produced by the LLM after kirograph_wiki_ingest) to the wiki filesystem and SQLite index.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        diff: { type: 'string', description: 'WIKI_DIFF string with WIKI_DIFF_START/END blocks' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['diff'],
+    },
+  },
+  {
+    name: 'kirograph_wiki_search',
+    description: 'Full-text search over wiki pages. Returns page slugs, titles, and previews ranked by relevance.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search query' },
+        limit: { type: 'number', description: 'Max results (default: 5)', default: 5 },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'kirograph_wiki_page',
+    description: 'Retrieve the full markdown content of a wiki page by slug.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slug: { type: 'string', description: 'Page slug (e.g. "AuthService", "arch/auth-model")' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['slug'],
+    },
+  },
+  {
+    name: 'kirograph_wiki_lint',
+    description: 'Health check the wiki for broken links, orphan pages, stale sources, and potential contradictions between pages.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+    },
+  },
+  {
+    name: 'kirograph_wiki_list',
+    description: 'List all wiki pages with slug, title, source count, and last updated date.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -2226,7 +2404,15 @@ export class ToolHandler {
 
         return results.map((r, i) => {
           const age = formatAge(r.observation.createdAt);
-          return `${i + 1}. [${r.observation.kind}] ${r.observation.content} (${age})`;
+          const lines = [`${i + 1}. [${r.observation.kind}] ${r.observation.content} (${age})`];
+          if (r.relations && r.relations.length > 0) {
+            for (const rel of r.relations) {
+              const other = rel.observationA === r.observation.id ? rel.observationB : rel.observationA;
+              const icon = rel.relation === 'conflicts_with' ? '⚡' : rel.relation === 'supersedes' ? '↩' : '~';
+              lines.push(`  ${icon} ${rel.relation} ${other} (confidence: ${rel.confidence})${rel.judgmentStatus === 'judged' ? ' (judged)' : ''}`);
+            }
+          }
+          return lines.join('\n');
         }).join('\n');
       }
 
@@ -2246,6 +2432,8 @@ export class ToolHandler {
           content: args.content as string,
           kind: (args.kind as any) ?? 'note',
           source: 'agent',
+          topicKey: args.topicKey as string | undefined,
+          reviewAfter: args.reviewAfter as number | undefined,
         });
 
         if (!id) return 'Observation already exists (duplicate content).';
@@ -2305,9 +2493,136 @@ export class ToolHandler {
           `  Symbol links: ${stats.links}`,
           `  Embeddings: ${stats.vectors} / ${stats.embeddableCount}`,
           `  Model mismatch: ${stats.modelMismatch ? '⚠ yes — run kirograph mem reembed' : 'no'}`,
+          `  Relations: ${stats.relations} (${stats.pendingConflicts} pending)`,
           `  Caveman compression: ${config.cavemanMode !== 'off' ? config.cavemanMode : 'off (storing raw)'}`,
         ];
         return lines.join('\n');
+      }
+
+      case 'kirograph_mem_review': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = args.projectPath as string ?? cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableMemory) return 'Memory is not enabled.';
+        const { MemoryManager } = await import('../memory/index');
+        const db = cg.getDatabase(); db.applyMemorySchema();
+        const mem = new MemoryManager(config, db.getRawDb());
+        mem.initialize();
+        const obs = mem.getObservationsForReview(args.limit as number ?? 20);
+        if (obs.length === 0) return 'No overdue observations — all review_after dates are in the future.';
+        const now = Date.now();
+        return obs.map((o, i) => {
+          const daysOverdue = Math.floor((now - (o.reviewAfter ?? now)) / 86400000);
+          return `${i + 1}. [${o.kind}]${o.topicKey ? ` (${o.topicKey})` : ''} ${o.content.slice(0, 120)} — overdue by ${daysOverdue}d`;
+        }).join('\n');
+      }
+
+      case 'kirograph_mem_mark_reviewed': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = args.projectPath as string ?? cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableMemory) return 'Memory is not enabled.';
+        const { MemoryManager } = await import('../memory/index');
+        const db = cg.getDatabase(); db.applyMemorySchema();
+        const mem = new MemoryManager(config, db.getRawDb());
+        mem.initialize();
+        mem.markReviewed(args.id as string);
+        return `Observation ${args.id} marked as reviewed.`;
+      }
+
+      case 'kirograph_mem_compare': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = args.projectPath as string ?? cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableMemory) return 'Memory is not enabled.';
+        const { MemoryManager } = await import('../memory/index');
+        const db = cg.getDatabase(); db.applyMemorySchema();
+        const mem = new MemoryManager(config, db.getRawDb());
+        mem.initialize();
+        const relationId = mem.compareObservations({
+          observationA: args.observationA as string,
+          observationB: args.observationB as string,
+          relation: args.relation as any,
+          confidence: args.confidence as number ?? 1.0,
+          reason: args.reason as string | undefined,
+          evidence: args.evidence as string | undefined,
+        });
+        return `Relation ${relationId} created (${args.relation}, confidence: ${args.confidence ?? 1.0}). Use kirograph_mem_judge to finalize.`;
+      }
+
+      case 'kirograph_mem_judge': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = args.projectPath as string ?? cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableMemory) return 'Memory is not enabled.';
+        const { MemoryManager } = await import('../memory/index');
+        const db = cg.getDatabase(); db.applyMemorySchema();
+        const mem = new MemoryManager(config, db.getRawDb());
+        mem.initialize();
+        mem.judgeRelation(
+          args.relationId as string,
+          args.relation as any,
+          args.confidence as number,
+          args.reason as string | undefined,
+          args.evidence as string | undefined,
+        );
+        return `Relation ${args.relationId} judged as [${args.relation}] (confidence: ${args.confidence}).`;
+      }
+
+      case 'kirograph_mem_capture': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = args.projectPath as string ?? cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableMemory) return 'Memory is not enabled.';
+        const { MemoryManager } = await import('../memory/index');
+        const db = cg.getDatabase(); db.applyMemorySchema();
+        const mem = new MemoryManager(config, db.getRawDb());
+        mem.initialize();
+        const extracted = mem.capturePassive(args.content as string);
+        if (extracted.length === 0) return 'No structured sections found. Use ## Key Learnings, ## Observations, ## Decisions, or ## Key Changes headings.';
+        return `Captured ${extracted.length} observation(s):\n` + extracted.map((e, i) => `${i + 1}. [${e.kind}] ${e.content.slice(0, 100)}${e.id ? '' : ' (duplicate)'}`).join('\n');
+      }
+
+      case 'kirograph_mem_save_prompt': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = args.projectPath as string ?? cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableMemory) return 'Memory is not enabled.';
+        const { MemoryManager } = await import('../memory/index');
+        const db = cg.getDatabase(); db.applyMemorySchema();
+        const mem = new MemoryManager(config, db.getRawDb());
+        mem.initialize();
+        const id = await mem.savePrompt(args.content as string);
+        return `Prompt saved as ${id}.`;
+      }
+
+      case 'kirograph_mem_suggest_topic_key': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = args.projectPath as string ?? cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableMemory) return 'Memory is not enabled.';
+        const { MemoryManager } = await import('../memory/index');
+        const db = cg.getDatabase(); db.applyMemorySchema();
+        const mem = new MemoryManager(config, db.getRawDb());
+        mem.initialize();
+        const key = mem.suggestTopicKey(args.kind as string, args.title as string);
+        return `Suggested topic_key: ${key}`;
+      }
+
+      case 'kirograph_mem_conflicts_scan': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = args.projectPath as string ?? cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableMemory) return 'Memory is not enabled.';
+        const { MemoryManager } = await import('../memory/index');
+        const db = cg.getDatabase(); db.applyMemorySchema();
+        const mem = new MemoryManager(config, db.getRawDb());
+        mem.initialize();
+        const candidates = mem.scanConflicts(args.limit as number ?? 50);
+        if (candidates.length === 0) return 'No potential conflicts found among recent observations.';
+        return `Found ${candidates.length} potential conflict(s):\n` + candidates.map((c, i) =>
+          `${i + 1}. [${c.observationA.kind}] "${c.observationA.content.slice(0, 80)}" ↔ [${c.observationB.kind}] "${c.observationB.content.slice(0, 80)}" (similarity: ${c.similarity.toFixed(2)})`
+        ).join('\n') + '\n\nUse kirograph_mem_compare to establish relations.';
       }
 
       // ── Docs tools ────────────────────────────────────────────────────────────
@@ -3922,6 +4237,170 @@ export class ToolHandler {
           }
         }
 
+        return lines.join('\n');
+      }
+
+      // ── Wiki tools ────────────────────────────────────────────────────────────
+
+      case 'kirograph_wiki_ingest': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableWiki) return 'Wiki is not enabled. Set enableWiki: true in .kirograph/config.json';
+
+        const { KiroGraphWiki } = await import('../wiki/index');
+        const db = cg.getDatabase();
+        db.applyWikiSchema();
+        const wiki = new KiroGraphWiki(db.getRawDb(), projectRoot + '/.kirograph', {
+          autoResolveConflicts: (config as any).wikiAutoResolveConflicts ?? false,
+        });
+        wiki.initialize();
+
+        const source = args.source as string ?? '';
+        const sourceName = args.sourceName as string ?? 'source';
+        if (!source) return 'source is required';
+
+        if (config.wikiSynthesisMode === 'local') {
+          wiki.queueSource(source, sourceName);
+          const count = wiki.getQueueCount();
+          return `Source "${sourceName}" queued for local wiki synthesis (${count} in queue). The agentStop hook will run "kirograph wiki synthesize" automatically.`;
+        }
+
+        const prompt = wiki.getIngestPrompt(source, sourceName);
+        return `WIKI_INGEST_PROMPT\n${prompt}\n\nProduce WIKI_DIFF blocks following SCHEMA.md, then call kirograph_wiki_apply_diff with the diff string.`;
+      }
+
+      case 'kirograph_wiki_apply_diff': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableWiki) return 'Wiki is not enabled. Set enableWiki: true in .kirograph/config.json';
+
+        const { KiroGraphWiki } = await import('../wiki/index');
+        const db = cg.getDatabase();
+        db.applyWikiSchema();
+        const wiki = new KiroGraphWiki(db.getRawDb(), projectRoot + '/.kirograph', {
+          autoResolveConflicts: (config as any).wikiAutoResolveConflicts ?? false,
+        });
+        wiki.initialize();
+
+        const diff = args.diff as string ?? '';
+        if (!diff) return 'diff is required';
+
+        const result = wiki.applyDiff(diff);
+        const lines: string[] = ['✓ Wiki diff applied'];
+        if (result.created.length) lines.push(`  Created: ${result.created.join(', ')}`);
+        if (result.updated.length) lines.push(`  Updated: ${result.updated.join(', ')}`);
+        if (result.conflictsResolved.length) lines.push(`  Conflicts auto-resolved: ${result.conflictsResolved.join(', ')}`);
+        if (result.conflictsPending.length) {
+          lines.push(`  ⚡ Conflicts pending (${result.conflictsPending.length}):`);
+          for (const c of result.conflictsPending) {
+            lines.push(`    ${c.page} §${c.section}: "${c.existing}" vs "${c.incoming}" (source: ${c.source})`);
+          }
+        }
+        return lines.join('\n');
+      }
+
+      case 'kirograph_wiki_search': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableWiki) return 'Wiki is not enabled. Set enableWiki: true in .kirograph/config.json';
+
+        const { KiroGraphWiki } = await import('../wiki/index');
+        const db = cg.getDatabase();
+        db.applyWikiSchema();
+        const wiki = new KiroGraphWiki(db.getRawDb(), projectRoot + '/.kirograph');
+        wiki.initialize();
+
+        const query = args.query as string ?? '';
+        if (!query) return 'query is required';
+        const limit = Math.min(Number(args.limit ?? 5), 20);
+
+        const results = wiki.search(query, limit);
+        if (results.length === 0) return `No wiki pages found for "${query}".`;
+
+        const lines = [`Wiki Search: ${query}`, ''];
+        for (const { page, score } of results) {
+          lines.push(`[${page.slug}] ${page.title}  (score: ${score.toFixed(3)})`);
+          // Show first non-heading line as preview
+          const preview = page.content.split('\n').find(l => l.trim() && !l.startsWith('#'));
+          if (preview) lines.push(`  ${preview.trim().slice(0, 120)}`);
+          lines.push('');
+        }
+        return lines.join('\n').trim();
+      }
+
+      case 'kirograph_wiki_page': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableWiki) return 'Wiki is not enabled. Set enableWiki: true in .kirograph/config.json';
+
+        const { KiroGraphWiki } = await import('../wiki/index');
+        const db = cg.getDatabase();
+        db.applyWikiSchema();
+        const wiki = new KiroGraphWiki(db.getRawDb(), projectRoot + '/.kirograph');
+        wiki.initialize();
+
+        const slug = args.slug as string ?? '';
+        if (!slug) return 'slug is required';
+
+        const page = wiki.getPage(slug);
+        if (!page) return `Wiki page "${slug}" not found. Use kirograph_wiki_list to see available pages.`;
+
+        return page.content;
+      }
+
+      case 'kirograph_wiki_lint': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableWiki) return 'Wiki is not enabled. Set enableWiki: true in .kirograph/config.json';
+
+        const { KiroGraphWiki } = await import('../wiki/index');
+        const db = cg.getDatabase();
+        db.applyWikiSchema();
+        const wiki = new KiroGraphWiki(db.getRawDb(), projectRoot + '/.kirograph');
+        wiki.initialize();
+
+        const issues = wiki.lint();
+        if (issues.length === 0) return '✓ Wiki lint passed — no issues found.';
+
+        const lines = [`Wiki Lint — ${issues.length} issue(s)`, ''];
+        for (const issue of issues) {
+          const icon = issue.kind === 'contradiction' ? '⚡' : issue.kind === 'orphan' ? '○' : issue.kind === 'broken_link' ? '🔗' : '⚠';
+          lines.push(`${icon} [${issue.kind}] ${issue.slug}`);
+          lines.push(`  ${issue.detail}`);
+          lines.push('');
+        }
+        return lines.join('\n').trim();
+      }
+
+      case 'kirograph_wiki_list': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+        if (!config.enableWiki) return 'Wiki is not enabled. Set enableWiki: true in .kirograph/config.json';
+
+        const { KiroGraphWiki } = await import('../wiki/index');
+        const db = cg.getDatabase();
+        db.applyWikiSchema();
+        const wiki = new KiroGraphWiki(db.getRawDb(), projectRoot + '/.kirograph');
+        wiki.initialize();
+
+        const pages = wiki.listPages();
+        if (pages.length === 0) return 'Wiki is empty. Use kirograph_wiki_ingest to add pages.';
+
+        const stats = wiki.getStats();
+        const lines = [
+          `Wiki — ${stats.pageCount} page(s), ${stats.totalSources} total sources`,
+          '',
+        ];
+        for (const page of pages) {
+          const date = new Date(page.updatedAt).toISOString().slice(0, 10);
+          lines.push(`  ${page.slug.padEnd(32)} ${page.title}  (${page.sourceCount} src, ${date})`);
+        }
         return lines.join('\n');
       }
 

@@ -32,7 +32,7 @@ import { installQwenEarly, installQwenLate, printQwenNextSteps, uninitQwen } fro
 export interface TargetInstaller {
   label: string;
   installEarly(projectRoot: string): void;
-  installLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean, enableArchitecture?: boolean, enablePatterns?: boolean, enableWatchmen?: boolean, watchmenSynthesisMode?: 'local' | 'agent'): void;
+  installLate(projectRoot: string, cavemanMode?: CavemanMode | 'off', shellCompressionLevel?: string, enableMemory?: boolean, enableDocs?: boolean, enableData?: boolean, enableSecurity?: boolean, enableArchitecture?: boolean, enablePatterns?: boolean, enableWatchmen?: boolean, watchmenSynthesisMode?: 'local' | 'agent', enableWiki?: boolean, wikiSynthesisMode?: 'local' | 'agent', wikiLocalModel?: string): void;
   printNextSteps(projectRoot: string): void;
   uninit?(projectRoot: string): void;
 }

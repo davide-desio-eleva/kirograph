@@ -35,6 +35,8 @@ export interface MemObservation {
   supersededBy?: string;
   /** Fact type for temporal classification. */
   factType?: 'observation' | 'decision' | 'procedure' | 'constraint';
+  topicKey?: string;
+  reviewAfter?: number;
 }
 
 export interface MemObservationInput {
@@ -42,6 +44,8 @@ export interface MemObservationInput {
   kind?: ObservationKind;
   source?: ObservationSource;
   tags?: string[];
+  topicKey?: string;
+  reviewAfter?: number;
 }
 
 // ── Links ────────────────────────────────────────────────────────────────────
@@ -59,6 +63,8 @@ export interface ScoredObservation {
   score: number;
   /** Source of the score: 'fts', 'vector', or 'hybrid' */
   scoreSource: 'fts' | 'vector' | 'hybrid';
+  /** Active relations for this observation (populated by search) */
+  relations?: MemRelation[];
 }
 
 export interface MemSearchOptions {
@@ -87,6 +93,8 @@ export interface MemStats {
   embeddableCount: number;
   modelMismatch: boolean;
   currentModel?: string;
+  relations: number;
+  pendingConflicts: number;
 }
 
 // ── Watchmen ──────────────────────────────────────────────────────────────────
@@ -115,4 +123,47 @@ export interface CompressResult {
   originalLength: number;
   compressedLength: number;
   detectedSymbols: string[];
+}
+
+// ── Relations ─────────────────────────────────────────────────────────────────
+
+export type RelationType =
+  | 'supersedes'
+  | 'conflicts_with'
+  | 'compatible'
+  | 'scoped'
+  | 'related'
+  | 'not_conflict';
+
+export type JudgmentStatus = 'pending' | 'judged' | 'ignored';
+
+export interface MemRelation {
+  id: string;
+  observationA: string;
+  observationB: string;
+  relation: RelationType;
+  confidence: number;
+  reason?: string;
+  evidence?: string;
+  judgmentStatus: JudgmentStatus;
+  judgedAt?: number;
+  createdAt: number;
+}
+
+export interface MemRelationInput {
+  observationA: string;
+  observationB: string;
+  relation: RelationType;
+  confidence?: number;
+  reason?: string;
+  evidence?: string;
+}
+
+// ── Prompts ───────────────────────────────────────────────────────────────────
+
+export interface MemPrompt {
+  id: string;
+  sessionId?: string;
+  content: string;
+  createdAt: number;
 }
