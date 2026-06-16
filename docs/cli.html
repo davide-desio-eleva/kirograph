@@ -74,6 +74,8 @@ kirograph hook save --all         # Save all without prompting
 kirograph hook import [path]      # Import global hooks into workspace
 kirograph hook import --all       # Import all without prompting
 kirograph hook list               # List saved global hooks</code></pre>
+    <p><strong>Kiro install — global hook import:</strong> during interactive <code>kirograph install --target kiro</code> (no <code>--yes</code>), if <code>~/.kirograph/hooks/</code> is non-empty, the installer adds a <strong>Hooks</strong> step (after Agent Behavior, before Memory) asking whether to import global hooks (<code>None</code>, <code>All</code>, or <code>Select specific hooks</code>). Selected hooks are copied after bundled KiroGraph hooks are written. Use <code>kirograph hook import</code> for a standalone import outside install.</p>
+    <p><strong><code>kirograph hook</code> menus:</strong> interactive <code>save</code> / <code>import</code> use <code>All</code> / <code>Select specific hooks</code> / <code>Cancel</code>. Summaries print hook display names only; <code>hook list</code> shows display name and description.</p>
     <p><code>kirograph uninstall</code> is an alias for <code>kirograph uninit</code>.</p>
 
     <h3 id="cli-indexing">Indexing</h3>

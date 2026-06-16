@@ -45,6 +45,18 @@ Up to three hooks are installed (`.kiro.hook` extension):
 | `kirograph-compress-hint.kiro.hook` | `preToolUse` (shell) | `askAgent` | Reminds the agent to use `kirograph_exec` for commands that benefit from token compression. Only installed when shell compression is enabled. |
 | `kirograph-mem-capture.kiro.hook` | `agentStop` | `askAgent` | Prompts the agent to store important observations in memory at the end of each session. Only installed when memory is enabled. |
 
+### Global Hook Library (`~/.kirograph/hooks/`)
+
+Personal Kiro hooks can be saved outside any project and reused across workspaces.
+
+| Command | Action |
+|---------|--------|
+| `kirograph hook save [path]` | Copy hooks from `.kiro/hooks/` to `~/.kirograph/hooks/` (overwrites same filename) |
+| `kirograph hook import [path]` | Copy global hooks into `.kiro/hooks/` |
+| `kirograph hook list` | List saved global hooks (display name and description) |
+
+During interactive **`kirograph install --target kiro`** (no `--yes`), if the global store is non-empty, the installer adds a **Hooks** step (after Agent Behavior, before Memory) to import global hooks (`None`, `All`, or `Select specific hooks`). Selected hooks are copied after bundled KiroGraph hooks are written so defaults take precedence on filename conflicts. Use `kirograph hook import` for a standalone import outside install.
+
 ### CLI Agent Config (`.kiro/agents/kirograph.json`)
 
 A custom agent for Kiro CLI with session-boundary sync hooks:

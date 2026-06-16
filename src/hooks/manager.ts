@@ -16,15 +16,23 @@ export interface HookFileInfo {
 }
 
 /**
- * Resolve the global hooks directory path (~/.kirograph/hooks/).
+ * Resolve the global KiroGraph directory path (~/.kirograph/).
  * Throws if home directory cannot be determined.
  */
-export function getGlobalHooksDir(): string {
+export function getGlobalKirographDir(): string {
   const home = process.env.HOME || process.env.USERPROFILE;
   if (!home) {
     throw new Error('Cannot determine home directory');
   }
-  return path.join(home, '.kirograph', 'hooks');
+  return path.join(home, '.kirograph');
+}
+
+/**
+ * Resolve the global hooks directory path (~/.kirograph/hooks/).
+ * Throws if home directory cannot be determined.
+ */
+export function getGlobalHooksDir(): string {
+  return path.join(getGlobalKirographDir(), 'hooks');
 }
 
 /**

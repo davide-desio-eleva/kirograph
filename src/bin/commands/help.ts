@@ -23,8 +23,8 @@ const GROUPS: Group[] = [
   {
     icon: '🔧', title: 'Setup',
     commands: [
-      { name: 'install',       desc: 'Wire up MCP/instructions for an agent workspace', opts: ['--target <t>  kiro | cursor | claude | windsurf | ...'] },
-      { name: 'init',          args: '[path]', desc: 'Initialize KiroGraph in a project', opts: ['-i, --index  Index immediately after init', 'Prompts to import global hooks when available'] },
+      { name: 'install',       desc: 'Wire up MCP/instructions for an agent workspace', opts: ['--target <t>  kiro | cursor | claude | windsurf | ...', 'Kiro install: prompts to import global hooks'] },
+      { name: 'init',          args: '[path]', desc: 'Initialize KiroGraph in a project', opts: ['-i, --index  Index immediately after init'] },
       { name: 'uninit',        args: '[path]', desc: 'Remove KiroGraph from a project',   opts: ['--force      Skip confirmation', '--target <t>  Target to clean up (or "all")'] },
       { name: 'hook',          desc: 'Manage global Kiro hooks in ~/.kirograph/hooks/', opts: ['save [path]    Save workspace hooks to global store', 'import [path]  Import global hooks into workspace', 'list           List saved global hooks', '--all          Save or import all without prompting (save/import)'] },
     ],

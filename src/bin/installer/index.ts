@@ -23,6 +23,7 @@ import { ensureQdrantUI, openQdrantDashboard } from './qdrant-dashboard';
 import type { InstallTarget } from './common';
 import { getTargetInstaller } from './targets';
 import type { CavemanMode } from './caveman';
+import { applyImportedGlobalHooks } from '../../hooks/import-prompt';
 
 function _findRustc(): string | null {
   // Check PATH first, then the default rustup install location
@@ -133,6 +134,7 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
     let shouldOfferIndex = false;
     let typesenseDashboard = false;
     let qdrantDashboard = false;
+    let hooksToImport: string[] | null = null;
 
     try {
       if (alreadyInitialized) {
@@ -177,7 +179,12 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
         console.log(`  • enablePatterns: ${enablePatterns}`);
       } else {
         shouldOfferIndex = true;
-        const patch = await promptConfigOptions(rl);
+        const promptResult = await promptConfigOptions(rl, {
+          projectRoot: cwd,
+          offerHookImport: target === 'kiro' && !opts.yes,
+        });
+        const patch = promptResult.patch;
+        hooksToImport = promptResult.hooksToImport;
         await updateConfig(cwd, patch);
         cavemanMode = patch.cavemanMode ?? 'off';
         shellCompressionLevel = patch.shellCompressionLevel ?? 'normal';
@@ -358,6 +365,9 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
       }
 
       installer.installLate(cwd, cavemanMode, shellCompressionLevel, enableMemory, enableDocs, enableData, enableSecurity, enableArchitecture, enablePatterns, enableWatchmen, watchmenSynthesisMode);
+      if (target === 'kiro' && hooksToImport && hooksToImport.length > 0) {
+        applyImportedGlobalHooks(cwd, hooksToImport);
+      }
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       console.error(`\n  ✗ Failed to write configuration: ${reason}`);
@@ -435,10 +445,7 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
             }
           });
         });
-        return; // rl.close() handled in finally
-      }
-
-      if (qdrantDashboard) {
+      } else if (qdrantDashboard) {
         await openQdrantDashboard(cwd);
       }
     }

@@ -8,7 +8,8 @@
   - `kirograph hook save [path]` — copy selected (or all with `--all`) workspace hooks from `.kiro/hooks/` to the global store; always overwrites existing entries with the same filename.
   - `kirograph hook import [path]` — copy global hooks into the workspace `.kiro/hooks/` directory.
   - `kirograph hook list` — list saved global hooks (shows hook name and description from the `.kiro.hook` JSON).
-- **`kirograph init`**: after initialization, interactively offers to import global hooks (none / all / select specific) when the global store is non-empty.
+  - Interactive `save` / `import` use arrow-key menus (`All` / `Select specific hooks` / `Cancel`); summaries print hook display names only.
+- **`kirograph install`** (Kiro target): when `~/.kirograph/hooks/` is non-empty, the interactive installer adds a **Hooks** section (after Agent Behavior, before Memory) asking whether to import global hooks (`None`, `All`, or `Select specific hooks`). The prompt runs on every interactive install; skipped with `--yes`. Selected hooks are copied after `installLate` so bundled KiroGraph hooks are written first. Use `kirograph hook import` for a standalone import outside install.
 
 ## [0.23.0] - 2026-06-12: TurboVec — Rust/SIMD vector engine via napi-rs
 

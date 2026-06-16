@@ -24,7 +24,7 @@ function hookSummaryLabel(
 ): string {
   const hook = hooks.find((h) => h.filename === filename);
   if (!hook) return filename;
-  return hook.description ?? hook.displayName;
+  return hook.displayName;
 }
 
 /**

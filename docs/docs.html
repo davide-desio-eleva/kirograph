@@ -60,6 +60,7 @@
       <a href="#frameworks" class="sidebar-link">Frameworks</a>
       <a href="#using-with-kiro" class="sidebar-link">Using with Kiro</a>
       <a href="#workflow-steering" class="sidebar-link" style="padding-left:1.5rem;">↳ Workflow Files</a>
+      <a href="#global-hook-library" class="sidebar-link" style="padding-left:1.5rem;">↳ Global Hook Library</a>
       <a href="#other-tools" class="sidebar-link">Other Tools (Experimental)</a>
       <a href="#configuration" class="sidebar-link">Configuration</a>
     </div>
@@ -159,6 +160,7 @@ kirograph install --target kiro   # install for a specific platform only</code><
       <li>Whether to enable tabular data indexing</li>
       <li>Caveman mode level</li>
       <li>Shell compression (on/off)</li>
+      <li>Whether to import global hooks from <code>~/.kirograph/hooks/</code> (Kiro target only, when the store is non-empty)</li>
       <li>Whether to run an initial index immediately</li>
     </ul>
 
@@ -688,6 +690,20 @@ kirograph install --target kiro   # install for a specific platform only</code><
       </table>
     </div>
     <p>The sync hook replaces the previous per-file approach (mark-dirty-on-save, mark-dirty-on-create, sync-on-delete). A single <code>agentStop</code> hook handles all file changes in one pass with zero overhead during active editing.</p>
+
+    <h3 id="global-hook-library">Global Hook Library (<code>~/.kirograph/hooks/</code>)</h3>
+    <p>Personal Kiro hooks can be saved outside any project and reused across workspaces:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Command</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><code>kirograph hook save [path]</code></td><td>Copy hooks from <code>.kiro/hooks/</code> to <code>~/.kirograph/hooks/</code> (overwrites same filename)</td></tr>
+          <tr><td><code>kirograph hook import [path]</code></td><td>Copy global hooks into <code>.kiro/hooks/</code></td></tr>
+          <tr><td><code>kirograph hook list</code></td><td>List saved global hooks (display name and description)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>During interactive <code>kirograph install --target kiro</code> (no <code>--yes</code>), if the global store is non-empty, the installer adds a <strong>Hooks</strong> step (after Agent Behavior, before Memory) to import global hooks (<code>None</code>, <code>All</code>, or <code>Select specific hooks</code>). Selected hooks are copied after bundled KiroGraph hooks are written. Use <code>kirograph hook import</code> for a standalone import outside install.</p>
 
     <h3 id="cli-agent">CLI Agent Config (<code>.kiro/agents/kirograph.json</code>)</h3>
     <p>A custom agent for Kiro CLI that wires up the MCP server and references the steering file as a resource. Sync is handled at session boundaries:</p>
