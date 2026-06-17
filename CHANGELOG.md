@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.26.0] - 2026-06-17: Installer overhaul — real feature flags, minimal defaults
+
+### Added
+
+- **Real MCP feature flags**: tools are now absent from `tools/list` and `tools/call` entirely when their feature is disabled — not just unapproved. `FEATURE_TOOL_SETS` maps each config flag to the tool names it gates. `setEnabledTools()` is computed once at init and cached.
+
+- **New installer tool groups**: three new optional groups added to the install wizard, each defaulting to **no**:
+  - *Code health* (`enableCodeHealth`): `kirograph_hotspots`, `kirograph_surprising`, `kirograph_diff`, `kirograph_dead_code`, `kirograph_circular_deps`
+  - *Advanced analysis* (`enableAdvancedAnalysis`): `kirograph_type_hierarchy`, `kirograph_flows`, `kirograph_communities`, `kirograph_refactor` — offered only when Architecture is enabled
+  - *Agent utilities* (`enableAgentUtils`): `kirograph_read`, `kirograph_gain`, `kirograph_budget`
+
+- **`kirograph_exec` gated by shell compression**: tool is absent when `shellCompressionLevel` is `off`. `enableShellExec` is a derived field computed from `shellCompressionLevel !== 'off'` — never stored in config.
+
+- **`kirograph_callers` / `kirograph_callees` gated by `trackCallSites`**: call-site graph tools only appear when the feature is enabled.
+
+- **Atomic mcp.json write**: `writeMcpConfigFinal` overwrites the MCP entry with the correct `autoApprove` list in one operation from `installKiroLate`, eliminating the intermediate "all tools" state that Kiro detected on reconnect or reinstall.
+
+- **`--path` in mcp.json args**: written at install time so the server always loads the correct project config regardless of working directory.
+
+- **Eager config loading**: `start()` calls `tryInit()` before the transport starts, preventing the race where `tools/list` arrives before `initialize`.
+
+### Changed
+
+- **All toggle prompts default to no**: every installer question now shows `no` first (index 0) and `yes` second — activation is a deliberate choice.
+
+- **`extractDocstrings` defaults to `false`** (was `true`).
+
+- **`trackCallSites` defaults to `false`** (was `true`).
+
+- **"Install KiroGraph for Kiro?" confirmation removed**: the target was already chosen in the preceding prompt; the redundant confirmation step is gone.
+
+- **Steering file is now fully dynamic**: `buildSteeringContent` builds the quick decision guide rows, tool reference sections, workflows, and workflow steering file table conditionally based on enabled features. Disabled tools are absent — not mentioned at all.
+
+- **Workflow steering files conditionalized**: `kirograph-review.md`, `kirograph-debug.md`, `kirograph-onboard.md`, `kirograph-refactor.md`, and `kirograph-architecture.md` now only include steps and tips for tools that are actually enabled. Step numbering adjusts automatically.
+
+- **Security workflow table row** only appears in the steering file when `enableSecurity` is true.
+
+### Fixed
+
+- **Reconnect bug**: clicking Reconnect in Kiro IDE no longer jumps from 7 to 74 tools. Root causes fixed: wrong cwd (solved by `--path` arg), async race (solved by eager init), and intermediate mcp.json state (solved by atomic write).
+
+- **Reinstall bug**: uninstall + reinstall now shows the correct tool count immediately without requiring a reconnect.
+
+- **`enableShellExec` unknown config warning**: field added to `KNOWN_FIELDS` as a legacy alias; removed from `.kirograph/config.json` where it was incorrectly persisted as a stored value.
+
+---
+
 ## [0.25.0] - 2026-06-15: Wiki — LLM-maintained structured knowledge base
 
 ### Added
