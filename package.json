@@ -1,6 +1,6 @@
 {
   "name": "kirograph",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "description": "Semantic code knowledge graph for Kiro: fewer tool calls, instant symbol lookups, 100% local.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -49,7 +49,6 @@
     "web-tree-sitter": "^0.25.3"
   },
   "optionalDependencies": {
-    "xlsx": "^0.18.5",
     "@ast-grep/lang-bash": "^0.0.8",
     "@ast-grep/lang-c": "^0.0.6",
     "@ast-grep/lang-cpp": "^0.0.6",
@@ -79,7 +78,8 @@
     "sqlite-vec": "^0.1.9",
     "turboquant-js": "^0.2.0",
     "turbovec-node": "file:native/turbovec-node",
-    "typesense": "^3.0.6"
+    "typesense": "^3.0.6",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/figlet": "^1.7.0",

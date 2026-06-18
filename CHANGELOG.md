@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.27.0] - 2026-06-18: Kiro IDE v1.0.0 hooks — version-aware installer
+
+### Added
+
+- **Kiro version prompt**: the installer now asks "Which version of Kiro IDE are you using?" as the very first question when targeting Kiro. Two options:
+  - *Beta Version 0.x.x* — emits legacy `.kiro.hook` files (v1 format: `when`/`then`)
+  - *Version 1.x.x* — emits `.json` hook files (v2 format: `trigger`/`action`)
+
+- **v2 hook format support**: hooks are now generated in the Kiro IDE v1.0.0 schema (`{ "version": "v1", "hooks": [{ name, trigger, matcher?, action }] }`). Trigger mapping from v1: `agentStop` → `Stop`, `preToolUse` → `PreToolUse`. Action mapping: `runCommand` → `{ type: "command" }`, `askAgent` → `{ type: "agent" }`. The v1 `toolTypes: ["shell"]` becomes v2 `matcher: "execute_bash"`.
+
+- **Format-exclusive generation**: only the selected format is written. The opposite format's files are cleaned up if they exist from a previous install.
+
+- **`KiroHookFormat` type** exported from `src/bin/installer/hooks.ts` (`'v1-legacy' | 'v2'`).
+
+### Changed
+
+- **`writeHooks` accepts `kiroHookFormat`**: all hook definitions are stored as dual `HookDef` objects carrying both `v1` and `v2` payloads; `writeHookForFormat` emits only the correct one.
+
+- **`TargetInstaller` interface** extended with optional `kiroHookFormat` parameter on `installEarly` and `installLate`.
+
+- **Legacy `.kiro.hook` files removed from repo**: workspace now contains only the v2 `.json` hooks.
+
+- **`uninit` cleanup list updated**: covers both `.json` and `.kiro.hook` filenames for all hook IDs.
+
+### Fixed
+
+- **Hooks inactive in new Kiro IDE**: v1 `.kiro.hook` files were silently ignored by Kiro IDE 1.x. The new format is now correctly recognized.
+
+---
+
 ## [0.26.0] - 2026-06-17: Installer overhaul — real feature flags, minimal defaults
 
 ### Added

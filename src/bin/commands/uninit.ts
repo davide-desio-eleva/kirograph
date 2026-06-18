@@ -34,23 +34,30 @@ function isValidTarget(t: string): t is InstallTarget | 'all' {
 }
 
 function uninitKiro(projectRoot: string): void {
-  // Remove .kiro hooks created by kirograph
+  // Remove .kiro hooks created by kirograph (v2 .json format)
   const kiroHooks = [
+    'kirograph-sync-if-dirty.json',
+    'kirograph-compress-hint.json',
+    'kirograph-mem-capture.json',
+    'kirograph-watchmen.json',
+    'kirograph-wiki-ingest.json',
+    'kirograph-wiki-lint.json',
+    // Legacy v1 .kiro.hook filenames
     'kirograph-mark-dirty-on-save.kiro.hook',
     'kirograph-mark-dirty-on-create.kiro.hook',
     'kirograph-sync-on-delete.kiro.hook',
     'kirograph-sync-if-dirty.kiro.hook',
     'kirograph-compress-hint.kiro.hook',
     'kirograph-mem-capture.kiro.hook',
-    // Legacy .json filenames
+    'kirograph-watchmen.kiro.hook',
+    'kirograph-wiki-ingest.kiro.hook',
+    'kirograph-wiki-lint.kiro.hook',
+    // Legacy pre-v1 .json filenames (different schema)
     'kirograph-mark-dirty-on-save.json',
     'kirograph-mark-dirty-on-create.json',
     'kirograph-sync-on-delete.json',
-    'kirograph-sync-if-dirty.json',
     'kirograph-sync-on-save.json',
     'kirograph-sync-on-create.json',
-    'kirograph-compress-hint.json',
-    'kirograph-mem-capture.json',
   ];
   const hooksDir = path.join(projectRoot, '.kiro', 'hooks');
   let removedHooks = 0;

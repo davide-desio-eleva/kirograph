@@ -16,7 +16,7 @@ import { loadConfig, updateConfig } from '../../config';
 import { printBanner } from '../banner';
 import { renderIndexProgress } from '../progress';
 import { dim, reset } from '../ui';
-import { ask, askToggle } from './prompts';
+import { ask, askToggle, arrowSelect } from './prompts';
 import { promptConfigOptions } from './config-prompt';
 import { openTypesenseDashboard } from './dashboard';
 import { ensureQdrantUI, openQdrantDashboard } from './qdrant-dashboard';
@@ -111,7 +111,16 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
 
     console.log();
 
-    installer.installEarly(cwd);
+    // Ask Kiro IDE version as the first question for the kiro target
+    let kiroHookFormat: 'v1-legacy' | 'v2' = 'v2';
+    if (target === 'kiro') {
+      kiroHookFormat = await arrowSelect<'v1-legacy' | 'v2'>(rl, 'Which version of Kiro IDE are you using?', [
+        { value: 'v1-legacy', label: 'Beta Version 0.x.x', description: 'Kiro IDE beta releases (uses .kiro.hook format)' },
+        { value: 'v2',        label: 'Version 1.x.x',      description: 'Kiro IDE stable releases (uses .json hook format)' },
+      ], 1);
+    }
+
+    installer.installEarly(cwd, kiroHookFormat);
 
     const alreadyInitialized = fs.existsSync(path.join(cwd, '.kirograph'));
     let cavemanMode: CavemanMode | 'off' = 'off';
@@ -372,7 +381,7 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
         }
       }
 
-      installer.installLate(cwd, cavemanMode, shellCompressionLevel, enableMemory, enableDocs, enableData, enableSecurity, enableArchitecture, enablePatterns, enableWatchmen, watchmenSynthesisMode, enableWiki, wikiSynthesisMode, wikiLocalModel, enableCodeHealth, enableAdvancedAnalysis, enableAgentUtils, trackCallSites);
+      installer.installLate(cwd, cavemanMode, shellCompressionLevel, enableMemory, enableDocs, enableData, enableSecurity, enableArchitecture, enablePatterns, enableWatchmen, watchmenSynthesisMode, enableWiki, wikiSynthesisMode, wikiLocalModel, enableCodeHealth, enableAdvancedAnalysis, enableAgentUtils, trackCallSites, kiroHookFormat);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       console.error(`\n  ✗ Failed to write configuration: ${reason}`);
