@@ -46,3 +46,6 @@ package-lock.json
 
 # benchmark
 benchmarks
+
+# pixelrag test data
+scripts/pixelrag/mock/data/*.pdf

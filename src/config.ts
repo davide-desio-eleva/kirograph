@@ -136,6 +136,13 @@ export interface KiroGraphConfig {
   dataQueryLimit: number;
   /** Max token budget per response. Default: 8000. */
   dataMaxResponseTokens: number;
+  /**
+   * [EXPERIMENTAL] Enable visual PDF search via PixelRAG bridge. Requires Python 3.10+,
+   * enableData + dataInstallPdf, and ~6 GB free disk + 8 GB RAM. Default: false.
+   */
+  enableVisualPDF: boolean;
+  /** Port for the PixelRAG local server. Default: 30001. */
+  pixelragPort: number;
   /** Enable security analysis (dependency scanning + vulnerability detection). Default: false. */
   enableSecurity: boolean;
   /** Vulnerability databases to query. Default: ['OSV']. */
@@ -199,6 +206,7 @@ const KNOWN_FIELDS = new Set<string>([
   'docsContextLimit', 'docsContextThreshold', 'docsMaxFileSize', 'docsSummarization',
   'enableData', 'dataInclude', 'dataExclude', 'dataLinkCode',
   'dataContextLimit', 'dataMaxFileSize', 'dataMaxRows', 'dataQueryLimit', 'dataMaxResponseTokens',
+  'enableVisualPDF', 'pixelragPort',
   'enableSecurity', 'securityDatabases', 'securityAutoEnrich', 'securityEnrichMaxAgeDays', 'securityLicensePolicy',
   'enablePatterns', 'patternLibraryPath', 'patternSeverityThreshold',
   'enableCodeHealth', 'enableAdvancedAnalysis', 'enableAgentUtils', 'enableGeneralCompression',
@@ -290,6 +298,8 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     dataMaxRows: 1_000_000,
     dataQueryLimit: 500,
     dataMaxResponseTokens: 8000,
+    enableVisualPDF: false,
+    pixelragPort: 30001,
     enableSecurity: false,
     securityDatabases: ['OSV'],
     securityAutoEnrich: true,
@@ -512,6 +522,11 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const dataMaxResponseTokens = typeof raw.dataMaxResponseTokens === 'number' && raw.dataMaxResponseTokens > 0
     ? Math.round(raw.dataMaxResponseTokens) : defaults.dataMaxResponseTokens;
 
+  // ── Visual PDF config ─────────────────────────────────────────────────────
+  const enableVisualPDF = typeof raw.enableVisualPDF === 'boolean' ? raw.enableVisualPDF : defaults.enableVisualPDF;
+  const pixelragPort = typeof raw.pixelragPort === 'number' && raw.pixelragPort > 0 && raw.pixelragPort < 65536
+    ? Math.round(raw.pixelragPort) : defaults.pixelragPort;
+
   // ── Security config ───────────────────────────────────────────────────────
   let enableSecurity: boolean;
   if (typeof raw.enableSecurity === 'boolean') {
@@ -624,6 +639,11 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     ? raw.enableGeneralCompression
     : defaults.enableGeneralCompression;
 
+  // Dependency constraint: enableVisualPDF requires enableData
+  if (enableVisualPDF && !enableData) {
+    logWarn('enableVisualPDF requires enableData: true — visual PDF search disabled. Run kirograph install to configure.');
+  }
+
   // Dependency constraint: enableSecurity requires enableArchitecture
   let finalEnableArchitecture = enableArchitecture;
   if (enableSecurity && !enableArchitecture) {
@@ -712,6 +732,8 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     dataMaxRows,
     dataQueryLimit,
     dataMaxResponseTokens,
+    enableVisualPDF: enableVisualPDF && enableData,
+    pixelragPort,
     enableSecurity,
     securityDatabases,
     securityAutoEnrich,

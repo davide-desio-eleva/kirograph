@@ -12,7 +12,7 @@ export interface PromptConfigOptions {
   projectRoot?: string;
   offerHookImport?: boolean;
 }
-export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'turboquantMemDocs' | 'turboquantBits' | 'turbovecMemDocs' | 'turbovecBits' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites' | 'enableArchitecture' | 'cavemanMode' | 'shellCompressionLevel' | 'enableMemory' | 'enableWatchmen' | 'watchmenThreshold' | 'watchmenSynthesisMode' | 'watchmenLocalModel' | 'enableDocs' | 'docsContextLimit' | 'enableData' | 'dataContextLimit' | 'enableSecurity' | 'enablePatterns' | 'enableWiki' | 'wikiSynthesisMode' | 'wikiLocalModel' | 'enableCodeHealth' | 'enableAdvancedAnalysis' | 'enableAgentUtils' | 'enableGeneralCompression'> & { embeddingModel?: string; embeddingDim?: number };
+export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'turboquantMemDocs' | 'turboquantBits' | 'turbovecMemDocs' | 'turbovecBits' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites' | 'enableArchitecture' | 'cavemanMode' | 'shellCompressionLevel' | 'enableMemory' | 'enableWatchmen' | 'watchmenThreshold' | 'watchmenSynthesisMode' | 'watchmenLocalModel' | 'enableDocs' | 'docsContextLimit' | 'enableData' | 'dataContextLimit' | 'enableVisualPDF' | 'pixelragPort' | 'enableSecurity' | 'enablePatterns' | 'enableWiki' | 'wikiSynthesisMode' | 'wikiLocalModel' | 'enableCodeHealth' | 'enableAdvancedAnalysis' | 'enableAgentUtils' | 'enableGeneralCompression'> & { embeddingModel?: string; embeddingDim?: number };
 export type SemanticEngine = KiroGraphConfig['semanticEngine'];
 
 export const DEFAULT_EMBEDDING_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
@@ -268,6 +268,70 @@ export async function promptConfigOptions(
       'Required for .pdf files. Rust/NAPI binary — prebuilts for linux-x64 and macOS ARM64.',
       false,
     );
+
+    if ((patch as any).dataInstallPdf) {
+      (patch as any).enableVisualPDF = await askToggle(rl,
+        '[EXPERIMENTAL] Visual PDF search via PixelRAG (Qwen3-VL-Embedding-2B)?',
+        'Enables kirograph_pdf_visual_search — semantic search over scanned and complex-layout PDFs.\n' +
+        '  Requires Python 3.10+, ~6 GB free disk, 8 GB RAM minimum (16 GB recommended).\n' +
+        '  Not supported on Windows native. WSL2 works with caveats (see docs).\n' +
+        '  If enabled: installs PixelRAG via pip and downloads Qwen3-VL-Embedding-2B (~4 GB) now.',
+        false,
+      );
+
+      if ((patch as any).enableVisualPDF) {
+        const { detectPython, detectWSL2, checkRam } = await import('../../data/pixelrag-manager');
+        const python = detectPython();
+
+        if (process.platform === 'win32') {
+          console.log('  ✖ Windows native is not supported. Disabling visual PDF search.');
+          console.log('    Use WSL2 with the project on the Linux filesystem, then re-run kirograph install.');
+          (patch as any).enableVisualPDF = false;
+        } else if (!python) {
+          console.log('  ✖ Python 3.10+ not found. Disabling visual PDF search.');
+          console.log('    Install from https://python.org, then re-run kirograph install.');
+          (patch as any).enableVisualPDF = false;
+        } else {
+          if (detectWSL2()) {
+            console.log(
+              '  ⚠ WSL2 detected. Limitations:\n' +
+              '    • Project must be on /home/..., not /mnt/c/...\n' +
+              '    • Allocate ≥8 GB in %USERPROFILE%\\.wslconfig\n' +
+              '    • CUDA needs updated NVIDIA drivers with WSL2 support',
+            );
+          }
+          const ramState = checkRam();
+          if (ramState === 'block') {
+            console.log('  ⚠ Very low free RAM — PixelRAG may fail to start. Proceeding anyway.');
+          } else if (ramState === 'warn') {
+            console.log('  ⚠ Low free RAM — PixelRAG may degrade system performance.');
+          }
+
+          const { spawnSync } = await import('child_process');
+          console.log('  Installing PixelRAG…');
+          const pipResult = spawnSync(python, ['-m', 'pip', 'install', 'pixelrag[index,serve]'], {
+            stdio: 'inherit',
+            timeout: 300_000,
+          });
+          if (pipResult.status !== 0) {
+            console.log('  ✖ pip install failed. Disabling — re-run kirograph install to retry.');
+            (patch as any).enableVisualPDF = false;
+          } else {
+            console.log('  Downloading Qwen3-VL-Embedding-2B model (~4 GB)…');
+            const dlResult = spawnSync(python, ['-m', 'pixelrag_embed.download'], {
+              stdio: 'inherit',
+              timeout: 1800_000,
+            });
+            if (dlResult.status !== 0) {
+              console.log('  ⚠ Model download failed. Re-run kirograph install to retry.');
+            } else {
+              console.log('  ✓ PixelRAG ready.');
+            }
+            (patch as any).pixelragPort = 30001;
+          }
+        }
+      }
+    }
 
     const contextChoice = await arrowSelect<number>(rl, 'Include dataset schemas in kirograph_context results?', [
       { value: 0,  label: '0 (disabled)', description: 'Data stays separate — use kirograph_data_* tools explicitly (recommended)' },

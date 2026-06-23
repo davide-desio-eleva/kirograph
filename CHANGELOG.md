@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.28.0] - 2026-06-22: Visual PDF search via PixelRAG bridge [experimental]
+
+### Added
+
+- **`enableVisualPDF`** (experimental) — visual PDF search powered by [PixelRAG](https://github.com/StarTrail-org/PixelRAG). Renders scanned and complex-layout PDFs as image strips, embeds via Qwen3-VL-Embedding-2B, searches with FAISS IVFFlat. KiroGraph acts as a pure HTTP bridge: it manages Python detection, pip install, index build (targeting only `needs_ocr`/`has_columns`-flagged PDFs), and server lifecycle (health poll at startup only).
+- **`kirograph_pdf_visual_search`** MCP tool — semantic search over visual PDF tiles. Returns file path, tile coordinates, and rendered PNG path per result.
+- **`kirograph data visual-search`** CLI subcommand — query visual PDF index from the terminal.
+- **`kirograph data pixelrag-status`** CLI subcommand — show server state, tile count, and index age.
+- **Manifest-based staleness** — `.kirograph/pixelrag-manifest.json` tracks indexed PDFs by path/mtime/size; index rebuilds only when files change or `--force` is passed.
+- **Installer section** — `kirograph install` now prompts for `enableVisualPDF` under the PDF support toggle, with Python check, pip install, and model download (~4 GB) at install time.
+- **Hardware warnings** — RAM check (block < 2 GB free, warn < 4 GB), WSL2 detection with guidance, Windows native not supported.
+
+### Credits
+
+- [PixelRAG](https://github.com/StarTrail-org/PixelRAG) by StarTrail-org
+- [Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) by Qwen / Alibaba Cloud
+
+---
+
 ## [0.27.2] - 2026-06-19: Headroom-inspired compression tooling + installer refactor + CLI/MCP parity
 
 ### Added

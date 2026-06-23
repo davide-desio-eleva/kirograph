@@ -765,4 +765,84 @@ export function register(program: Command): void {
       }
       cg.close();
     });
+
+  // ── visual-search (EXPERIMENTAL) ────────────────────────────────────────────
+  data
+    .command('visual-search <query>')
+    .description('[experimental] Semantic search over visually complex PDFs via PixelRAG')
+    .option('--limit <n>', 'Max results (default: 3)', '3')
+    .option('--min-tile-height <px>', 'Min tile height in px (default: 50)', '50')
+    .option('--json', 'Output as JSON')
+    .action(async (query: string, opts: { limit: string; minTileHeight: string; json?: boolean }) => {
+      const cwd = process.cwd();
+      const config = await loadConfig(cwd);
+
+      if (!config.enableVisualPDF) {
+        console.error(`  ✖ Visual PDF search is not enabled (experimental).`);
+        console.error(`  Set ${violet}${bold}enableVisualPDF: true${reset} in .kirograph/config.json`);
+        console.error(`  Requires ${bold}enableData: true${reset} and Python 3.10+.`);
+        process.exit(1);
+      }
+
+      const endpoint = `http://localhost:${config.pixelragPort}`;
+      const { isServerRunning, searchVisual } = await import('../../data/pixelrag-bridge');
+
+      if (!await isServerRunning(endpoint)) {
+        console.error(`  ✖ PixelRAG server is not running on port ${config.pixelragPort}.`);
+        console.error(`  Start the MCP server (it launches PixelRAG automatically), or run kirograph index first.`);
+        process.exit(1);
+      }
+
+      const limit = Math.min(Math.max(1, parseInt(opts.limit, 10) || 3), 20);
+      const minTileHeight = parseInt(opts.minTileHeight, 10) || 50;
+
+      const results = await searchVisual(endpoint, query, { limit, minTileHeight });
+
+      if (opts.json) {
+        console.log(JSON.stringify(results, null, 2));
+        return;
+      }
+
+      if (results.length === 0) {
+        console.log(`  ${dim}No results found for: "${query}"${reset}`);
+        return;
+      }
+
+      console.log(`\n  ${bold}Visual PDF Search${reset} — "${query}" (${results.length} result${results.length > 1 ? 's' : ''})\n`);
+      for (const r of results) {
+        console.log(`  ${green}Score: ${r.score.toFixed(3)}${reset}`);
+        console.log(`    ${dim}File:${reset}  ${r.filePath}`);
+        console.log(`    ${dim}Tile:${reset}  page-${r.tileIndex} strip-${r.chunkIndex} (y=${r.yOffset}px h=${r.chunkHeight}px)`);
+        console.log(`    ${dim}Image:${reset} ${r.chunkImagePath}`);
+        console.log();
+      }
+    });
+
+  // ── pixelrag-status (EXPERIMENTAL) ──────────────────────────────────────────
+  data
+    .command('pixelrag-status')
+    .description('[experimental] Show PixelRAG server and index status')
+    .option('--json', 'Output as JSON')
+    .action(async (opts: { json?: boolean }) => {
+      const cwd = process.cwd();
+      const config = await loadConfig(cwd);
+      const endpoint = `http://localhost:${config.pixelragPort}`;
+      const indexPath = `${cwd}/.kirograph/pixelrag-index`;
+
+      const { getStatus } = await import('../../data/pixelrag-bridge');
+      const status = await getStatus(endpoint, indexPath);
+
+      if (opts.json) {
+        console.log(JSON.stringify(status, null, 2));
+        return;
+      }
+
+      console.log(`\n  ${bold}PixelRAG Status${reset} ${dim}(experimental)${reset}\n`);
+      console.log(`  ${dim}Enabled:${reset}  ${config.enableVisualPDF ? green + 'yes' + reset : 'no'}`);
+      console.log(`  ${dim}Server:${reset}   ${status.running ? green + 'running' + reset : dim + 'stopped' + reset}`);
+      console.log(`  ${dim}Endpoint:${reset} ${endpoint}`);
+      if (status.tileCount !== null) console.log(`  ${dim}Tiles:${reset}    ${value(String(status.tileCount))}`);
+      if (status.lastBuilt !== null) console.log(`  ${dim}Built:${reset}    ${new Date(status.lastBuilt).toLocaleString()}`);
+      console.log();
+    });
 }

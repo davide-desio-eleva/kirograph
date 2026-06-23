@@ -58,3 +58,32 @@ If installed from source:
 cd kirograph
 npm uninstall -g .
 ```
+
+---
+
+## Visual PDF Search — Hardware Requirements {#visual-pdf-search-hardware-requirements}
+
+> **⚠ Experimental.** This feature may change or be removed in future releases.
+
+Visual PDF search (`enableVisualPDF: true`) runs a local PixelRAG server that loads **Qwen3-VL-Embedding-2B** into memory. Requirements are significantly higher than the rest of KiroGraph.
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| RAM | 8 GB | 16 GB |
+| Free disk | 6 GB | 10 GB+ |
+| CPU | any x64 / ARM64 | — |
+| GPU / NPU | not required | Apple Silicon MPS, CUDA ≥ 8 GB VRAM |
+| Python | 3.10+ | 3.11+ |
+| OS | macOS 12, Linux (glibc 2.31+) | — |
+
+**Windows native is not supported.** PixelRAG uses Unix-style paths and subprocess forking. Use WSL2 for Windows.
+
+**WSL2 notes:**
+- The project must live on the Linux filesystem (`/home/...`), not on a Windows mount (`/mnt/c/...`) — I/O over the mount degrades PDF rendering significantly.
+- Allocate at least 8 GB to WSL2 in `%USERPROFILE%\.wslconfig` (`[wsl2]\nmemory=8GB`).
+- CUDA in WSL2 requires an updated NVIDIA driver with WSL2 support (`CUDA on WSL`).
+
+**What gets downloaded at `kirograph install` time:**
+- PixelRAG Python package (`pip install pixelrag[index,serve]`) — fast
+- Qwen3-VL-Embedding-2B model via PixelRAG — **~4 GB**, one-time download
+

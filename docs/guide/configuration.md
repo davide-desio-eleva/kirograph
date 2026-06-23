@@ -71,6 +71,9 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `dataMaxRows` | number | `1000000` | Max rows to index per file |
 | `dataQueryLimit` | number | `500` | Max rows returned per query (hard cap) |
 | `dataMaxResponseTokens` | number | `8000` | Max token budget per data tool response |
+| **Visual PDF Search** _(experimental)_ | | | |
+| `enableVisualPDF` | boolean | `false` | Enable visual PDF search via PixelRAG. Requires `enableData: true`, Python 3.10+, 8 GB RAM, 6 GB free disk. ⚠ Experimental — see [hardware requirements](installation.md#visual-pdf-search-hardware-requirements). |
+| `pixelragPort` | number | `30001` | Port for the local PixelRAG FastAPI server |
 | **Agent Behavior** | | | |
 | `cavemanMode` | string | `off` | Communication style: `off`, `lite`, `full`, `ultra` |
 | `shellCompressionLevel` | string | `normal` | Shell compression: `off`, `normal`, `aggressive`, `ultra` |

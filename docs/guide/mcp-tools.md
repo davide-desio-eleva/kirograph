@@ -578,6 +578,36 @@ Data quality triage: rank columns by composite risk score (null rate, cardinalit
 
 ---
 
+## Visual PDF Search *(require `enableVisualPDF: true`)* — 1 tool · ~200 tok base
+
+> **⚠ Experimental.** This feature may change or be removed in future releases. Hardware requirements are significant — see [hardware requirements](installation.md#visual-pdf-search-hardware-requirements) before enabling.
+
+### `kirograph_pdf_visual_search`
+
+Semantic search over scanned PDFs and visually complex documents (multi-column, charts, mixed images and text) using [PixelRAG](https://github.com/StarTrail-org/PixelRAG) (Qwen3-VL-Embedding-2B + FAISS).
+
+**When to use:** Only for queries about visual content in scanned PDFs, photographed documents, or PDFs with complex layouts. Do **not** use for source code, structured data, or normal text documents — use `kirograph_context` for those.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `query` | string | required | Natural language query about the visual content |
+| `limit` | number | `3` | Max results to return (1–10) |
+| `minTileHeight` | number | `50` | Min tile height in px — filters out tiny fragments |
+| `projectPath` | string | cwd | Project root path |
+
+**How it works:** Sends `query` to the local PixelRAG FastAPI server (`POST /search`) → FAISS IVFFlat search over Qwen3-VL-2B embeddings of rendered PDF tile images → returns ranked results.
+
+**Token cost:** The tool response itself is ~200 tokens. Each result includes a `chunkImagePath` (absolute path to the rendered PNG tile). Reading a tile image costs **~1 500 tokens**. Read only the tiles the query actually requires.
+
+**Response fields per result:**
+- `score` — similarity score (higher = more relevant)
+- `filePath` — absolute path to the source PDF
+- `tileIndex` / `chunkIndex` — page and strip within the page
+- `yOffset` / `chunkHeight` — vertical position and size in px
+- `chunkImagePath` — absolute path to the rendered PNG tile
+
+---
+
 ## Security Tools *(require `enableSecurity: true` and `enableArchitecture: true`)* — 15 tools · ~675 tok
 
 ### `kirograph_security`

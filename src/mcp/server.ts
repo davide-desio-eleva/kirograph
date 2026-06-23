@@ -58,6 +58,22 @@ export class MCPServer {
       // config is optional — proceed without it
     }
     this.setEnabledTools();
+
+    // Start PixelRAG server if visual PDF search is enabled (experimental)
+    if (this.config?.enableVisualPDF && root) {
+      this._startPixelRAG(root, this.config.pixelragPort).catch(err => {
+        process.stderr.write(`[KiroGraph MCP] PixelRAG startup failed: ${err?.message ?? err}\n`);
+      });
+    }
+  }
+
+  private async _startPixelRAG(projectRoot: string, port: number): Promise<void> {
+    const path2 = await import('path');
+    const { ensurePython, ensurePixelRAGInstalled, startServer } = await import('../data/pixelrag-manager');
+    const kirographDir = path2.join(projectRoot, '.kirograph');
+    const python = ensurePython();
+    ensurePixelRAGInstalled(python);
+    await startServer(python, port, kirographDir);
   }
 
   private async handleMessage(msg: JsonRpcMessage): Promise<unknown> {

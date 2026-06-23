@@ -48,6 +48,7 @@ The result is fewer tool calls, less context used, and faster responses on compl
 | 📚 **Wiki (KiroGraph-Wiki opt-in module)** | Karpathy-style LLM wiki — a set of markdown pages that compound knowledge across sessions. Three ops: **ingest** (build structured prompt from source text), **apply-diff** (write LLM-generated WIKI_DIFF to SQLite + disk), **lint** (broken links, orphan pages, contradictions). Context enrichment: `kirograph_context` auto-includes relevant wiki pages above score threshold. Two synthesis modes: `agent` (IDE LLM) or `local` (HuggingFace, same infra as Watchmen). Conflict resolution: deterministic by source date when `wikiAutoResolveConflicts: true`. Inspired by [Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f). |
 | 📖 **Documentation Indexing (KiroGraph-Doc opt-in  module)** | Section-level retrieval from Markdown, MDX, RST, AsciiDoc, OpenAPI — 92-97% token savings |
 | 📊 **Data Navigation (KiroGraph-Data opt-in  module)** | Query CSV/JSON/Excel/Parquet/**PDF** with filters, aggregations, joins — all server-side in SQLite |
+| 👁 **Visual PDF Search (KiroGraph-PixelRAG opt-in module)** ⚠️ *experimental* | Semantic search over scanned PDFs and complex-layout documents (charts, multi-column, image-heavy). Renders pages as 1024 px image strips, embeds via Qwen3-VL-Embedding-2B, searches with FAISS IVFFlat. KiroGraph acts as a transparent HTTP bridge: Python install, index build, server lifecycle — all automatic. Requires Python 3.10+, 8 GB RAM, 6 GB disk. Not supported on Windows native. Powered by [PixelRAG](https://github.com/StarTrail-org/PixelRAG) by StarTrail-org. |
 | <h4>Token Optimization</h4> | |
 | 🗜️ **Shell Compression (KiroGraph-RTK opt-in  module)** | Token-optimized command output (git, tests, linters, docker, AWS) — 60-90% savings |
 | 🪨 **Caveman Mode (KiroGraph-Caveman opt-in module)** 🪨 | Agent prose compression (lite → ultra) — fewer tokens on explanations without touching code |
@@ -180,6 +181,8 @@ KiroGraph is inspired by [CodeGraph](https://github.com/colbymchenry/codegraph) 
 - [turboquant-js](https://github.com/danilodevhub/turboquant-js) by [Danilo Dev](https://github.com/danilodevhub): the TurboQuant engine — TypeScript implementation of Google's Walsh-Hadamard + Lloyd-Max quantization algorithm used for embedding compression.
 - [turbovec](https://github.com/RyanCodrai/turbovec) by [Ryan Codrai](https://github.com/RyanCodrai): the TurboVec engine — Rust implementation of TurboQuant with SIMD acceleration, exposed to Node.js via a napi-rs native addon.
 - [pdf-inspector](https://github.com/firecrawl/pdf-inspector) by [Firecrawl](https://github.com/firecrawl): the PDF parser used in the data module — pure Rust, no OCR, no network, prebuilt binaries for linux-x64 and macOS ARM64.
+- [PixelRAG](https://github.com/StarTrail-org/PixelRAG) by [StarTrail-org](https://github.com/StarTrail-org): the visual PDF search engine — renders PDFs as image strips, embeds via Qwen3-VL-Embedding-2B, FAISS IVFFlat index, FastAPI HTTP serve. KiroGraph uses it as an HTTP bridge: lifecycle management, index targeting, and query routing only.
+- [Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) by [Qwen / Alibaba Cloud](https://huggingface.co/Qwen): the vision-language embedding model used by PixelRAG to embed PDF tile images.
 
 ### Contributors
 
@@ -200,6 +203,8 @@ KiroGraph combines capabilities from 14 separate projects into one integrated MC
 | Docs | [jDocMunch-MCP](https://github.com/jgravelle/jdocmunch-mcp) | Code ↔ docs cross-references |
 | Data | [jDataMunch-MCP](https://github.com/jgravelle/jdatamunch-mcp) | Unified with code graph in one server, PDF parsing |
 | PDF parsing | [pdf-inspector](https://github.com/firecrawl/pdf-inspector) | Pure Rust, no OCR/network, prebuilt binaries, piped into data module |
+| Visual PDF search | [PixelRAG](https://github.com/StarTrail-org/PixelRAG) | HTTP bridge to PixelRAG FastAPI; KiroGraph handles install, index build, server lifecycle |
+| Visual embedding model | [Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) | ~4 GB, downloaded at install time via PixelRAG |
 | Shell compression | [rtk](https://github.com/rtk-ai/rtk) | Integrated as MCP tool, no separate binary |
 | Prose compression | [caveman](https://github.com/JuliusBrussee/caveman) | Multi-level (lite/full/ultra) via steering |
 | On-demand compression + CCR | [headroom](https://github.com/chopratejas/headroom) | Dual-engine (rtk shell + caveman prose) via `kirograph_compress`; CCR pattern via `kirograph_retrieve`; KV-cache prefix stability |

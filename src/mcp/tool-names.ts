@@ -46,6 +46,9 @@ export const FEATURE_TOOL_SETS: Record<string, string[]> = {
     'kirograph_data_drift',
     'kirograph_data_history',
   ],
+  enableVisualPDF: [
+    'kirograph_pdf_visual_search',
+  ],
   enableSecurity: [
     'kirograph_security',
     'kirograph_vulns',
@@ -181,6 +184,7 @@ export const KIROGRAPH_TOOL_NAMES = [
   'kirograph_data_quality',
   'kirograph_data_drift',
   'kirograph_data_history',
+  'kirograph_pdf_visual_search',
   'kirograph_security',
   'kirograph_vulns',
   'kirograph_sbom',

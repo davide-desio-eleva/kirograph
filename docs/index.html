@@ -394,6 +394,19 @@
         </div>
       </div>
 
+      <!-- v0.28.0 experimental -->
+      <div class="card" style="--card-color: 245, 158, 11;">
+        <div class="card-header">
+          <span class="card-icon"><i data-lucide="eye"></i></span>
+          <h3>Visual PDF Search <span style="font-size:0.65em;font-weight:600;background:rgba(245,158,11,0.2);border:1px solid rgba(245,158,11,0.5);border-radius:4px;padding:2px 6px;vertical-align:middle;">Experimental</span></h3>
+          <span class="card-version">v0.28.0</span>
+        </div>
+        <div class="card-body">
+          <span class="card-tok" style="display:inline-block;margin-bottom:0.6rem;">1 tool · ~200 tok base</span>
+          <p>Semantic search over scanned PDFs and complex-layout documents (charts, multi-column, mixed images) via <a href="https://github.com/StarTrail-org/PixelRAG" target="_blank" rel="noopener">PixelRAG</a>. Renders pages as 1024 px image strips, embeds via Qwen3-VL-Embedding-2B, searches with FAISS IVFFlat. KiroGraph manages Python install, index build, and server lifecycle automatically. Requires Python 3.10+, 8 GB RAM, 6 GB free disk. Enable via <code>enableVisualPDF</code>.</p>
+        </div>
+      </div>
+
       <!-- v0.19.0 -->
       <div class="card" style="--card-color: 248, 81, 73;">
         <div class="card-header">
@@ -533,6 +546,7 @@
       <div class="tl-item below major"><div class="tl-dot"></div><div class="tl-connector"></div><div class="tl-content"><span class="tl-ver">v0.25.0</span><span class="tl-title">LLM Wiki</span></div></div>
       <div class="tl-item above major"><div class="tl-content"><span class="tl-ver">v0.26.0</span><span class="tl-title">Installer Overhaul &amp; Real Feature Flags</span></div><div class="tl-connector"></div><div class="tl-dot"></div></div>
       <div class="tl-item below major"><div class="tl-dot"></div><div class="tl-connector"></div><div class="tl-content"><span class="tl-ver">v0.27.0</span><span class="tl-title">Kiro IDE v1.0.0 Hooks</span></div></div>
+      <div class="tl-item above major"><div class="tl-content"><span class="tl-ver">v0.28.0</span><span class="tl-title">Visual PDF Search (PixelRAG) — experimental</span></div><div class="tl-connector"></div><div class="tl-dot"></div></div>
 
     </div>
   </div>

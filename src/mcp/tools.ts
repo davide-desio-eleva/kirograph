@@ -1014,6 +1014,28 @@ export const tools: ToolDefinition[] = [
       required: ['dataset'],
     },
   },
+  // ── Visual PDF search (require enableVisualPDF=true) — EXPERIMENTAL ───────────
+  {
+    name: 'kirograph_pdf_visual_search',
+    description:
+      '[EXPERIMENTAL] Semantic search over scanned PDFs and visually complex documents ' +
+      '(multi-column, charts, mixed images and text) using PixelRAG (Qwen3-VL-Embedding-2B + FAISS).\n\n' +
+      'Use this tool ONLY for queries about content in scanned PDFs, photographed documents, or PDFs ' +
+      'with complex visual layouts. Do NOT use for source code, structured data, or normal text ' +
+      'documents — use kirograph_context for those.\n\n' +
+      'Results include chunkImagePath: an absolute path to the rendered PNG tile. Each tile costs ' +
+      '~1 500 tokens if read as an image — read only what the query requires.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Natural language query about the visual content' },
+        limit: { type: 'number', description: 'Max results to return (default: 3)', default: 3 },
+        minTileHeight: { type: 'number', description: 'Minimum tile height in px to include (default: 50)', default: 50 },
+        projectPath: { type: 'string' },
+      },
+      required: ['query'],
+    },
+  },
   // ── Watchmen tools (require enableMemory=true + enableWatchmen=true) ──────────
   {
     name: 'kirograph_watchmen_status',
@@ -3494,6 +3516,58 @@ export class ToolHandler {
           histLines.push(`${date}  rows: ${snap.rowCount.toLocaleString()}  cols: ${snap.columnCount}  schema: ${colNames}`);
         }
         return histLines.join('\n');
+      }
+
+      // ── Visual PDF search (require enableVisualPDF) — EXPERIMENTAL ─────────────
+
+      case 'kirograph_pdf_visual_search': {
+        const { loadConfig } = await import('../config');
+        const projectRoot = args.projectPath as string ?? cg.getProjectRoot();
+        const config = await loadConfig(projectRoot);
+
+        if (!config.enableVisualPDF) {
+          return (
+            '[EXPERIMENTAL] Visual PDF search is not enabled.\n' +
+            'Set enableVisualPDF: true in .kirograph/config.json (requires enableData: true and Python 3.10+).\n' +
+            'Run kirograph install to configure.'
+          );
+        }
+
+        const endpoint = `http://localhost:${config.pixelragPort}`;
+        const { isServerRunning, searchVisual } = await import('../data/pixelrag-bridge');
+
+        const running = await isServerRunning(endpoint);
+        if (!running) {
+          return (
+            'PixelRAG server is not running.\n' +
+            'It starts automatically with the MCP server — try again in a moment, ' +
+            'or run kirograph index if the index has not been built yet.'
+          );
+        }
+
+        const query = args.query as string;
+        const limit = Math.min(Math.max(1, Math.round((args.limit as number | undefined) ?? 3)), 10);
+        const minTileHeight = Math.round((args.minTileHeight as number | undefined) ?? 50);
+
+        const results = await searchVisual(endpoint, query, { limit, minTileHeight });
+
+        if (results.length === 0) {
+          return 'No visual PDF results found for this query. Try rephrasing or broadening your search terms.';
+        }
+
+        const lines: string[] = [
+          `Visual PDF search results for "${query}" (${results.length} tile${results.length > 1 ? 's' : ''}):\n`,
+        ];
+        for (const r of results) {
+          lines.push(`Score: ${r.score.toFixed(3)}`);
+          lines.push(`File: ${r.filePath}`);
+          lines.push(`Tile: page-${r.tileIndex} strip-${r.chunkIndex} (y=${r.yOffset}px h=${r.chunkHeight}px)`);
+          lines.push(`Image: ${r.chunkImagePath}`);
+          lines.push('');
+        }
+        lines.push(`Note: each tile image costs ~1 500 tokens if read. Read only tiles relevant to the query.`);
+
+        return truncate(lines.join('\n'));
       }
 
       // ── Watchmen tools (require enableMemory + enableWatchmen) ────────────────

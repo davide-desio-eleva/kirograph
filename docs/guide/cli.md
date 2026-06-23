@@ -456,6 +456,12 @@ kirograph data classify report.pdf --json
 kirograph data index                        # incremental index
 kirograph data reindex                      # force re-index all
 kirograph data lint                         # validate integrity
+
+# Visual PDF search (experimental — requires enableVisualPDF: true and Python 3.10+)
+kirograph data visual-search "revenue chart Q3"          # semantic search over visual PDF tiles
+kirograph data visual-search "signature block" --limit 5 # return up to 5 tiles
+kirograph data visual-search "org chart" --json          # JSON output with image paths
+kirograph data pixelrag-status                           # show server state, tile count, index age
 ```
 
 ## Graph Export

@@ -80,6 +80,7 @@
       <a href="#wiki" class="sidebar-link" style="display:flex;align-items:center;gap:6px;"><img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/icons/wiki.png" style="width:45px;height:45px;border-radius:20px;flex-shrink:0;border-radius:3px;">Wiki<span style="margin-left:auto;display:inline-block;padding:0.1rem 0.45rem;background:rgba(100,100,100,0.12);border:1px solid rgba(100,100,100,0.2);border-radius:4px;font-size:0.7em;color:var(--muted);">~319 tok</span></a>
       <a href="#documentation" class="sidebar-link" style="display:flex;align-items:center;gap:6px;"><img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/icons/docs.png" style="width:45px;height:45px;border-radius:20px;flex-shrink:0;border-radius:3px;">Documentation<span style="margin-left:auto;display:inline-block;padding:0.1rem 0.45rem;background:rgba(100,100,100,0.12);border:1px solid rgba(100,100,100,0.2);border-radius:4px;font-size:0.7em;color:var(--muted);">~241 tok</span></a>
       <a href="#data" class="sidebar-link" style="display:flex;align-items:center;gap:6px;"><img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/icons/data.png" style="width:45px;height:45px;border-radius:20px;flex-shrink:0;border-radius:3px;">Data<span style="margin-left:auto;display:inline-block;padding:0.1rem 0.45rem;background:rgba(100,100,100,0.12);border:1px solid rgba(100,100,100,0.2);border-radius:4px;font-size:0.7em;color:var(--muted);">~519 tok</span></a>
+      <a href="#visual-pdf" class="sidebar-link" style="display:flex;align-items:center;gap:6px;padding-left:1.5rem;font-size:0.88em;">👁 Visual PDF <span style="display:inline-block;padding:0.1rem 0.4rem;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.4);border-radius:4px;font-size:0.75em;color:#b45309;margin-left:auto;">experimental</span></a>
       <a href="#security" class="sidebar-link" style="display:flex;align-items:center;gap:6px;"><img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/icons/sec.png" style="width:45px;height:45px;border-radius:20px;flex-shrink:0;border-radius:3px;">Security<span style="margin-left:auto;display:inline-block;padding:0.1rem 0.45rem;background:rgba(100,100,100,0.12);border:1px solid rgba(100,100,100,0.2);border-radius:4px;font-size:0.7em;color:var(--muted);">~675 tok</span></a>
       <a href="#turboquant" class="sidebar-link" style="display:flex;align-items:center;gap:6px;"><img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/icons/turboquadrant.png" style="width:45px;height:45px;border-radius:20px;flex-shrink:0;border-radius:3px;">TurboQuant</a>
       <a href="#turbovec" class="sidebar-link" style="display:flex;align-items:center;gap:6px;padding-left:1.5rem;"><img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/icons/turbovec.png" style="width:45px;height:45px;border-radius:20px;flex-shrink:0;border-radius:3px;">TurboVec</a>
@@ -1544,6 +1545,8 @@ kirograph docs reembed                      # re-embed with current model</code>
           <tr><td><code>dataQueryLimit</code></td><td>number</td><td><code>500</code></td><td>Max rows returned per query (hard cap)</td></tr>
           <tr><td><code>dataMaxResponseTokens</code></td><td>number</td><td><code>8000</code></td><td>Max token budget per response (truncates if exceeded)</td></tr>
           <tr><td><code>dataLinkCode</code></td><td>boolean</td><td><code>true</code></td><td>Auto-link data files to code symbols via path detection</td></tr>
+          <tr><td><code>enableVisualPDF</code></td><td>boolean</td><td><code>false</code></td><td><strong>Experimental.</strong> Enable visual PDF search via PixelRAG. Requires <code>enableData: true</code>, Python 3.10+, 8 GB RAM, 6 GB free disk. Not supported on Windows native.</td></tr>
+          <tr><td><code>pixelragPort</code></td><td>number</td><td><code>30001</code></td><td>Port for the local PixelRAG FastAPI server (only relevant when <code>enableVisualPDF: true</code>)</td></tr>
         </tbody>
       </table>
     </div>
@@ -1561,6 +1564,49 @@ kirograph docs reembed                      # re-embed with current model</code>
         </tbody>
       </table>
     </div>
+
+    <!-- ── Visual PDF Search ── -->
+    <h2 id="visual-pdf">Visual PDF Search <span style="display:inline-block;font-size:0.55em;font-weight:600;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.45);border-radius:5px;padding:2px 8px;vertical-align:middle;color:#b45309;">Experimental</span></h2>
+
+    <blockquote style="border-left:3px solid #f59e0b;padding:0.5rem 1rem;margin:1rem 0;color:var(--muted);font-size:0.9em;"><strong>⚠ Experimental.</strong> This feature may change or be removed in future releases. Hardware requirements are significant — see <a href="guide/installation.md#visual-pdf-search-hardware-requirements">hardware requirements</a> before enabling.</blockquote>
+
+    <p>When <code>enableVisualPDF: true</code>, KiroGraph adds semantic search over scanned PDFs and complex-layout documents — charts, multi-column text, images mixed with text — via <a href="https://github.com/StarTrail-org/PixelRAG" target="_blank" rel="noopener">PixelRAG</a> by StarTrail-org.</p>
+
+    <p><strong>How it works:</strong> PixelRAG renders each PDF page at 200 DPI, slices it into 1024 px height strips (tiles), and embeds each tile with <a href="https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B" target="_blank" rel="noopener">Qwen3-VL-Embedding-2B</a>. At query time, your text query is embedded and compared against all tile vectors with FAISS IVFFlat. KiroGraph acts as a transparent HTTP bridge — it manages Python detection, pip install, index build (only for flagged PDFs), and server lifecycle.</p>
+
+    <p><strong>Only flagged PDFs are indexed.</strong> KiroGraph reads the existing data module DB and passes only PDFs where at least one page has <code>needs_ocr = true</code> or <code>has_columns = true</code> to PixelRAG. Unambiguous text PDFs are handled by the normal data module at far lower cost.</p>
+
+    <h3>Hardware requirements</h3>
+    <table>
+      <thead><tr><th>Resource</th><th>Minimum</th><th>Recommended</th></tr></thead>
+      <tbody>
+        <tr><td>RAM</td><td>8 GB</td><td>16 GB</td></tr>
+        <tr><td>Free disk</td><td>6 GB</td><td>10 GB+</td></tr>
+        <tr><td>GPU / NPU</td><td>not required</td><td>Apple Silicon MPS, CUDA ≥ 8 GB VRAM</td></tr>
+        <tr><td>Python</td><td>3.10+</td><td>3.11+</td></tr>
+        <tr><td>OS</td><td>macOS 12, Linux (glibc 2.31+)</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Windows native is not supported.</strong> Use WSL2 with the project on the Linux filesystem (<code>/home/...</code>), not a Windows mount (<code>/mnt/c/...</code>).</p>
+
+    <h3>Configuration</h3>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>enableVisualPDF</code></td><td>boolean</td><td><code>false</code></td><td>Enable visual PDF search. Requires <code>enableData: true</code> and Python 3.10+.</td></tr>
+          <tr><td><code>pixelragPort</code></td><td>number</td><td><code>30001</code></td><td>Port for the local PixelRAG FastAPI server</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>MCP tool: <code>kirograph_pdf_visual_search</code></h3>
+    <p>Sends a natural-language query to the PixelRAG server and returns ranked tile results. Each result includes the source PDF path, tile coordinates (page, strip, y-offset, height), and the path to the rendered PNG tile. Reading a tile image costs ~1 500 tokens — read only what the query requires.</p>
+
+    <h3>CLI commands</h3>
+    <pre><code>kirograph data visual-search "revenue chart Q3"   # search visual tiles
+kirograph data visual-search "org chart" --limit 5 --json
+kirograph data pixelrag-status                     # server state, tile count, index age</code></pre>
 
     <!-- ── Security ── -->
     <h2 id="security">Security</h2>
@@ -1829,6 +1875,8 @@ npm run build   # requires Rust toolchain — https://rustup.rs</code></pre>
       <li><a href="https://github.com/danilodevhub/turboquant-js" target="_blank" rel="noopener">turboquant-js</a> by <a href="https://github.com/danilodevhub" target="_blank" rel="noopener">Danilo Dev</a>: the TurboQuant engine — TypeScript implementation of Google's Walsh-Hadamard + Lloyd-Max quantization algorithm used for embedding compression.</li>
       <li><a href="https://github.com/RyanCodrai/turbovec" target="_blank" rel="noopener">turbovec</a> by <a href="https://github.com/RyanCodrai" target="_blank" rel="noopener">Ryan Codrai</a>: the TurboVec engine — Rust implementation of TurboQuant with SIMD acceleration, exposed to Node.js via a napi-rs native addon.</li>
       <li><a href="https://github.com/firecrawl/pdf-inspector" target="_blank" rel="noopener">pdf-inspector</a> by <a href="https://github.com/firecrawl" target="_blank" rel="noopener">Firecrawl</a>: the PDF parser used in the data module — pure Rust, no OCR, no network, prebuilt binaries for linux-x64 and macOS ARM64. Exposes per-page markdown extraction with OCR and layout flags via a napi-rs native addon.</li>
+      <li><a href="https://github.com/StarTrail-org/PixelRAG" target="_blank" rel="noopener">PixelRAG</a> by <a href="https://github.com/StarTrail-org" target="_blank" rel="noopener">StarTrail-org</a>: the visual PDF search engine — renders PDFs as image strips, embeds via Qwen3-VL-Embedding-2B, FAISS IVFFlat index, FastAPI HTTP serve. KiroGraph uses it as an HTTP bridge: lifecycle management, index targeting, and query routing only.</li>
+      <li><a href="https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B" target="_blank" rel="noopener">Qwen3-VL-Embedding-2B</a> by <a href="https://huggingface.co/Qwen" target="_blank" rel="noopener">Qwen / Alibaba Cloud</a>: the vision-language embedding model used by PixelRAG to embed PDF tile images.</li>
     </ul>
 
     <h3 id="credits-contributors">Contributors</h3>

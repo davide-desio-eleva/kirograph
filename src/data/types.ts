@@ -133,3 +133,29 @@ export interface ColumnQuality {
   typeRisk: number;        // contribution from mixed types
   issues: string[];        // human-readable issue descriptions
 }
+
+// ── PixelRAG Visual Search (experimental) ─────────────────────────────────────
+
+export interface VisualSearchResult {
+  score: number;
+  filePath: string;        // absolute path to source PDF
+  tileIndex: number;       // tile index within the page (0-based)
+  chunkIndex: number;      // strip index within the page (0-based)
+  yOffset: number;         // px from top of page
+  chunkHeight: number;     // height of the strip in px
+  chunkImagePath: string;  // absolute path to the rendered PNG tile
+}
+
+export interface PixelRAGStatus {
+  running: boolean;
+  endpoint: string;
+  indexPath: string | null;
+  tileCount: number | null;
+  lastBuilt: number | null;  // unix ms
+}
+
+export interface PixelRAGManifestEntry {
+  path: string;
+  mtime: number;
+  size: number;
+}
