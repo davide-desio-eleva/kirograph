@@ -3549,7 +3549,11 @@ export class ToolHandler {
         const limit = Math.min(Math.max(1, Math.round((args.limit as number | undefined) ?? 3)), 10);
         const minTileHeight = Math.round((args.minTileHeight as number | undefined) ?? 50);
 
-        const results = await searchVisual(endpoint, query, { limit, minTileHeight });
+        const idMapPath = require('path').join(projectRoot, '.kirograph', 'pixelrag-id-map.json');
+        let idMap: Record<string, string> = {};
+        try { idMap = JSON.parse(require('fs').readFileSync(idMapPath, 'utf8')); } catch { /* not built yet */ }
+
+        const results = await searchVisual(endpoint, query, { limit, minTileHeight, idMap });
 
         if (results.length === 0) {
           return 'No visual PDF results found for this query. Try rephrasing or broadening your search terms.';

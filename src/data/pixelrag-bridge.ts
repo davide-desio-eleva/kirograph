@@ -16,18 +16,27 @@ export async function isServerRunning(endpoint: string): Promise<boolean> {
   }
 }
 
+/**
+ * Actual /search response shape (from live testing with pixelrag 0.3.x):
+ *   { "results": [ { "hits": [ { score, article_id, tile_index, chunk_index,
+ *                                y_offset, tile_height, path, url, … } ] } ] }
+ *
+ * @param idMap  Optional mapping from article_id (string) → original PDF absolute path.
+ *               Loaded from <kirographDir>/pixelrag-id-map.json by the caller.
+ */
 export async function searchVisual(
   endpoint: string,
   query: string,
-  opts: { limit?: number; minTileHeight?: number } = {},
+  opts: { limit?: number; minTileHeight?: number; idMap?: Record<string, string> } = {},
 ): Promise<VisualSearchResult[]> {
-  const limit = opts.limit ?? 3;
+  const limit         = opts.limit ?? 3;
   const minTileHeight = opts.minTileHeight ?? 50;
+  const idMap         = opts.idMap ?? {};
 
   const res = await fetch(`${endpoint}/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, top_k: limit, min_tile_height: minTileHeight }),
+    body: JSON.stringify({ queries: [{ text: query }], n_docs: limit }),
     signal: AbortSignal.timeout(30_000),
   });
 
@@ -36,21 +45,34 @@ export async function searchVisual(
     throw new Error(`PixelRAG /search returned ${res.status}: ${body}`);
   }
 
-  const data = await res.json() as { results?: unknown[] };
-  const raw = Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data as unknown[] : []);
+  // results[0].hits contains the actual hit list
+  const data = await res.json() as { results?: { hits?: unknown[] }[] };
+  const hits = data.results?.[0]?.hits ?? [];
 
-  return raw.map((hit: unknown) => {
+  const out: VisualSearchResult[] = [];
+  for (const hit of hits) {
     const h = hit as Record<string, unknown>;
-    return {
-      score: typeof h.score === 'number' ? h.score : 0,
-      filePath: typeof h.url === 'string' ? h.url : String(h.url ?? ''),
-      tileIndex: typeof h.tile_index === 'number' ? h.tile_index : 0,
-      chunkIndex: typeof h.chunk_index === 'number' ? h.chunk_index : 0,
-      yOffset: typeof h.y_offset === 'number' ? h.y_offset : 0,
-      chunkHeight: typeof h.chunk_height === 'number' ? h.chunk_height : 0,
-      chunkImagePath: typeof h.chunk_image_path === 'string' ? h.chunk_image_path : '',
-    };
-  });
+
+    const tileHeight = typeof h.tile_height === 'number' ? h.tile_height : 0;
+    if (tileHeight < minTileHeight) continue;
+
+    const articleId = String(h.article_id ?? h.url ?? '');
+    const filePath  = idMap[articleId] ?? articleId;
+
+    out.push({
+      score:          typeof h.score === 'number' ? h.score : 0,
+      filePath,
+      tileIndex:      typeof h.tile_index   === 'number' ? h.tile_index   : 0,
+      chunkIndex:     typeof h.chunk_index  === 'number' ? h.chunk_index  : 0,
+      yOffset:        typeof h.y_offset     === 'number' ? h.y_offset     : 0,
+      chunkHeight:    tileHeight,
+      chunkImagePath: typeof h.path === 'string' ? h.path : '',
+    });
+
+    if (out.length >= limit) break;
+  }
+
+  return out;
 }
 
 export async function getStatus(endpoint: string, indexPath: string | null): Promise<PixelRAGStatus> {
