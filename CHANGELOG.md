@@ -1,5 +1,72 @@
 # Changelog
 
+## [0.28.0] - 2026-06-30: Code health tools, branch tracking, dev-ops CLIs + steering overhaul
+
+### Added
+
+- **`kirograph_health`** (`enableComplexity`): composite 0–10000 health score built from four 0–2500 sub-scores — `complexity_score` (% functions with CC ≤ 10), `dead_code_score` (% nodes with at least one edge), `coupling_score` (avg fan-in bands), and `circular_score` (circular-dep count bands). Prints a grade label (Excellent / Good / Fair / Poor / Critical) and per-component breakdown.
+
+- **`kirograph_dsm`** (`enableComplexity`): Design Structure Matrix — groups nodes by top-level directory, builds an N×N dependency-count matrix, and surfaces the top 5 heaviest inter-module couplings. Useful for identifying structural coupling before a major refactor.
+
+- **`kirograph_test_risk`** (`enableComplexity`): ranks functions by `CC × fan_in` — the most complex code that is also called from many places; highest-priority targets for test coverage. Returns name, cyclomatic complexity, caller count, and risk score.
+
+- **`kirograph_test_coverage`** (`enableGitContext`): auto-discovers lcov.info (root, coverage/, .nyc_output/) and Istanbul coverage-final.json; parses both formats; returns per-file coverage % sorted ascending plus an overall project coverage at the top. Works with Jest, Vitest, NYC, c8, and any lcov-emitting test runner.
+
+- **`kirograph_branch_list`** (`enableBranch`): lists all branches tracked in `.kirograph/branch-<name>.db` files, including file size and last-sync time.
+
+- **`kirograph_branch_diff`** (`enableBranch`): opens two branch DBs and produces a structured diff of the node sets — nodes only in branch A, only in branch B, and changed (present in both but signature differs).
+
+- **`kirograph_branch_search`** (`enableBranch`): runs a LIKE query against a branch DB's `name`/`qualified_name` columns without touching the current index.
+
+- **`bench` CLI command**: inline benchmark against the current project (no repo cloning). Runs representative context/search queries and compares query time to a naive file-size baseline. Useful for profiling index quality after large refactors.
+
+- **`branch` CLI subcommand tree**: `kirograph branch list` / `add <name>` / `remove <name>` / `gc` (remove branches whose DB has no matching git branch) / `diff <A> <B>` / `search <branch> <query>`. `add` copies the current main DB — no re-index required.
+
+- **`monitor` CLI command**: tails `.kirograph/mcp-calls.jsonl` in real-time using `fs.watch`; parses each JSONL entry and streams tool name + elapsed time to the terminal. `--lines` sets initial tail length.
+
+- **`upgrade` CLI command**: detects the active package manager (npm / bun / pnpm) and runs the appropriate update command. `--dry-run` prints the command without executing.
+
+- **`cost` CLI command**: parses Claude Code session JSONL transcripts (`~/.config/claude-code/sessions/`) and counts `kirograph_*` `tool_use` blocks by category. `--last N` limits to the N most recent sessions; `--category` filters to a specific tool group.
+
+- **`health`, `dsm`, `test-risk`, `test-coverage` CLI commands**: thin `runTool()` wrappers matching the MCP tool signatures, for use outside an IDE.
+
+- **`src/core/branch-manager.ts`** (new module): `sanitizeBranchName`, `branchDbPath`, `listTrackedBranches`, `getCurrentGitBranch`, `addBranch` (copies main DB), `removeBranch`, `gcBranches`. Branch DBs live at `.kirograph/branch-<sanitized-name>.db`.
+
+- **`src/mcp/handlers/branch.ts`** (new handler): `handleBranch()` routes `branch_list` / `branch_diff` / `branch_search` using the branch-manager and dynamic sqlite3 import for cross-DB queries.
+
+- **`enableBranch` feature flag**: new flag gating the three branch MCP tools. Added to `FEATURE_TOOL_SETS`, `handler.ts` routing, `tools.ts` definitions, `docs.html` token-budget table, and README.
+
+### Changed
+
+- **Tool count: 119 → 126** — `enableComplexity` grows from 2 to 5 tools; `enableGitContext` grows from 6 to 7; new `enableBranch` group adds 3.
+
+- **`FEATURE_TOOL_SETS` in `tool-names.ts`**:
+  - `enableComplexity`: `['kirograph_complexity', 'kirograph_simplify_scan']` → `['kirograph_complexity', 'kirograph_simplify_scan', 'kirograph_health', 'kirograph_dsm', 'kirograph_test_risk']`
+  - `enableGitContext`: added `'kirograph_test_coverage'`
+  - `enableBranch`: new entry `['kirograph_branch_list', 'kirograph_branch_diff', 'kirograph_branch_search']`
+
+- **`ToolDefinition` interface in `tools.ts`**: `description` made optional; `items?: unknown` and `properties?: unknown` added to the schema property union. This fixes 93 pre-existing TypeScript errors that existed on `HEAD` before this session.
+
+- **Token budget table** (docs.html, README.md): updated to 126 tools / ~6,240 tok total; added `enableBranch` row (3 tools / ~300 tok).
+
+- **steering.ts — major overhaul**:
+  - Added destructuring for `enableComplexity`, `enableEditPrimitives`, `enableBranch` (previously missing from `buildSteeringContent`).
+  - Added 19 new guide rows across 4 feature groups (complexity: 4 rows, gitContext: 5 rows, editPrimitives: 3 rows, branch: 3 rows).
+  - Added 4 new conditional tool-reference sections: Complexity, Git Context, Edit Primitives, Branch.
+  - Added 5 new workflow entries: code quality audit, pre-commit checklist, PR description, safe atomic edit, cross-branch investigation.
+  - Introduced `hasRichFeatures = enableNavigation || enableCodeHealth || trackCallSites` guard — the four workflow files (review, debug, onboard, refactor) are now written only when at least one rich-feature flag is on, preventing broken references in Core-only installs.
+  - Added destructuring + `hasRichFeatures` guard to `writeWorkflowSteering()`.
+  - `kirograph-refactor.md`: added `kirograph_edit_patch` + `kirograph_edit_multi` guidance when `enableEditPrimitives`.
+  - Two new conditional workflow files:
+    - `kirograph-git-context.md` (when `enableGitContext`): diff_context → test_map → commit_context → pr_context → test_coverage workflow.
+    - `kirograph-complexity.md` (when `enableComplexity`): health → complexity → test_risk → dsm → simplify_scan workflow.
+  - `kirograph-review.md`: Step 2 uses `kirograph_diff_context(staged: true)` when `enableGitContext`; callers heuristic replaced with `kirograph_test_map`; added `kirograph_test_risk` step when `enableComplexity`.
+  - `kirograph-debug.md`: Step 3 inserts `kirograph_diff_context()` when `enableGitContext` (replaces the manual diff snapshot approach); added tip noting diff_context as fastest regression spotter.
+  - `kirograph-architecture.md`: added `kirograph_dsm()` and `kirograph_health()` steps when `enableComplexity`; expanded interpretation section.
+  - `kirograph-security.md`: added Step 5b (`kirograph_live_search` for eval/SQL injection patterns when `enablePatterns`) and Step 5c (`kirograph_test_risk` for auth/payment/session code when `enableComplexity`); added interpretation table row for pattern matches.
+
+---
+
 ## [0.27.2] - 2026-06-19: Headroom-inspired compression tooling + installer refactor + CLI/MCP parity
 
 ### Added

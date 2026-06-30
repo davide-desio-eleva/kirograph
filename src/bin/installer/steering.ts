@@ -80,7 +80,11 @@ export interface SteeringOptions {
   enablePatterns?: boolean;
   enableWiki?: boolean;
   enableCodeHealth?: boolean;
-  enableAdvancedAnalysis?: boolean;
+  enableNavigation?: boolean;
+  enableComplexity?: boolean;
+  enableGitContext?: boolean;
+  enableEditPrimitives?: boolean;
+  enableBranch?: boolean;
   enableAgentUtils?: boolean;
   enableGeneralCompression?: boolean;
   trackCallSites?: boolean;
@@ -98,7 +102,11 @@ function buildSteeringContent(opts?: SteeringOptions): string {
   const enablePatterns = opts?.enablePatterns ?? false;
   const enableWiki = opts?.enableWiki ?? false;
   const enableCodeHealth = opts?.enableCodeHealth ?? false;
-  const enableAdvancedAnalysis = opts?.enableAdvancedAnalysis ?? false;
+  const enableNavigation = opts?.enableNavigation ?? false;
+  const enableGitContext = opts?.enableGitContext ?? false;
+  const enableComplexity = opts?.enableComplexity ?? false;
+  const enableEditPrimitives = opts?.enableEditPrimitives ?? false;
+  const enableBranch = opts?.enableBranch ?? false;
   const enableAgentUtils = opts?.enableAgentUtils ?? false;
   const enableGeneralCompression = opts?.enableGeneralCompression ?? false;
   const trackCallSites = opts?.trackCallSites ?? false;
@@ -112,15 +120,17 @@ function buildSteeringContent(opts?: SteeringOptions): string {
       '| Who calls function X? | `kirograph_callers` |',
       '| What does function X call? | `kirograph_callees` |',
     ] : []),
-    '| What breaks if I change X? | `kirograph_impact` |',
-    '| How are X and Y connected? | `kirograph_path` |',
-    ...(enableAdvancedAnalysis ? ['| What extends / implements this type? | `kirograph_type_hierarchy` |'] : []),
+    ...(enableNavigation ? [
+      '| What breaks if I change X? | `kirograph_impact` |',
+      '| What files are indexed? | `kirograph_files` |',
+      '| Is the index healthy? | `kirograph_status` |',
+    ] : []),
     ...(enableCodeHealth ? [
+      '| How are X and Y connected? | `kirograph_path` |',
+      '| What extends / implements this type? | `kirograph_type_hierarchy` |',
       '| Which code is never called? | `kirograph_dead_code` |',
       '| Are there import cycles? | `kirograph_circular_deps` |',
     ] : []),
-    '| What files are indexed? | `kirograph_files` |',
-    '| Is the index healthy? | `kirograph_status` |',
     ...(enableCodeHealth ? [
       '| What are the most critical symbols? | `kirograph_hotspots` |',
       '| Any unexpected cross-module coupling? | `kirograph_surprising` |',
@@ -150,6 +160,29 @@ function buildSteeringContent(opts?: SteeringOptions): string {
       '| Add a private CVE | `kirograph_vuln_add` |',
     ] : []),
     ...(enablePatterns ? ['| Find structural code patterns? | `kirograph_live_search` |'] : []),
+    ...(enableComplexity ? [
+      '| Overall graph health score | `kirograph_health` |',
+      '| Most complex functions? | `kirograph_complexity` |',
+      '| Which functions are highest risk to change? | `kirograph_test_risk` |',
+      '| How are modules coupled? | `kirograph_dsm` |',
+    ] : []),
+    ...(enableGitContext ? [
+      '| What symbols did I change? | `kirograph_diff_context` |',
+      '| Build commit message context | `kirograph_commit_context` |',
+      '| Generate PR description | `kirograph_pr_context` |',
+      '| What tests cover symbol X? | `kirograph_test_map` |',
+      '| Show per-file coverage report | `kirograph_test_coverage` |',
+    ] : []),
+    ...(enableEditPrimitives ? [
+      '| Replace a unique string in a file | `kirograph_str_replace` |',
+      '| Insert content before/after an anchor | `kirograph_insert_at` |',
+      '| Atomic multi-replacement in a file | `kirograph_multi_str_replace` |',
+    ] : []),
+    ...(enableBranch ? [
+      '| List tracked branches | `kirograph_branch_list` |',
+      '| What changed between branches? | `kirograph_branch_diff` |',
+      '| Search symbols in another branch | `kirograph_branch_search` |',
+    ] : []),
   ];
 
   // Build tool reference sections
@@ -207,7 +240,8 @@ kirograph_callees(symbol: "handleRequest")
 \`\`\``;
   }
 
-  toolRef += `
+  if (enableNavigation) {
+    toolRef += `
 
 ### \`kirograph_impact\`: blast radius before a change
 
@@ -215,7 +249,11 @@ Traverses all incoming edges up to \`depth\` hops. Call this before editing a sy
 
 \`\`\`
 kirograph_impact(symbol: "UserRepository", depth: 3)
-\`\`\`
+\`\`\``;
+  }
+
+  if (enableCodeHealth) {
+    toolRef += `
 
 ### \`kirograph_path\`: how are two symbols connected?
 
@@ -223,10 +261,7 @@ BFS shortest path across all edge types.
 
 \`\`\`
 kirograph_path(from: "LoginController", to: "DatabasePool")
-\`\`\``;
-
-  if (enableAdvancedAnalysis) {
-    toolRef += `
+\`\`\`
 
 ### \`kirograph_type_hierarchy\`: class/interface inheritance
 
@@ -259,6 +294,7 @@ kirograph_circular_deps()
 
   toolRef += `
 
+${enableNavigation ? `
 ### \`kirograph_files\`: indexed file structure
 
 \`\`\`
@@ -271,7 +307,7 @@ kirograph_files(pattern: "**/*.test.ts")
 
 ### \`kirograph_status\`: index health
 
-Returns file count, symbol count, edge count, embedding coverage, DB size. Call when something feels off.`;
+Returns file count, symbol count, edge count, embedding coverage, DB size. Call when something feels off.` : ''}`;
 
   if (enableCodeHealth) {
     toolRef += `
@@ -343,6 +379,176 @@ kirograph_package(package: "src/services", includeFiles: false)
 \`\`\``;
   }
 
+  // Complexity tools block
+  if (enableComplexity) {
+    toolRef += `
+
+---
+
+## Complexity tools *(require \`enableComplexity: true\` in config)*
+
+### \`kirograph_health\`: composite graph health score
+
+Returns a 0–10000 score across four dimensions: complexity, dead code, coupling, circular deps.
+Higher is better. Excellent ≥ 9000 · Good ≥ 7000 · Fair ≥ 5000 · Poor ≥ 3000 · Critical < 3000.
+
+\`\`\`
+kirograph_health()
+\`\`\`
+
+### \`kirograph_complexity\`: rank functions by complexity
+
+Returns cyclomatic complexity (CC), cognitive complexity, maintainability index (MI), and nesting depth, sorted by chosen metric.
+
+\`\`\`
+kirograph_complexity(metric: "cyclomatic", limit: 30, threshold: 10)
+kirograph_complexity(metric: "cognitive")
+kirograph_complexity(metric: "maintainability")  // sort ASC — lowest MI first
+\`\`\`
+
+### \`kirograph_dsm\`: design structure matrix
+
+Groups nodes by top-level directory and shows a dependency count matrix between groups. Reveals which modules depend on which others and where tight coupling lives.
+
+\`\`\`
+kirograph_dsm()
+kirograph_dsm(limit: 10)  // cap number of groups shown
+\`\`\`
+
+### \`kirograph_test_risk\`: risk-ranked functions
+
+Risk = complexity × fan-in. Highest-risk functions are most likely to cause failures when changed.
+
+\`\`\`
+kirograph_test_risk(limit: 20)
+kirograph_test_risk(threshold: 50)  // only show risk score ≥ 50
+\`\`\``;
+  }
+
+  // Git context tools block
+  if (enableGitContext) {
+    toolRef += `
+
+---
+
+## Git Context tools *(require \`enableGitContext: true\` in config)*
+
+### \`kirograph_diff_context\`: changed symbols in working tree
+
+Returns symbols whose definitions overlap with \`git diff\` line ranges, plus their callers and callees. Use before a commit to understand what you actually changed.
+
+\`\`\`
+kirograph_diff_context()              // unstaged changes
+kirograph_diff_context(staged: true)  // staged changes only
+\`\`\`
+
+### \`kirograph_commit_context\`: staged changes summary
+
+Returns staged files, diff stat, and affected symbols. Ready to paste into a commit message prompt.
+
+\`\`\`
+kirograph_commit_context()
+\`\`\`
+
+### \`kirograph_pr_context\`: semantic diff between two refs
+
+Returns symbols added/removed/changed between two git refs. Use for PR descriptions.
+
+\`\`\`
+kirograph_pr_context(base: "main", head: "HEAD")
+kirograph_pr_context(base: "v1.2.0")
+\`\`\`
+
+### \`kirograph_test_map\`: symbol → test file mapping
+
+Shows which test files cover a symbol (by caller graph), and which symbols have no test coverage at all.
+
+\`\`\`
+kirograph_test_map()                         // all uncovered symbols
+kirograph_test_map(symbol: "processPayment") // tests for a specific symbol
+\`\`\`
+
+### \`kirograph_test_coverage\`: per-file coverage report
+
+Parses lcov/Istanbul/Cobertura files. Sorted worst-first by default.
+
+\`\`\`
+kirograph_test_coverage()
+kirograph_test_coverage(sortBy: "desc", limit: 20)  // best coverage first
+\`\`\``;
+  }
+
+  // Edit primitives tools block
+  if (enableEditPrimitives) {
+    toolRef += `
+
+---
+
+## Edit Primitives *(require \`enableEditPrimitives: true\` in config)*
+
+Atomic file edit tools. Each validates the anchor is unique before writing, then triggers \`kirograph sync\` to keep the graph up to date.
+
+### \`kirograph_str_replace\`: replace a unique string
+
+Fails on 0 or >1 matches — safe to use without counting occurrences first.
+
+\`\`\`
+kirograph_str_replace(file: "src/auth.ts", old_str: "const timeout = 5000", new_str: "const timeout = 10000")
+\`\`\`
+
+### \`kirograph_multi_str_replace\`: N replacements as one transaction
+
+All-or-nothing: if any replacement fails, none are applied.
+
+\`\`\`
+kirograph_multi_str_replace(file: "src/auth.ts", pairs: [
+  { old_str: "oldFunctionName", new_str: "newFunctionName" },
+  { old_str: "OldClass", new_str: "NewClass" }
+])
+\`\`\`
+
+### \`kirograph_insert_at\`: insert before/after an anchor
+
+\`\`\`
+kirograph_insert_at(file: "src/routes.ts", anchor: "// END ROUTES", content: "router.get('/health', healthCheck);", position: "before")
+\`\`\`
+
+### \`kirograph_refactor\`: structured search-and-replace across the graph
+
+\`\`\`
+kirograph_refactor(symbol: "OldName", newName: "NewName", kind: "function")
+\`\`\``;
+  }
+
+  // Branch tools block
+  if (enableBranch) {
+    toolRef += `
+
+---
+
+## Branch tools *(require \`enableBranch: true\` in config)*
+
+Each branch gets its own SQLite DB at \`.kirograph/branch-<name>.db\`. Use \`kirograph branch add\` to start tracking a branch.
+
+### \`kirograph_branch_list\`: tracked branches
+
+\`\`\`
+kirograph_branch_list()
+\`\`\`
+
+### \`kirograph_branch_diff\`: symbols added/removed/changed between branches
+
+\`\`\`
+kirograph_branch_diff(branchA: "feature/new-auth", branchB: "main")
+\`\`\`
+
+### \`kirograph_branch_search\`: search symbols in another branch
+
+\`\`\`
+kirograph_branch_search(query: "processPayment", branch: "main")
+\`\`\``;
+  }
+
   // Build bug fix workflow
   let bugFixWorkflow = `**Bug fix or feature:**
 1. \`kirograph_context\`: orient, find entry points.
@@ -394,14 +600,60 @@ ${bugFixWorkflow}`;
 3. \`kirograph_surprising\`: find unexpected coupling to decouple.`;
   }
 
+  if (enableComplexity) {
+    workflows += `
+
+**Code quality audit:**
+1. \`kirograph_health\`: get overall health score and breakdown.
+2. \`kirograph_complexity\`: rank functions by cyclomatic complexity — focus on CC > 10.
+3. \`kirograph_test_risk\`: find highest-risk functions (complexity × fan-in) to prioritize test coverage.
+4. \`kirograph_dsm\`: check architectural coupling — high off-diagonal counts = tight coupling.`;
+  }
+
+  if (enableGitContext) {
+    workflows += `
+
+**Pre-commit / pre-push review:**
+1. \`kirograph_diff_context\`: understand what symbols changed and who calls them.
+2. \`kirograph_test_map\`: verify changed symbols have test coverage.
+3. \`kirograph_commit_context\`: build a structured commit message.
+
+**PR description:**
+1. \`kirograph_pr_context(base: "main")\`: get semantic diff between branches.
+2. Use the output as structured context for the PR summary.`;
+  }
+
+  if (enableEditPrimitives) {
+    workflows += `
+
+**Safe atomic edit:**
+1. \`kirograph_impact\`: check blast radius before editing.
+2. \`kirograph_str_replace\` or \`kirograph_insert_at\`: apply atomic change — validates uniqueness first.
+3. After edit: \`kirograph_diff\` to verify only intended symbols changed.`;
+  }
+
+  if (enableBranch) {
+    workflows += `
+
+**Cross-branch investigation:**
+1. \`kirograph_branch_list\`: see which branches are tracked.
+2. \`kirograph_branch_diff\`: find symbols added/removed/changed vs target branch.
+3. \`kirograph_branch_search\`: locate a symbol in another branch's graph.`;
+  }
+
+  // Workflow steering files require at least navigation/call-sites/code-health to be useful
+  const hasRichFeatures = enableNavigation || enableCodeHealth || trackCallSites;
+
   // Build workflow steering rows
   const workflowRows: string[] = [
     ...(enableSecurity ? ['| security audit, check vulnerabilities, CVE review | `.kiro/steering/kirograph-security.md` |'] : []),
-    '| code review, review this PR | `.kiro/steering/kirograph-review.md` |',
-    '| debug, trace this bug, root cause | `.kiro/steering/kirograph-debug.md` |',
+    ...(hasRichFeatures ? ['| code review, review this PR | `.kiro/steering/kirograph-review.md` |'] : []),
+    ...(hasRichFeatures ? ['| debug, trace this bug, root cause | `.kiro/steering/kirograph-debug.md` |'] : []),
     ...(enableArchitecture ? ['| architecture, understand structure, package map | `.kiro/steering/kirograph-architecture.md` |'] : []),
-    '| onboard, understand this codebase | `.kiro/steering/kirograph-onboard.md` |',
-    '| refactor, rename, safe refactoring | `.kiro/steering/kirograph-refactor.md` |',
+    ...(hasRichFeatures ? ['| onboard, understand this codebase | `.kiro/steering/kirograph-onboard.md` |'] : []),
+    ...(hasRichFeatures ? ['| refactor, rename, safe refactoring | `.kiro/steering/kirograph-refactor.md` |'] : []),
+    ...(enableGitContext ? ['| git diff review, PR context, commit message | `.kiro/steering/kirograph-git-context.md` |'] : []),
+    ...(enableComplexity ? ['| code quality audit, complexity, health score | `.kiro/steering/kirograph-complexity.md` |'] : []),
     ...(enableMemory ? ['| memory, recall decisions, conflict detection | `.kiro/steering/kirograph-mem-workflow.md` |'] : []),
     ...(enableWiki ? ['| wiki, update knowledge base, ingest docs | `.kiro/steering/kirograph-wiki-workflow.md` |'] : []),
   ];
@@ -725,30 +977,57 @@ function writeWorkflowSteering(steeringDir: string, opts?: SteeringOptions): voi
   const trackCallSites = opts?.trackCallSites ?? false;
   const enableCodeHealth = opts?.enableCodeHealth ?? false;
   const enableArchitecture = opts?.enableArchitecture ?? false;
-  const enableAdvancedAnalysis = opts?.enableAdvancedAnalysis ?? false;
+  const enableNavigation = opts?.enableNavigation ?? false;
+  const enableGitContext = opts?.enableGitContext ?? false;
+  const enableComplexity = opts?.enableComplexity ?? false;
+  const enableEditPrimitives = opts?.enableEditPrimitives ?? false;
 
+  // Only write review/debug/onboard/refactor workflows when the install has meaningful tool groups.
+  // Core-only (3 tools) doesn't have kirograph_impact, kirograph_files etc. that these workflows depend on.
+  const hasRichFeatures = enableNavigation || enableCodeHealth || trackCallSites;
+
+  if (hasRichFeatures) {
   // kirograph-review.md
   const reviewSteps: string[] = [
     `1. **Understand the change scope**
    \`\`\`
    kirograph_context(task: "<describe what changed>")
    \`\`\``,
-    `2. **Analyze blast radius**
+  ];
+  if (enableGitContext) {
+    reviewSteps.push(`2. **See exactly what symbols changed**
+   \`\`\`
+   kirograph_diff_context(staged: true)
+   \`\`\`
+   Lists changed symbols, their callers (who may break), and callees (what they depend on).`);
+  }
+  reviewSteps.push(`${reviewSteps.length + 1}. **Analyze blast radius**
    For each key symbol that was modified:
    \`\`\`
    kirograph_impact(symbol: "<changed symbol>", depth: 2)
-   \`\`\``,
-  ];
-  if (trackCallSites) {
-    reviewSteps.push(`3. **Check test coverage**
+   \`\`\``);
+  if (enableGitContext) {
+    reviewSteps.push(`${reviewSteps.length + 1}. **Verify test coverage for changed symbols**
+   \`\`\`
+   kirograph_test_map(symbol: "<changed symbol>")
+   \`\`\`
+   Flag any changed symbols with no test files in their caller graph.`);
+  } else if (trackCallSites) {
+    reviewSteps.push(`${reviewSteps.length + 1}. **Check test coverage**
    \`\`\`
    kirograph_callers(symbol: "<changed symbol>")
    \`\`\`
    Look for test files among the callers. Flag untested changes.`);
   }
+  if (enableComplexity) {
+    reviewSteps.push(`${reviewSteps.length + 1}. **Check risk score of changed functions**
+   \`\`\`
+   kirograph_test_risk(limit: 10)
+   \`\`\`
+   High risk (complexity × fan-in) = extra scrutiny warranted.`);
+  }
   if (enableCodeHealth) {
-    const n = reviewSteps.length + 1;
-    reviewSteps.push(`${n}. **Look for surprising coupling**
+    reviewSteps.push(`${reviewSteps.length + 1}. **Look for surprising coupling**
    \`\`\`
    kirograph_surprising(limit: 10)
    \`\`\``);
@@ -783,18 +1062,24 @@ ${reviewSteps.join('\n\n')}
    kirograph_context(task: "<describe the bug>")
    \`\`\``,
   ];
+  if (enableGitContext) {
+    debugSteps.push(`3. **Check what recently changed in related symbols**
+   \`\`\`
+   kirograph_diff_context()
+   \`\`\`
+   Most bugs trace back to recent changes — this surfaces them immediately.`);
+  } else if (enableCodeHealth) {
+    debugSteps.push(`3. **Check what changed recently**
+   \`\`\`
+   kirograph_diff()
+   \`\`\``);
+  }
   if (trackCallSites) {
-    debugSteps.push(`3. **Trace the call chain**
+    const n = debugSteps.length + 1;
+    debugSteps.push(`${n}. **Trace the call chain**
    \`\`\`
    kirograph_callers(symbol: "<suspected function>")
    kirograph_callees(symbol: "<suspected function>")
-   \`\`\``);
-  }
-  if (enableCodeHealth) {
-    const n = debugSteps.length + 1;
-    debugSteps.push(`${n}. **Check what changed recently**
-   \`\`\`
-   kirograph_diff()
    \`\`\``);
   }
   const blastN = debugSteps.length + 1;
@@ -804,7 +1089,8 @@ ${reviewSteps.join('\n\n')}
    \`\`\``);
   const debugTips: string[] = [];
   if (trackCallSites) debugTips.push('- Check both callers and callees to understand the full context');
-  if (enableCodeHealth) debugTips.push('- Recent changes (via diff) are the most common source of new issues');
+  if (enableGitContext) debugTips.push('- `kirograph_diff_context` is the fastest way to spot a regression — check it first');
+  else if (enableCodeHealth) debugTips.push('- Recent changes (via diff) are the most common source of new issues');
   debugTips.push('- Use `kirograph_path` to trace how two symbols are connected');
   fs.writeFileSync(path.join(steeringDir, 'kirograph-debug.md'), `---
 inclusion: manual
@@ -858,7 +1144,7 @@ ${debugTips.join('\n')}
    \`\`\``);
   const onboardTips: string[] = ['- Start broad (status, files) then narrow down'];
   if (enableCodeHealth) onboardTips[0] = '- Start broad (status, files, hotspots) then narrow down';
-  if (enableAdvancedAnalysis) onboardTips.push('- Use `kirograph_type_hierarchy` to understand inheritance patterns');
+  if (enableCodeHealth) onboardTips.push('- Use `kirograph_type_hierarchy` to understand inheritance patterns');
   if (trackCallSites) onboardTips.push('- Use `kirograph_callees` on entry points to trace execution flow');
   fs.writeFileSync(path.join(steeringDir, 'kirograph-onboard.md'), `---
 inclusion: manual
@@ -914,6 +1200,7 @@ ${onboardTips.join('\n')}
   const refactorChecks: string[] = ['- Always check `kirograph_impact` before major refactors'];
   if (trackCallSites) refactorChecks.push('- Use `kirograph_callers` as a rename preview (all locations that reference the symbol)');
   if (enableCodeHealth) refactorChecks.push('- After changes, use `kirograph_diff` to verify only intended symbols changed');
+  if (enableEditPrimitives) refactorChecks.push('- Use `kirograph_str_replace` / `kirograph_multi_str_replace` for atomic edits that auto-sync the graph');
   fs.writeFileSync(path.join(steeringDir, 'kirograph-refactor.md'), `---
 inclusion: manual
 ---
@@ -929,6 +1216,8 @@ ${refactorSteps.join('\n\n')}
 ## Safety Checks
 ${refactorChecks.join('\n')}
 `);
+
+  } // end hasRichFeatures
 
   // kirograph-architecture.md only when enableArchitecture is true
   if (enableArchitecture) {
@@ -963,6 +1252,27 @@ ${refactorChecks.join('\n')}
    kirograph_circular_deps()
    \`\`\``);
     }
+    if (enableComplexity) {
+      let n = archSteps.length + 1;
+      archSteps.push(`${n}. **Module coupling matrix (DSM)**
+   \`\`\`
+   kirograph_dsm()
+   \`\`\`
+   High off-diagonal counts = tight coupling. Complements \`kirograph_coupling\` (package-level) with a symbol-level view.`);
+      n++;
+      archSteps.push(`${n}. **Overall health score**
+   \`\`\`
+   kirograph_health()
+   \`\`\`
+   The circular deps and coupling components directly reflect architectural quality.`);
+    }
+    const archInterpretation = [
+      '- High Ca (afferent) = load-bearing, risky to change interface',
+      '- High Ce (efferent) = depends on many things, safe to refactor internals',
+      ...(enableCodeHealth ? ['- Surprising edges = hidden coupling that may break during refactoring'] : []),
+      ...(enableComplexity ? ['- DSM diagonal = self-coupling (normal). Off-diagonal = cross-module coupling (minimize).'] : []),
+      ...(enableComplexity ? ['- Health circular_score < 1500 = architectural debt requiring attention'] : []),
+    ];
     fs.writeFileSync(path.join(steeringDir, 'kirograph-architecture.md'), `---
 inclusion: manual
 ---
@@ -976,13 +1286,28 @@ Follow these steps to understand the high-level structure of the codebase.
 ${archSteps.join('\n\n')}
 
 ## Interpretation
-- High Ca (afferent) = load-bearing, risky to change interface
-- High Ce (efferent) = depends on many things, safe to refactor internals
-${enableCodeHealth ? '- Surprising edges = hidden coupling that may break during refactoring\n' : ''}`);
+${archInterpretation.join('\n')}
+`);
   }
 
   // Security workflow — only when enableSecurity is true
   if (opts?.enableSecurity) {
+    const securityPatternsStep = opts?.enablePatterns ? `
+### 5b. Structural vulnerability patterns (AST search)
+\`\`\`
+kirograph_live_search(pattern: "eval($X)", language: "javascript")
+kirograph_live_search(pattern: "$OBJ.query($A + $B)", language: "typescript")
+\`\`\`
+Use \`kirograph pattern --list\` to browse bundled SAST rules (SQL injection, path traversal, hardcoded secrets, etc.).
+These patterns find code issues missed by dependency scanning.` : '';
+
+    const securityComplexityStep = enableComplexity ? `
+### 5c. High-complexity code in security-critical paths
+\`\`\`
+kirograph_test_risk(limit: 15)
+\`\`\`
+High risk (complexity × fan-in) in auth/payment/session code = higher attack surface. Cross-reference with reachability results.` : '';
+
     fs.writeFileSync(path.join(steeringDir, 'kirograph-security.md'), `---
 inclusion: manual
 ---
@@ -1034,6 +1359,7 @@ kirograph_licenses(policy: true)
 \`\`\`
 Review any DENY violations — these must be resolved before shipping.
 WARN violations should be documented and approved by the team.
+${securityPatternsStep}${securityComplexityStep}
 
 ### 6. Dependency staleness
 \`\`\`
@@ -1064,7 +1390,7 @@ kirograph_vex()    // Vulnerability Exploitability eXchange
 | \`not_affected\` | No reachable path found | Document, no action needed |
 | \`under_investigation\` | Reachability unclear | Manual review required |
 | Stale >= 0.7 | Very outdated | Review for accumulated CVEs |
-| License DENY | Policy violation | Must resolve before release |
+| License DENY | Policy violation | Must resolve before release |${opts?.enablePatterns ? '\n| Pattern match in security-critical code | Code-level vulnerability pattern found | Review context with `kirograph_node` |' : ''}
 `);
     console.log(`  ✓ Security workflow steering file written`);
   }
@@ -1351,11 +1677,144 @@ superseded via \`kirograph_mem_judge\`.
     console.log(`  ✓ Memory workflow steering file written`);
   }
 
-  const written = ['review', 'debug', 'onboard', 'refactor'];
+  // kirograph-git-context.md — only when enableGitContext is true
+  if (enableGitContext) {
+    fs.writeFileSync(path.join(steeringDir, 'kirograph-git-context.md'), `---
+inclusion: manual
+---
+
+# KiroGraph: Git Context Workflow
+
+Use this workflow for pre-commit reviews, PR descriptions, and understanding what changed.
+
+## 1. Before committing — understand what you changed
+
+\`\`\`
+kirograph_diff_context()              // unstaged — see what's touched
+kirograph_diff_context(staged: true)  // staged — final check before commit
+\`\`\`
+
+This shows changed symbols, their callers (who might break), and their callees (what they call).
+
+## 2. Build commit message context
+
+\`\`\`
+kirograph_commit_context()
+\`\`\`
+
+Returns staged files, diff stat, and affected symbols. Feed into commit message generation.
+
+## 3. Check test coverage for changed symbols
+
+\`\`\`
+kirograph_test_map()                          // all symbols with no test coverage
+kirograph_test_map(symbol: "<changed fn>")    // tests for a specific symbol
+\`\`\`
+
+## 4. PR description
+
+\`\`\`
+kirograph_pr_context(base: "main", head: "HEAD")
+\`\`\`
+
+Returns symbols added/removed/changed between refs. Use as structured context for PR summary.
+
+## 5. Coverage report (if lcov/Istanbul files exist)
+
+\`\`\`
+kirograph_test_coverage()                    // worst-covered files first
+kirograph_test_coverage(sortBy: "desc")      // best-covered files first
+\`\`\`
+
+## Quick reference
+
+| Intent | Tool |
+|--------|------|
+| What did I change? | \`kirograph_diff_context\` |
+| Commit message | \`kirograph_commit_context\` |
+| PR description | \`kirograph_pr_context\` |
+| Are my changes tested? | \`kirograph_test_map\` |
+| Per-file coverage % | \`kirograph_test_coverage\` |
+| Semantic changelog | \`kirograph_changelog\` |
+`);
+    console.log(`  ✓ Git context workflow steering file written`);
+  }
+
+  // kirograph-complexity.md — only when enableComplexity is true
+  if (enableComplexity) {
+    fs.writeFileSync(path.join(steeringDir, 'kirograph-complexity.md'), `---
+inclusion: manual
+---
+
+# KiroGraph: Code Quality Workflow
+
+Use this workflow to audit code quality, find high-risk functions, and track health over time.
+
+## 1. Get an overall health score
+
+\`\`\`
+kirograph_health()
+\`\`\`
+
+Returns a 0–10000 score across complexity, dead code, coupling, and circular dependencies.
+Check all four components — a high total can mask one very low component.
+
+## 2. Find complex functions
+
+\`\`\`
+kirograph_complexity(metric: "cyclomatic", threshold: 10)
+kirograph_complexity(metric: "maintainability")  // lowest MI first — most unmaintainable
+\`\`\`
+
+**Thresholds:** CC > 10 = review candidate. CC > 20 = refactor. MI < 50 = unmaintainable.
+
+## 3. Find highest-risk functions to change
+
+\`\`\`
+kirograph_test_risk(limit: 20)
+\`\`\`
+
+Risk = complexity × fan-in. These functions will have the widest blast radius if they break.
+
+## 4. Check architectural coupling
+
+\`\`\`
+kirograph_dsm()
+\`\`\`
+
+High off-diagonal counts = tight coupling. Aim for low counts outside the diagonal.
+
+## 5. Scan for simplification candidates
+
+\`\`\`
+kirograph_simplify_scan()
+\`\`\`
+
+Lists functions that fail on CC, MI, or LOC thresholds.
+
+## Quick reference
+
+| Intent | Tool |
+|--------|------|
+| Overall health | \`kirograph_health\` |
+| Most complex functions | \`kirograph_complexity\` |
+| Highest-risk to change | \`kirograph_test_risk\` |
+| Module coupling matrix | \`kirograph_dsm\` |
+| Simplification candidates | \`kirograph_simplify_scan\` |
+`);
+    console.log(`  ✓ Complexity workflow steering file written`);
+  }
+
+  const written: string[] = [];
+  if (hasRichFeatures) written.push('review', 'debug', 'onboard', 'refactor');
   if (opts?.enableArchitecture) written.push('architecture');
   if (opts?.enableSecurity) written.push('security');
   if (opts?.enablePatterns) written.push('patterns');
+  if (enableGitContext) written.push('git-context');
+  if (enableComplexity) written.push('complexity');
   if (opts?.enableMemory) written.push('memory');
   if (opts?.enableWiki) written.push('wiki');
-  console.log(`  ✓ Workflow steering files written (${written.join(', ')})`);
+  if (written.length > 0) {
+    console.log(`  ✓ Workflow steering files written (${written.join(', ')})`);
+  }
 }

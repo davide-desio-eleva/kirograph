@@ -14,6 +14,21 @@ import type { JsonRpcMessage } from './transport';
 const SERVER_INFO = { name: 'kirograph', version: '0.1.0' };
 const PROTOCOL_VERSION = '2024-11-05';
 
+// Tools that write, execute, or mutate state — excluded from readOnlyHint.
+const WRITE_TOOLS = new Set([
+  'kirograph_snapshot_save', 'kirograph_exec', 'kirograph_refactor',
+  'kirograph_str_replace', 'kirograph_multi_str_replace', 'kirograph_insert_at', 'kirograph_ast_grep_rewrite',
+  'kirograph_session_start', 'kirograph_session_end',
+  'kirograph_mem_store', 'kirograph_mem_mark_reviewed', 'kirograph_mem_capture',
+  'kirograph_mem_save_prompt', 'kirograph_mem_prune', 'kirograph_mem_conflicts_ignore',
+  'kirograph_wiki_ingest', 'kirograph_wiki_apply_diff', 'kirograph_wiki_init',
+  'kirograph_wiki_reindex', 'kirograph_watchmen_reset', 'kirograph_vuln_add',
+  'kirograph_vuln_suppress', 'kirograph_pattern_save_baseline',
+]);
+
+// Tools that should always be loaded by the IDE regardless of compaction.
+const ALWAYS_LOAD_TOOLS = new Set(['kirograph_context', 'kirograph_search', 'kirograph_status']);
+
 export class MCPServer {
   private transport = new StdioTransport();
   private cg: KiroGraph | null = null;
@@ -76,7 +91,7 @@ export class MCPServer {
         }
         return {
           protocolVersion: PROTOCOL_VERSION,
-          capabilities: { tools: {} },
+          capabilities: { tools: {}, resources: {} },
           serverInfo: SERVER_INFO,
         };
       }
@@ -103,6 +118,45 @@ export class MCPServer {
         }
       }
 
+      case 'resources/list': {
+        const resources = [];
+        if (this.cg) {
+          resources.push(
+            { uri: 'kirograph://status', name: 'Index Status', description: 'Graph index health and statistics', mimeType: 'text/plain' },
+            { uri: 'kirograph://files', name: 'Indexed Files', description: 'All indexed files with language and symbol counts', mimeType: 'text/plain' },
+            { uri: 'kirograph://overview', name: 'Project Overview', description: 'High-level summary: node count, edge count, top files', mimeType: 'text/plain' },
+          );
+        }
+        return { resources };
+      }
+
+      case 'resources/read': {
+        const uri = (req.params?.uri as string) ?? '';
+        if (!this.cg) return { contents: [{ uri, mimeType: 'text/plain', text: 'KiroGraph not initialized.' }] };
+        let text = '';
+        try {
+          if (uri === 'kirograph://status') {
+            text = (await this.toolHandler.handle('kirograph_status', {})).content.map(c => c.text).join('');
+          } else if (uri === 'kirograph://files') {
+            text = (await this.toolHandler.handle('kirograph_files', {})).content.map(c => c.text).join('');
+          } else if (uri === 'kirograph://overview') {
+            const stats = await this.cg.getStats();
+            text = [
+              `Project: ${this.projectPath ?? 'unknown'}`,
+              `Nodes:   ${stats.nodes.toLocaleString()}`,
+              `Edges:   ${stats.edges.toLocaleString()}`,
+              `Files:   ${stats.files.toLocaleString()}`,
+              `DB:      ${(stats.dbSizeBytes / 1024 / 1024).toFixed(2)} MB`,
+            ].join('\n');
+          } else {
+            return { contents: [{ uri, mimeType: 'text/plain', text: `Unknown resource: ${uri}` }] };
+          }
+        } catch (err) {
+          text = `Error reading resource: ${err instanceof Error ? err.message : String(err)}`;
+        }
+        return { contents: [{ uri, mimeType: 'text/plain', text }] };
+      }
+
       case 'notifications/initialized':
       case 'ping':
         return {};
@@ -124,10 +178,17 @@ export class MCPServer {
         }
       }
     }
-    const list = tools.filter(t => !hidden.has(t.name));
+    const filtered = tools.filter(t => !hidden.has(t.name));
     if (this.config?.enablePatterns && new PatternRunner().isAvailable()) {
-      list.push(LIVE_SEARCH_TOOL_DEFINITION);
+      filtered.push(LIVE_SEARCH_TOOL_DEFINITION);
     }
+    // Inject MCP annotations: readOnlyHint for non-mutating tools, alwaysLoad for core entry points.
+    const list = filtered.map(t => {
+      const ann: Record<string, unknown> = { ...t.annotations };
+      if (!WRITE_TOOLS.has(t.name)) ann.readOnlyHint = true;
+      if (ALWAYS_LOAD_TOOLS.has(t.name)) ann['anthropic:alwaysLoad'] = true;
+      return Object.keys(ann).length > 0 ? { ...t, annotations: ann } : t;
+    });
     this.enabledTools = list;
     this.enabledToolNames = new Set(list.map(t => t.name));
   }

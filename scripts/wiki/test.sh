@@ -99,13 +99,13 @@ $KG install --target kiro --yes 2>&1 | grep -E "✓|hook|steering|MCP|Workspace|
   && ok "MCP: .kiro/settings/mcp.json" \
   || fail "mcp.json non trovato"
 
-[ -f ".kiro/hooks/kirograph-wiki-ingest.kiro.hook" ] \
-  && ok "Hook: kirograph-wiki-ingest.kiro.hook" \
-  || fail "kirograph-wiki-ingest.kiro.hook non trovato"
+[ -f ".kiro/hooks/kirograph-wiki-ingest.json" ] \
+  && ok "Hook: kirograph-wiki-ingest.json" \
+  || fail "kirograph-wiki-ingest.json non trovato"
 
-[ -f ".kiro/hooks/kirograph-wiki-lint.kiro.hook" ] \
-  && ok "Hook: kirograph-wiki-lint.kiro.hook" \
-  || fail "kirograph-wiki-lint.kiro.hook non trovato"
+[ -f ".kiro/hooks/kirograph-wiki-lint.json" ] \
+  && ok "Hook: kirograph-wiki-lint.json" \
+  || fail "kirograph-wiki-lint.json non trovato"
 
 [ -f ".kiro/steering/kirograph.md" ] \
   && ok "Steering: kirograph.md (inclusion: always)" \
@@ -115,24 +115,26 @@ $KG install --target kiro --yes 2>&1 | grep -E "✓|hook|steering|MCP|Workspace|
   && ok "Steering skill: kirograph-wiki-workflow.md" \
   || fail "kirograph-wiki-workflow.md non trovato"
 
-# Verifica che il hook ingest sia agentStop + askAgent
+# Verifica che il hook ingest sia trigger=Stop + action.type=agent (v2 format)
 INGEST_HOOK_TYPE=$(node -e "
   const fs = require('fs');
-  const h = JSON.parse(fs.readFileSync('.kiro/hooks/kirograph-wiki-ingest.kiro.hook', 'utf8'));
-  console.log(h.when.type + ':' + h.then.type);
+  const h = JSON.parse(fs.readFileSync('.kiro/hooks/kirograph-wiki-ingest.json', 'utf8'));
+  const hook = h.hooks[0];
+  console.log(hook.trigger + ':' + hook.action.type);
 " 2>/dev/null || echo "error")
-[ "$INGEST_HOOK_TYPE" = "agentStop:askAgent" ] \
-  && ok "  ingest hook: when=agentStop then=askAgent" \
+[ "$INGEST_HOOK_TYPE" = "Stop:agent" ] \
+  && ok "  ingest hook: trigger=Stop action.type=agent" \
   || fail "  ingest hook type errato: $INGEST_HOOK_TYPE"
 
-# Verifica che il hook lint sia agentStop + runCommand
+# Verifica che il hook lint sia trigger=Stop + action.type=command (v2 format)
 LINT_HOOK_TYPE=$(node -e "
   const fs = require('fs');
-  const h = JSON.parse(fs.readFileSync('.kiro/hooks/kirograph-wiki-lint.kiro.hook', 'utf8'));
-  console.log(h.when.type + ':' + h.then.type);
+  const h = JSON.parse(fs.readFileSync('.kiro/hooks/kirograph-wiki-lint.json', 'utf8'));
+  const hook = h.hooks[0];
+  console.log(hook.trigger + ':' + hook.action.type);
 " 2>/dev/null || echo "error")
-[ "$LINT_HOOK_TYPE" = "agentStop:runCommand" ] \
-  && ok "  lint hook: when=agentStop then=runCommand" \
+[ "$LINT_HOOK_TYPE" = "Stop:command" ] \
+  && ok "  lint hook: trigger=Stop action.type=command" \
   || fail "  lint hook type errato: $LINT_HOOK_TYPE"
 
 # Verifica sezione Wiki nel kirograph.md steering
@@ -1232,16 +1234,17 @@ $KG install --target kiro --yes 2>&1 | grep -E "✓|hook" | sed 's/^/     /' || 
 
 LOCAL_HOOK_TYPE=$(node -e "
   const fs = require('fs');
-  const h = JSON.parse(fs.readFileSync('.kiro/hooks/kirograph-wiki-ingest.kiro.hook', 'utf8'));
-  console.log(h.then.type + '|' + (h.then.command || ''));
+  const h = JSON.parse(fs.readFileSync('.kiro/hooks/kirograph-wiki-ingest.json', 'utf8'));
+  const hook = h.hooks[0];
+  console.log(hook.action.type + '|' + (hook.action.command || ''));
 " 2>/dev/null || echo "error")
 
 HOOK_THEN_TYPE="${LOCAL_HOOK_TYPE%%|*}"
 HOOK_COMMAND="${LOCAL_HOOK_TYPE#*|}"
 
-[ "$HOOK_THEN_TYPE" = "runCommand" ] \
-  && ok "  local hook: then.type=runCommand" \
-  || fail "  local hook: expected runCommand, got '$HOOK_THEN_TYPE'"
+[ "$HOOK_THEN_TYPE" = "command" ] \
+  && ok "  local hook: action.type=command" \
+  || fail "  local hook: expected command, got '$HOOK_THEN_TYPE'"
 
 echo "$HOOK_COMMAND" | grep -q "kirograph wiki synthesize" \
   && ok "  local hook: command contiene 'kirograph wiki synthesize'" \

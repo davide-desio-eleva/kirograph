@@ -471,18 +471,18 @@ $KG install --target kiro --yes 2>&1 | grep -E "✓|✗|ℹ|hook|steering|MCP|ag
 
 echo ""
 
-# Hook di memoria
-[ -f ".kiro/hooks/kirograph-mem-capture.kiro.hook" ] \
+# Hook di memoria (v2 format: .json, trigger=Stop, action.type=agent)
+[ -f ".kiro/hooks/kirograph-mem-capture.json" ] \
   && ok "Hook mem-capture: presente" \
-  || fail "kirograph-mem-capture.kiro.hook non trovato"
+  || fail "kirograph-mem-capture.json non trovato"
 
-HOOK_MEM=$(cat .kiro/hooks/kirograph-mem-capture.kiro.hook 2>/dev/null)
-echo "$HOOK_MEM" | grep -q '"agentStop"' \
-  && ok "Hook mem-capture: trigger agentStop" \
-  || fail "Hook mem-capture: trigger agentStop non trovato"
-echo "$HOOK_MEM" | grep -q '"askAgent"' \
-  && ok "Hook mem-capture: type askAgent" \
-  || fail "Hook mem-capture: type askAgent non trovato"
+HOOK_MEM=$(cat .kiro/hooks/kirograph-mem-capture.json 2>/dev/null)
+echo "$HOOK_MEM" | grep -q '"Stop"' \
+  && ok "Hook mem-capture: trigger Stop" \
+  || fail "Hook mem-capture: trigger Stop non trovato"
+echo "$HOOK_MEM" | grep -q '"agent"' \
+  && ok "Hook mem-capture: action type agent" \
+  || fail "Hook mem-capture: action type agent non trovato"
 echo "$HOOK_MEM" | grep -q 'kirograph_mem_store' \
   && ok "Hook mem-capture: prompt cita kirograph_mem_store" \
   || fail "Hook mem-capture: prompt senza kirograph_mem_store"

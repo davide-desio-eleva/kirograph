@@ -94,7 +94,7 @@ export class IndexPipeline {
           const lang = detectLanguage(file);
           if (poisonedLanguages.has(lang)) continue;
 
-          const extracted = await extractFile(file, this.projectRoot, content);
+          const extracted = await extractFile(file, this.projectRoot, content, { enableComplexity: !!(this.config as any).enableComplexity });
           if (!extracted) continue;
 
           const oldNodes = this.db.getNodesByFile(extracted.filePath);
@@ -158,7 +158,7 @@ export class IndexPipeline {
           const absPath = path.join(this.projectRoot, ef.path);
           opts?.onProgress?.({ phase: 'retrying', current: i + 1, total: emptyFiles.length, currentFile: absPath });
           try {
-            const extracted = await extractFile(absPath, this.projectRoot);
+            const extracted = await extractFile(absPath, this.projectRoot, undefined, { enableComplexity: !!(this.config as any).enableComplexity });
             if (!extracted || extracted.nodes.length === 0) continue;
 
             const oldNodes = this.db.getNodesByFile(extracted.filePath);
@@ -402,7 +402,7 @@ export class IndexPipeline {
           const lang = detectLanguage(file);
           if (poisonedLanguages.has(lang)) continue;
 
-          const extracted = await extractFile(file, this.projectRoot);
+          const extracted = await extractFile(file, this.projectRoot, undefined, { enableComplexity: !!(this.config as any).enableComplexity });
           if (!extracted) continue;
 
           const existing = this.db.getFile(extracted.filePath);

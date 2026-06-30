@@ -59,25 +59,30 @@ The result is fewer tool calls, less context used, and faster responses on compl
 
 ## MCP Tool List Token Budget
 
-Each enabled flag adds tools to the model context on every MCP call. Total with all flags: **92 tools · ~4,367 tok**.
+Each enabled flag adds tools to the model context on every MCP call. Total with all flags: **126 tools · ~6,240 tok**.
 
 | Flag | Tools | ~Tokens |
 |------|------:|--------:|
-| core (always-on) | 8 | ~472 |
+| core (always-on) | 3 | ~170 |
+| `enableNavigation` | 3 | ~120 |
 | `enableMemory` | 16 | ~746 |
 | `enableSecurity` | 15 | ~675 |
 | `enableData` | 10 | ~519 |
 | `enableWiki` | 10 | ~319 |
-| `enableCodeHealth` | 7 | ~309 |
+| `enableCodeHealth` | 25 | ~935 |
+| `enableDocs` | 5 | ~241 |
 | `enableAgentUtils` | 4 | ~278 |
-| `enableAdvancedAnalysis` | 4 | ~210 |
-| `enableArchitecture` | 3 | ~142 |
+| `enableArchitecture` | 5 | ~205 |
 | `enableWatchmen` | 3 | ~140 |
 | `enablePatterns` | 3 | ~93 |
 | `trackCallSites` | 2 | ~84 |
+| `enableGitContext` | 7 | ~410 |
+| `enableComplexity` | 5 | ~660 |
+| `enableEditPrimitives` | 5 | ~280 |
+| `enableBranch` | 3 | ~300 |
 | `enableShellExec` | 1 | ~71 |
 | `enableGeneralCompression` | 1 | ~68 |
-| **Total** | **92** | **~4,367** |
+| **Total** | **126** | **~6,240** |
 
 ## Quick Start
 
@@ -180,6 +185,7 @@ KiroGraph is inspired by [CodeGraph](https://github.com/colbymchenry/codegraph) 
 - [turboquant-js](https://github.com/danilodevhub/turboquant-js) by [Danilo Dev](https://github.com/danilodevhub): the TurboQuant engine — TypeScript implementation of Google's Walsh-Hadamard + Lloyd-Max quantization algorithm used for embedding compression.
 - [turbovec](https://github.com/RyanCodrai/turbovec) by [Ryan Codrai](https://github.com/RyanCodrai): the TurboVec engine — Rust implementation of TurboQuant with SIMD acceleration, exposed to Node.js via a napi-rs native addon.
 - [pdf-inspector](https://github.com/firecrawl/pdf-inspector) by [Firecrawl](https://github.com/firecrawl): the PDF parser used in the data module — pure Rust, no OCR, no network, prebuilt binaries for linux-x64 and macOS ARM64.
+- [tokensave](https://tokensave.dev): gap-close roadmap inspiration — code quality tools (complexity, god class, recursion, doc coverage), git workflow context tools (diff_context, commit_context, test_map), atomic edit primitives, multi-branch indexing, per-call token metrics, and MCP protocol annotations (`readOnlyHint`, `alwaysLoad`).
 
 ### Contributors
 
@@ -206,8 +212,9 @@ KiroGraph combines capabilities from 14 separate projects into one integrated MC
 | Embedding compression | [turboquant-js](https://github.com/danilodevhub/turboquant-js) | 9 engine options, SIMD Rust variant, 20–30× RAM savings |
 | SIMD vector search | [turbovec](https://github.com/RyanCodrai/turbovec) | NEON on ARM64, AVX-512BW on x86, auto-built by installer |
 | Context layer | [lean-ctx](https://github.com/yvgude/lean-ctx) | File caching, read modes, budget governance |
+| Gap-close roadmap | [tokensave](https://tokensave.dev) | Code quality metrics, git context tools, atomic edit primitives, multi-branch indexing |
 
-See the [full comparison](docs/guide/comparison.md) for a detailed feature matrix against CodeGraph, code-review-graph, jCodeMunch, and others.
+See the [full comparison](docs/guide/comparison.md) for a detailed feature matrix against CodeGraph, code-review-graph, jCodeMunch, tokensave, and others.
 
 ## Star History
 

@@ -41,7 +41,13 @@ CREATE TABLE IF NOT EXISTS nodes (
   is_abstract INTEGER NOT NULL DEFAULT 0,
   decorators TEXT,
   type_parameters TEXT,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  -- Complexity metrics (nullable; populated when enableComplexity=true)
+  complexity_cyclomatic INTEGER,
+  complexity_cognitive INTEGER,
+  complexity_halstead TEXT,
+  maintainability_index REAL,
+  nesting_depth INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_nodes_file ON nodes(file_path);

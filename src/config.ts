@@ -142,10 +142,20 @@ export interface KiroGraphConfig {
   securityDatabases: string[];
   /** Enable AST-level structural pattern matching (SAST) during indexing. Default: false. */
   enablePatterns: boolean;
-  /** Enable code health tools (hotspots, dead code, change tracking). Default: true. */
+  /** Enable code health tools (hotspots, dead code, path analysis, type hierarchy). Default: false. */
   enableCodeHealth: boolean;
-  /** Enable advanced analysis tools (type hierarchies, flows, communities, refactor). Default: true. */
-  enableAdvancedAnalysis: boolean;
+  /** Enable navigation tools (status, files, impact). Default: false. */
+  enableNavigation: boolean;
+  /** Enable complexity metrics tools. Default: false. */
+  enableComplexity: boolean;
+  /** Enable git-context tools (diff_context, commit_context, flows, etc.). Default: false. */
+  enableGitContext: boolean;
+  /** Enable atomic edit primitive tools (str_replace, insert_at, etc.) and refactor. Default: false. */
+  enableEditPrimitives: boolean;
+  /** Enable multi-branch graph indexing tools. Default: false. */
+  enableBranch: boolean;
+  /** @deprecated Dissolved — tools moved to enableCodeHealth, enableGitContext, enableArchitecture, enableEditPrimitives. Kept in KNOWN_FIELDS for silent backwards compatibility. */
+  enableAdvancedAnalysis?: boolean;
   /** Enable agent utility tools (file caching, budget tracking). Default: true. */
   enableAgentUtils: boolean;
   /** Enable general-purpose compression tool (kirograph_compress). Default: false. */
@@ -201,10 +211,14 @@ const KNOWN_FIELDS = new Set<string>([
   'dataContextLimit', 'dataMaxFileSize', 'dataMaxRows', 'dataQueryLimit', 'dataMaxResponseTokens',
   'enableSecurity', 'securityDatabases', 'securityAutoEnrich', 'securityEnrichMaxAgeDays', 'securityLicensePolicy',
   'enablePatterns', 'patternLibraryPath', 'patternSeverityThreshold',
-  'enableCodeHealth', 'enableAdvancedAnalysis', 'enableAgentUtils', 'enableGeneralCompression',
+  'enableCodeHealth', 'enableNavigation', 'enableComplexity', 'enableGitContext',
+  'enableEditPrimitives', 'enableBranch',
+  'enableAgentUtils', 'enableGeneralCompression',
   'contextBudget',
   // Legacy aliases / derived fields (accepted but ignored or recomputed)
   'enableCompression', 'compressionLevel', 'enableShellExec',
+  // Deprecated: dissolved flag kept here so old configs don't warn
+  'enableAdvancedAnalysis',
 ]);
 
 const LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error']);
@@ -251,7 +265,7 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     fuzzyResolutionThreshold: 0.5,
     enableArchitecture: false,
     cavemanMode: 'off',
-    shellCompressionLevel: 'normal',
+    shellCompressionLevel: 'off',
     syncWarningThreshold: 10,
     enableMemory: false,
     memorySearchAlpha: 0.5,
@@ -298,11 +312,15 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     enablePatterns: false,
     patternLibraryPath: undefined,
     patternSeverityThreshold: 'low',
-    enableCodeHealth: true,
-    enableAdvancedAnalysis: true,
+    enableCodeHealth: false,
+    enableNavigation: false,
+    enableComplexity: false,
+    enableGitContext: false,
+    enableEditPrimitives: false,
+    enableBranch: false,
     enableAgentUtils: true,
     enableGeneralCompression: false,
-    enableShellExec: true,
+    enableShellExec: false,
   };
 }
 
@@ -614,9 +632,22 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const enableCodeHealth = typeof raw.enableCodeHealth === 'boolean'
     ? raw.enableCodeHealth
     : defaults.enableCodeHealth;
-  const enableAdvancedAnalysis = typeof raw.enableAdvancedAnalysis === 'boolean'
-    ? raw.enableAdvancedAnalysis
-    : defaults.enableAdvancedAnalysis;
+  const enableNavigation = typeof raw.enableNavigation === 'boolean'
+    ? raw.enableNavigation
+    : defaults.enableNavigation;
+  const enableComplexity = typeof raw.enableComplexity === 'boolean'
+    ? raw.enableComplexity
+    : defaults.enableComplexity;
+  const enableGitContext = typeof raw.enableGitContext === 'boolean'
+    ? raw.enableGitContext
+    : defaults.enableGitContext;
+  const enableEditPrimitives = typeof raw.enableEditPrimitives === 'boolean'
+    ? raw.enableEditPrimitives
+    : defaults.enableEditPrimitives;
+  const enableBranch = typeof raw.enableBranch === 'boolean'
+    ? raw.enableBranch
+    : defaults.enableBranch;
+  // enableAdvancedAnalysis is deprecated — silently accepted, not applied
   const enableAgentUtils = typeof raw.enableAgentUtils === 'boolean'
     ? raw.enableAgentUtils
     : defaults.enableAgentUtils;
@@ -721,7 +752,11 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     patternLibraryPath,
     patternSeverityThreshold,
     enableCodeHealth,
-    enableAdvancedAnalysis,
+    enableNavigation,
+    enableComplexity,
+    enableGitContext,
+    enableEditPrimitives,
+    enableBranch,
     enableAgentUtils,
     enableGeneralCompression,
     enableShellExec: shellCompressionLevel !== 'off',

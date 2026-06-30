@@ -182,6 +182,151 @@ kirograph path &lt;from&gt; &lt;to&gt;            # Shortest path between two sy
 kirograph path LoginController Pool   # Example
 kirograph path A B --format json      # JSON output</code></pre>
 
+    <h3 id="cli-code-health">Code Health</h3>
+    <pre><code>kirograph module-api [path]                # List exported symbols in a file or directory
+kirograph module-api [path] --limit 50     # Max results (default: 50)
+
+kirograph rename-preview &lt;symbol&gt;          # Show all reference sites for a symbol before renaming
+kirograph rename-preview &lt;symbol&gt; --limit 50
+
+kirograph doc-coverage [path]              # Find exported symbols missing docstrings
+kirograph doc-coverage [path] --limit 50
+
+kirograph god-class                        # Classes ranked by member count
+kirograph god-class --limit 20
+
+kirograph inheritance-depth                # Find deepest inheritance chains
+kirograph inheritance-depth --limit 20
+
+kirograph recursion                        # Find recursive and mutually-recursive functions
+kirograph recursion --limit 30
+
+kirograph largest                          # Symbols ranked by lines of code
+kirograph largest --limit 20
+kirograph largest --kind function          # Filter by symbol kind
+
+kirograph rank                             # Symbols ranked by fan-in or fan-out
+kirograph rank --by fan-in                 # Default metric
+kirograph rank --by fan-out
+kirograph rank --limit 20
+
+kirograph distribution [path]              # Symbol-kind breakdown per file or directory
+kirograph distribution [path] --limit 30
+
+kirograph annotations [decorator]          # Decorator/attribute histogram
+kirograph annotations [decorator] --limit 20
+
+kirograph session start                    # Save current graph state as baseline
+kirograph session end                      # Show what changed since baseline
+
+kirograph unused-imports                   # Find import nodes with zero resolved downstream edges
+kirograph unused-imports --limit 50
+
+kirograph gini                             # Gini coefficient on LOC, fan-in, or fan-out
+kirograph gini --metric loc                # Default metric (0=equal, 1=total inequality)
+kirograph gini --metric fan-in
+kirograph gini --metric fan-out
+
+kirograph dependency-depth                 # Longest import chains via topological sort
+kirograph dependency-depth --limit 20
+
+kirograph health [path]                    # Composite graph health score (0–10000)
+
+kirograph dsm [path]                       # Design Structure Matrix between modules
+kirograph dsm --limit 20                   # Limit modules shown (default: all)
+
+kirograph test-risk [path]                 # Risk-ranked functions (complexity × fan-in)
+kirograph test-risk --limit 20             # Limit results (default: 20)
+kirograph test-risk --threshold 5          # Only show risk score above this value
+
+kirograph test-coverage [path]             # Parse and show coverage files
+kirograph test-coverage --sort uncovered   # Sort by uncovered lines (default)
+kirograph test-coverage --sort coverage    # Sort by coverage percentage
+kirograph test-coverage --limit 20         # Limit results (default: 20)</code></pre>
+
+    <h3 id="cli-complexity">Complexity</h3>
+    <pre><code>kirograph complexity                       # Rank functions by cyclomatic, cognitive, and maintainability index
+kirograph complexity --limit 20
+kirograph complexity --sort-by cyclomatic  # Default sort metric
+kirograph complexity --sort-by cognitive
+kirograph complexity --sort-by maintainability
+kirograph complexity --threshold 10        # Only show symbols above this value
+
+kirograph simplify-scan                    # Quality scan: complexity, dead code, and LOC thresholds
+kirograph simplify-scan --limit 20</code></pre>
+
+    <h3 id="cli-edit-primitives">Edit Primitives</h3>
+    <pre><code>kirograph str-replace &lt;file&gt; &lt;old&gt; &lt;new&gt;      # Replace a unique string anchor; fails on 0 or &gt;1 matches
+
+kirograph multi-replace &lt;file&gt; old1 new1 old2 new2 ...  # Multiple replacements as all-or-nothing transaction
+
+kirograph insert-at &lt;file&gt; &lt;anchor&gt; &lt;content&gt; # Insert content before anchor (default)
+kirograph insert-at &lt;file&gt; &lt;anchor&gt; &lt;content&gt; --after  # Insert after anchor
+kirograph insert-at &lt;file&gt; &lt;linenum&gt; &lt;content&gt; --line  # Treat anchor as line number
+
+kirograph ast-rewrite &lt;file&gt; &lt;pattern&gt; &lt;rewrite&gt;  # Structural rewrite via ast-grep (requires ast-grep on PATH)</code></pre>
+
+    <h3 id="cli-git-context">Git Context</h3>
+    <pre><code>kirograph diff-context                     # Changed symbols with callers/callees and affected tests
+kirograph diff-context --staged            # Use staged changes only
+kirograph diff-context --ref main          # Compare against git ref
+
+kirograph commit-context                   # Structured summary of staged changes for commit messages
+
+kirograph pr-context &lt;base&gt; [head]         # Semantic diff between two git refs for PR descriptions
+kirograph pr-context main                  # Diff main..HEAD
+kirograph pr-context main feature/my-branch
+
+kirograph changelog &lt;ref1&gt; &lt;ref2&gt;          # Human-readable semantic diff between two refs
+
+kirograph test-map                         # Map symbols to test files; detect uncovered symbols
+kirograph test-map [symbol]                # Focus on a specific symbol
+kirograph test-map --limit 20
+
+kirograph test-coverage [path]             # Parse coverage files and correlate with graph
+kirograph test-coverage --sort uncovered   # Sort by uncovered lines (default)
+kirograph test-coverage --sort coverage    # Sort by coverage percentage
+kirograph test-coverage --limit 20         # Limit results (default: 20)</code></pre>
+
+    <h3 id="cli-bench">Bench</h3>
+    <pre><code>kirograph bench                            # Quick local token-efficiency benchmark
+kirograph bench --quiet                    # Print final score only (no per-step output)</code></pre>
+
+    <h3 id="cli-branch">Branch</h3>
+    <p>Track multiple git branches and compare symbol graphs across them.</p>
+    <pre><code>kirograph branch list                      # List all currently tracked branches
+
+kirograph branch add [branchName]          # Start tracking current branch (or named branch)
+
+kirograph branch remove &lt;branchName&gt;       # Stop tracking a branch
+
+kirograph branch gc                        # Clean up DBs for git branches that no longer exist
+
+kirograph branch diff &lt;branchA&gt; [branchB] # Diff symbols between two branches
+                                           # (branchB defaults to current branch if omitted)
+
+kirograph branch search &lt;query&gt; &lt;branch&gt;  # Search symbols within a specific branch</code></pre>
+
+    <h3 id="cli-dev-tools">Dev Tools</h3>
+    <pre><code>kirograph monitor                          # Live-tail the MCP call log
+kirograph monitor --lines 50               # Show last N lines before tailing (default: 20)
+
+kirograph upgrade                          # Update KiroGraph to the latest published version
+kirograph upgrade --dry-run                # Print what would be upgraded without installing
+
+kirograph cost [sessionDir]                # Report tool usage from session transcripts
+kirograph cost --last 5                    # Only analyse the last N sessions (default: all)
+kirograph cost --category search           # Filter by tool category</code></pre>
+
+    <h3 id="cli-manifest">Manifest &amp; Doctor</h3>
+    <pre><code>kirograph manifest                         # Workspace manifest: packages, versions, deps, licenses
+kirograph manifest --package &lt;name&gt;        # Drill into a specific package
+kirograph manifest --ecosystem npm         # Filter by ecosystem (npm, cargo, go, python)
+kirograph manifest --drift                 # Surface packages with conflicting versions
+
+kirograph doctor                           # Check KiroGraph setup health
+kirograph doctor --fix                     # Auto-fix fixable issues</code></pre>
+
     <h3 id="cli-snapshots">Snapshots &amp; Diff</h3>
     <pre><code>kirograph snapshot save [label]       # Save current graph state
 kirograph snapshot save pre-refactor  # Named snapshot
@@ -436,6 +581,14 @@ kirograph remediation --format json        # JSON output</code></pre>
       <a href="#cli-gain" class="sidebar-link">Token Savings</a>
       <a href="#cli-architecture" class="sidebar-link">Architecture</a>
       <a href="#cli-insights" class="sidebar-link">Graph Insights</a>
+      <a href="#cli-code-health" class="sidebar-link">Code Health</a>
+      <a href="#cli-complexity" class="sidebar-link">Complexity</a>
+      <a href="#cli-edit-primitives" class="sidebar-link">Edit Primitives</a>
+      <a href="#cli-git-context" class="sidebar-link">Git Context</a>
+      <a href="#cli-bench" class="sidebar-link">Bench</a>
+      <a href="#cli-branch" class="sidebar-link">Branch</a>
+      <a href="#cli-dev-tools" class="sidebar-link">Dev Tools</a>
+      <a href="#cli-manifest" class="sidebar-link">Manifest &amp; Doctor</a>
       <a href="#cli-snapshots" class="sidebar-link">Snapshots &amp; Diff</a>
       <a href="#cli-export" class="sidebar-link">Export Dashboard</a>
       <a href="#cli-memory" class="sidebar-link">Memory</a>

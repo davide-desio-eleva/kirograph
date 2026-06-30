@@ -92,15 +92,15 @@ $KG install --target kiro --yes 2>&1 | grep -E "✓|✗|ℹ|hook|steering|MCP|ag
 ok "Install completato"
 
 [ -f ".kiro/settings/mcp.json" ]                        && ok "MCP server: .kiro/settings/mcp.json"          || fail "mcp.json non trovato"
-[ -f ".kiro/hooks/kirograph-watchmen.kiro.hook" ]       && ok "Hook watchmen: runCommand synthesis"           || fail "kirograph-watchmen.kiro.hook non trovato"
-[ -f ".kiro/hooks/kirograph-mem-capture.kiro.hook" ]    && ok "Hook mem-capture: askAgent store obs"          || fail "kirograph-mem-capture.kiro.hook non trovato"
-[ -f ".kiro/hooks/kirograph-sync-if-dirty.kiro.hook" ]  && ok "Hook sync: agentStop index sync"               || fail "kirograph-sync-if-dirty.kiro.hook non trovato"
+[ -f ".kiro/hooks/kirograph-watchmen.json" ]       && ok "Hook watchmen: command synthesis"           || fail "kirograph-watchmen.json non trovato"
+[ -f ".kiro/hooks/kirograph-mem-capture.json" ]    && ok "Hook mem-capture: agent store obs"          || fail "kirograph-mem-capture.json non trovato"
+[ -f ".kiro/hooks/kirograph-sync-if-dirty.json" ]  && ok "Hook sync: Stop index sync"               || fail "kirograph-sync-if-dirty.json non trovato"
 [ -f ".kiro/steering/kirograph.md" ]                    && ok "Steering: kirograph.md (inclusion: always)"    || fail "kirograph.md non trovato"
 [ -f ".kiro/agents/kirograph.json" ]                    && ok "CLI agent: kirograph.json"                     || fail "kirograph.json non trovato"
 
 echo ""
-info "Contenuto .kiro/hooks/kirograph-watchmen.kiro.hook:"
-cat .kiro/hooks/kirograph-watchmen.kiro.hook | sed 's/^/     /'
+info "Contenuto .kiro/hooks/kirograph-watchmen.json:"
+cat .kiro/hooks/kirograph-watchmen.json | sed 's/^/     /'
 
 # ── 5. Index ──────────────────────────────────────────────────────────────────
 sep

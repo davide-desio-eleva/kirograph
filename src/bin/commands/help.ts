@@ -27,13 +27,15 @@ const GROUPS: Group[] = [
       { name: 'init',          args: '[path]', desc: 'Initialize KiroGraph in a project', opts: ['-i, --index  Index immediately after init'] },
       { name: 'uninit',        args: '[path]', desc: 'Remove KiroGraph from a project',   opts: ['--force      Skip confirmation', '--target <t>  Target to clean up (or "all")'] },
       { name: 'hook',          desc: 'Manage global Kiro hooks in ~/.kirograph/hooks/', opts: ['save [path]    Save workspace hooks to global store', 'import [path]  Import global hooks into workspace', 'list           List saved global hooks', '--all          Save or import all without prompting (save/import)'] },
+      { name: 'doctor',        args: '[path]', desc: 'Health check: index, config, hooks, and permissions', opts: ['--fix  Auto-repair fixable issues'] },
     ],
     examples: [
       ['kirograph install', 'Wire up Kiro MCP + hooks + steering'],
-      ['kirograph install --target cursor', 'Wire up Cursor MCP + rules + hooks'],
+      ['kirograph install --target claude', 'Wire up Claude Code MCP + project memory'],
       ['kirograph init --index', 'Init and immediately index'],
       ['kirograph hook save', 'Save workspace hooks to your global library'],
       ['kirograph hook import', 'Import global hooks into this project'],
+      ['kirograph doctor --fix', 'Check and auto-repair installation issues'],
     ],
   },
   {
@@ -54,64 +56,242 @@ const GROUPS: Group[] = [
     icon: '🔍', title: 'Search',
     commands: [
       { name: 'status',   args: '[path]',    desc: 'Show index statistics and health' },
-      { name: 'query',    args: '<search>',  desc: 'Search for symbols by name',          opts: ['--kind <k>   Filter by kind', '--limit <n>  Max results'] },
-      { name: 'context',  args: '<task>',    desc: 'Build relevant code context for a task', opts: ['--max-nodes <n>  Max symbols', '--no-code  Exclude code', '--format <f>  markdown | json'] },
-      { name: 'files',    args: '[path]',    desc: 'Show project file structure',          opts: ['--format <f>  tree | flat | grouped | compact', '--filter <p>  Directory prefix', '--pattern <g>  Glob'] },
-      { name: 'path',     args: '<from> <to>', desc: 'Shortest path between two symbols' },
-      { name: 'affected', args: '[files...]', desc: 'Find test files affected by changes', opts: ['--stdin  Read from stdin', '-d <n>  Depth', '-q  Quiet'] },
+      { name: 'query',    args: '<search>',  desc: 'Search for symbols by name',                        opts: ['--kind <k>   Filter by kind', '--limit <n>  Max results'] },
+      { name: 'context',  args: '<task>',    desc: 'Build relevant code context for a task',            opts: ['--max-nodes <n>  Max symbols', '--no-code  Exclude code', '--format <f>  markdown | json'] },
+      { name: 'files',    args: '[path]',    desc: 'Show project file structure',                        opts: ['--format <f>  tree | flat | grouped | compact', '--filter <p>  Directory prefix', '--pattern <g>  Glob'] },
+      { name: 'path',     args: '<from> <to>', desc: 'Shortest dependency path between two symbols' },
+      { name: 'affected', args: '[files...]', desc: 'Find test files affected by changed source files', opts: ['--stdin  Read from stdin', '-d <n>  Depth', '-q  Quiet'] },
+      { name: 'callers',  args: '<symbol>',  desc: 'List symbols that call a given function or method', opts: ['--limit <n>  Max results'] },
+      { name: 'callees',  args: '<symbol>',  desc: 'List symbols called by a given function or method', opts: ['--limit <n>  Max results'] },
+      { name: 'impact',   args: '<symbol>',  desc: 'Show symbols affected by changing a given symbol',  opts: ['-d, --depth <n>  Max traversal depth'] },
     ],
     examples: [
       ['kirograph query useState', 'Find symbols named useState'],
       ['kirograph context "add dark mode"', 'Get context for a task'],
-      ['kirograph path LoginController Pool', 'How are these connected?'],
+      ['kirograph callers parseToken', 'Who calls parseToken?'],
+      ['kirograph callees handleRequest', 'What does handleRequest call?'],
+      ['kirograph impact UserService', 'What breaks if UserService changes?'],
       ['git diff --name-only | kirograph affected --stdin', 'Affected tests from git diff'],
     ],
   },
   {
     icon: '📊', title: 'Insights',
     commands: [
-      { name: 'hotspots',   args: '[path]', desc: 'Most-connected symbols by edge degree',   opts: ['--limit <n>  Max results', '--format <f>  table | json'] },
-      { name: 'surprising', args: '[path]', desc: 'Non-obvious cross-file connections',      opts: ['--limit <n>  Max results'] },
-      { name: 'dead-code',  args: '[path]', desc: 'Unreferenced unexported symbols',         opts: ['--limit <n>  Max results'] },
-      { name: 'snapshot',   desc: 'Save/list/diff graph snapshots',                          opts: ['save [label]', 'list', 'diff [label]  --format summary|full|json'] },
-      { name: 'export',     desc: 'Interactive graph dashboard',                             opts: ['build [path]  Generate HTML', 'start [path]  Generate and open'] },
+      { name: 'hotspots',          args: '[path]', desc: 'Most-connected symbols by edge degree',           opts: ['--limit <n>  Max results', '--format <f>  table | json'] },
+      { name: 'surprising',        args: '[path]', desc: 'Non-obvious cross-file connections',              opts: ['--limit <n>  Max results'] },
+      { name: 'dead-code',         args: '[path]', desc: 'Unreferenced unexported symbols',                 opts: ['--limit <n>  Max results'] },
+      { name: 'circular-deps',     args: '[path]', desc: 'Find circular dependency cycles',                 opts: ['-j, --json  JSON output'] },
+      { name: 'largest',           args: '[path]', desc: 'Symbols ranked by lines of code',                 opts: ['--limit <n>  Max results'] },
+      { name: 'rank',              args: '[path]', desc: 'Symbols ranked by fan-in or fan-out edge count',  opts: ['--by <by>  fan-in | fan-out'] },
+      { name: 'distribution',      args: '[dir]',  desc: 'Symbol-kind breakdown per file or directory',     opts: ['--limit <n>  Max results'] },
+      { name: 'god-class',         args: '[path]', desc: 'Classes ranked by member count (god-class risk)', opts: ['--limit <n>  Max results'] },
+      { name: 'gini',              args: '[path]', desc: 'Gini inequality coefficient of a metric',         opts: ['--metric <m>  loc | fan-in | fan-out'] },
+      { name: 'snapshot',          desc: 'Save/list/diff graph snapshots',                                  opts: ['save [label]', 'list', 'diff [label]  --format summary|full|json'] },
+      { name: 'export',            desc: 'Interactive graph dashboard',                                     opts: ['build [path]  Generate HTML', 'start [path]  Generate and open'] },
     ],
     examples: [
       ['kirograph hotspots --limit 10', 'Top 10 most-connected symbols'],
+      ['kirograph circular-deps', 'Find all circular dependency cycles'],
+      ['kirograph largest --limit 20', 'Biggest functions by LOC'],
+      ['kirograph god-class', 'Find potential god classes'],
       ['kirograph snapshot save pre-refactor', 'Save before a refactor'],
-      ['kirograph snapshot diff pre-refactor', 'See what changed'],
       ['kirograph export start', 'Open the graph dashboard'],
     ],
   },
   {
     icon: '🏛️', title: 'Architecture',
     commands: [
-      { name: 'architecture', args: '[path]', desc: 'Package graph and layer map',     opts: ['--packages  Packages only', '--layers  Layers only'] },
-      { name: 'coupling',     args: '[path]', desc: 'Coupling metrics per package',    opts: ['--sort <s>  instability | ca | ce | name', '--package <n>  Detail view'] },
-      { name: 'package',      args: '<name>', desc: 'Inspect a package',               opts: ['--no-files  Omit file list'] },
+      { name: 'architecture',    args: '[path]',   desc: 'Package graph and layer map',                                opts: ['--packages  Packages only', '--layers  Layers only'] },
+      { name: 'coupling',        args: '[path]',   desc: 'Coupling metrics per package',                              opts: ['--sort <s>  instability | ca | ce | name', '--package <n>  Detail view'] },
+      { name: 'package',         args: '<name>',   desc: 'Inspect a package',                                         opts: ['--no-files  Omit file list'] },
+      { name: 'type-hierarchy',  args: '<symbol>', desc: 'Traverse base/derived types of a class or interface',       opts: ['--direction <dir>  up | down | both'] },
+      { name: 'communities',     args: '[path]',   desc: 'Detect code communities (clusters of related symbols)' },
+      { name: 'manifest',        args: '[path]',   desc: 'Workspace manifest: packages, versions, licenses, version drift' },
     ],
     examples: [
       ['kirograph architecture --packages', 'List all detected packages'],
       ['kirograph coupling --sort instability', 'Packages ranked by instability'],
-      ['kirograph package src/auth', 'Inspect the auth package'],
+      ['kirograph type-hierarchy UserRepository --direction up', 'What interfaces does this implement?'],
+      ['kirograph communities', 'Find tightly coupled clusters'],
+      ['kirograph manifest', 'Show all dependency versions and drift'],
+    ],
+  },
+  {
+    icon: '🏥', title: 'Code Health',
+    commands: [
+      { name: 'module-api',         args: '[path]',          desc: 'List all exported symbols in a file or directory',                  opts: ['--limit <n>  Max results'] },
+      { name: 'rename-preview',     args: '<symbol>',        desc: 'Show all reference sites for a symbol before renaming',            opts: ['--limit <n>  Max results'] },
+      { name: 'doc-coverage',       args: '[path]',          desc: 'Find exported symbols missing docstrings',                         opts: ['--limit <n>  Max results'] },
+      { name: 'inheritance-depth',  args: '[path]',          desc: 'Find deepest inheritance chains',                                  opts: ['--limit <n>  Max results'] },
+      { name: 'recursion',          args: '[path]',          desc: 'Find recursive and mutually-recursive functions',                  opts: ['--limit <n>  Max results'] },
+      { name: 'annotations',        args: '[path]',          desc: 'Decorator/attribute histogram across the codebase',               opts: ['--decorator <name>  Filter by name'] },
+      { name: 'unused-imports',     args: '[path]',          desc: 'Find import nodes with zero resolved downstream edges',           opts: ['--limit <n>  Max results'] },
+      { name: 'dependency-depth',   args: '[path]',          desc: 'Topological depth of each file in the import graph',             opts: ['--limit <n>  Max files'] },
+      { name: 'session',            desc: 'Save or compare session baselines for tracking changes',                                   opts: ['start  Start a session baseline', 'end    Compare current state to baseline'] },
+      { name: 'refactor',           desc: 'Refactoring tools: rename preview and community-driven suggestions',                       opts: ['rename <symbol>  Preview rename locations', 'suggest  Get refactoring suggestions'] },
+    ],
+    examples: [
+      ['kirograph module-api src/auth', 'List public API of the auth module'],
+      ['kirograph rename-preview handleLogin', 'Find all sites before renaming'],
+      ['kirograph doc-coverage', 'Find undocumented exports'],
+      ['kirograph unused-imports', 'Find dead import statements'],
+      ['kirograph session start && <edit> && kirograph session end', 'Diff graph before and after a change'],
+    ],
+  },
+  {
+    icon: '🔬', title: 'Analysis',
+    commands: [
+      { name: 'complexity',      args: '[path]', desc: 'Rank functions by cyclomatic, cognitive, and maintainability score', opts: ['--limit <n>  Max results'] },
+      { name: 'simplify-scan',   args: '[path]', desc: 'Find candidates for simplification by complexity and dead code',    opts: ['--limit <n>  Max results'] },
+      { name: 'health',          args: '[path]', desc: 'Composite codebase health score (0-10000) with grade' },
+      { name: 'dsm',             args: '[path]', desc: 'Design Structure Matrix — detect strongly coupled module groups',   opts: ['--limit <n>  Max groups'] },
+      { name: 'test-risk',       args: '[path]', desc: 'Rank untested code by risk score (complexity × fan-in)',           opts: ['--limit <n>  Max results'] },
+      { name: 'test-coverage',   args: '[path]', desc: 'Show test coverage gaps from lcov/Istanbul reports',              opts: ['--sort <order>  asc (worst first) | desc'] },
+    ],
+    examples: [
+      ['kirograph health', 'Get overall health score and grade'],
+      ['kirograph complexity --limit 10', 'Top 10 most complex functions'],
+      ['kirograph test-risk', 'Which untested code is highest risk?'],
+      ['kirograph test-coverage', 'Show worst-covered files first'],
+      ['kirograph dsm', 'Find tightly coupled module groups'],
+    ],
+  },
+  {
+    icon: '🌿', title: 'Git',
+    commands: [
+      { name: 'diff-context',    args: '[path]',           desc: 'Changed symbols, their callers/callees, and affected tests', opts: ['--staged  Use staged changes only'] },
+      { name: 'commit-context',  args: '[path]',           desc: 'Structured summary of staged changes for a commit message' },
+      { name: 'pr-context',      args: '<base> [head]',    desc: 'Semantic diff between two git refs for PR descriptions',    opts: ['--format <fmt>  text | json'] },
+      { name: 'changelog',       args: '<ref1> <ref2>',    desc: 'Human-readable semantic diff between two git refs' },
+      { name: 'test-map',        args: '[symbol]',         desc: 'Map symbols to test files; show uncovered symbols',         opts: ['--limit <n>  Max results'] },
+    ],
+    examples: [
+      ['kirograph diff-context --staged', 'What does my staged diff actually change?'],
+      ['kirograph commit-context', 'Generate a structured commit message draft'],
+      ['kirograph pr-context main', 'Semantic PR description vs main'],
+      ['kirograph changelog v1.0 v1.1', 'What changed between two tags?'],
+      ['kirograph test-map', 'Which symbols have no test coverage?'],
+    ],
+  },
+  {
+    icon: '✏️', title: 'Edit',
+    commands: [
+      { name: 'str-replace',   args: '<file> <old> <new>', desc: 'Replace unique string anchor in a file; fails on 0 or >1 matches' },
+      { name: 'multi-replace', args: '<file> <pairs-json>', desc: 'Multiple string replacements as an all-or-nothing transaction' },
+      { name: 'insert-at',     args: '<file> <anchor> <content>', desc: 'Insert content before or after an anchor or line number', opts: ['--after  Insert after anchor', '--line  Treat anchor as line number'] },
+      { name: 'ast-rewrite',   args: '<file> <pattern> <rewrite>', desc: 'Structural rewrite via ast-grep (requires ast-grep on PATH)' },
+    ],
+    examples: [
+      ['kirograph str-replace auth.ts "return null" "return undefined"', 'Safe replace a unique string'],
+      ['kirograph insert-at server.ts "app.listen" "app.use(logger());" --before', 'Insert before a line'],
+      ['kirograph ast-rewrite src/api.ts "console.log($MSG)" "logger.debug($MSG)"', 'Structural rewrite'],
+    ],
+  },
+  {
+    icon: '🌲', title: 'Branch',
+    commands: [
+      { name: 'branch list',          desc: 'List tracked branches with size and last-sync time' },
+      { name: 'branch add',           args: '[name]', desc: 'Start tracking a branch (copies current index)' },
+      { name: 'branch remove',        args: '<name>', desc: 'Stop tracking a branch and delete its DB' },
+      { name: 'branch gc',            desc: 'Remove DBs for branches that no longer exist in git' },
+      { name: 'branch diff',          args: '<a> <b>', desc: 'Symbol diff between two tracked branch DBs' },
+      { name: 'branch search',        args: '<name> <query>', desc: 'Search symbols in a branch DB without switching' },
+    ],
+    examples: [
+      ['kirograph branch list', 'See all tracked branches'],
+      ['kirograph branch add feature/auth', 'Track the auth branch'],
+      ['kirograph branch diff main feature/auth', 'What symbols changed?'],
+      ['kirograph branch search feature/auth "handleLogin"', 'Search in branch without switching'],
+      ['kirograph branch gc', 'Clean up deleted branches'],
+    ],
+  },
+  {
+    icon: '📚', title: 'Docs',
+    commands: [
+      { name: 'docs toc',      args: '[file]',  desc: 'Table of contents for a file or the whole project' },
+      { name: 'docs search',   args: '<query>', desc: 'Full-text search over documentation sections',        opts: ['--limit <n>  Max results', '--section <id>  Restrict to section'] },
+      { name: 'docs section',  args: '<id>',    desc: 'Print the full content of a section by ID' },
+      { name: 'docs outline',  args: '<file>',  desc: 'Print heading hierarchy for a document' },
+      { name: 'docs refs',     args: '<id>',    desc: 'Show code-to-doc and doc-to-code cross-references' },
+      { name: 'docs reindex',  desc: 'Force re-index all documentation files' },
+      { name: 'docs lint',     desc: 'Find broken refs, stale sections, FTS desync' },
+    ],
+    examples: [
+      ['kirograph docs toc', 'Table of contents for the project'],
+      ['kirograph docs search "authentication"', 'Find docs about auth'],
+      ['kirograph docs section api.auth.login', 'Read a specific section'],
+      ['kirograph docs refs api.auth.login', 'Which code references this doc section?'],
+    ],
+  },
+  {
+    icon: '🗄️', title: 'Data',
+    commands: [
+      { name: 'data list',           desc: 'List all indexed datasets' },
+      { name: 'data describe',       args: '<dataset>', desc: 'Show schema and column profiles',                     opts: ['--format <f>  table | json'] },
+      { name: 'data query',          args: '<dataset>', desc: 'Query rows with filters',                             opts: ['--filter <f>  col:op:val', '--limit <n>  Max rows', '--format <f>  table | json | csv'] },
+      { name: 'data aggregate',      args: '<dataset>', desc: 'Server-side GROUP BY aggregation',                   opts: ['--group-by <col>', '--metric <agg:col>  sum|avg|count|min|max'] },
+      { name: 'data search',         args: '<dataset> <q>', desc: 'Search column names and sample values' },
+      { name: 'data join',           args: '<left> <right>', desc: 'SQL JOIN across two indexed datasets',          opts: ['--left-col <c>  Join key', '--right-col <c>  Join key', '--type inner|left|right'] },
+      { name: 'data correlations',   args: '<dataset>', desc: 'Pairwise Pearson correlations between numeric columns' },
+      { name: 'data quality',        args: '<dataset>', desc: 'Data quality triage: rank columns by risk' },
+      { name: 'data drift',          args: '<dataset>', desc: 'Show schema drift between last two indexes' },
+      { name: 'data history',        args: '<dataset>', desc: 'Show history of schema changes for a dataset' },
+    ],
+    examples: [
+      ['kirograph data list', 'List all indexed datasets'],
+      ['kirograph data describe orders', 'Schema and column profiles for orders'],
+      ['kirograph data query orders --filter status:eq:shipped', 'Filter rows'],
+      ['kirograph data aggregate orders --group-by region --metric sum:amount', 'Aggregate by region'],
+      ['kirograph data join users orders --left-col id --right-col user_id', 'Join datasets'],
+    ],
+  },
+  {
+    icon: '📖', title: 'Wiki',
+    commands: [
+      { name: 'wiki init',       desc: 'Initialize wiki: create SCHEMA.md and MANIFEST.md' },
+      { name: 'wiki ingest',     args: '[source]', desc: 'Print the ingest prompt for the LLM (reads file or stdin)' },
+      { name: 'wiki search',     args: '<query>',  desc: 'Full-text search over wiki pages',                           opts: ['--limit <n>  Max results'] },
+      { name: 'wiki page',       args: '<slug>',   desc: 'Print the full content of a wiki page' },
+      { name: 'wiki list',       desc: 'List all wiki pages' },
+      { name: 'wiki lint',       desc: 'Health check the wiki for broken links, orphans, contradictions' },
+      { name: 'wiki reindex',    desc: 'Rebuild SQLite index from .kirograph/wiki/*.md files' },
+      { name: 'wiki status',     desc: 'Wiki subsystem stats: page count, source count, oldest/newest page' },
+      { name: 'wiki synthesize', desc: 'Run local-model wiki synthesis over the pending source queue' },
+      { name: 'wiki apply-diff', args: '[diff]',   desc: 'Apply a WIKI_DIFF string to the wiki' },
+    ],
+    examples: [
+      ['kirograph wiki init', 'Initialize the wiki in this project'],
+      ['kirograph wiki search "authentication flow"', 'Find wiki pages about auth'],
+      ['kirograph wiki page arch-overview', 'Read a specific wiki page'],
+      ['kirograph wiki lint', 'Check wiki health'],
+      ['kirograph wiki status', 'How many pages and sources?'],
     ],
   },
   {
     icon: '🧠', title: 'Memory',
     commands: [
-      { name: 'mem search',   args: '<query>', desc: 'Search past observations',       opts: ['--kind <k>  Filter by kind', '--limit <n>  Max results'] },
-      { name: 'mem store',    args: '<text>',  desc: 'Store an observation',           opts: ['--kind <k>  decision | error | pattern | architecture | note'] },
+      { name: 'mem search',   args: '<query>', desc: 'Search past observations',                  opts: ['--kind <k>  Filter by kind', '--limit <n>  Max results'] },
+      { name: 'mem store',    args: '<text>',  desc: 'Store an observation',                      opts: ['--kind <k>  decision | error | pattern | architecture | note'] },
+      { name: 'mem capture',  args: '<text>',  desc: 'Passively extract multiple observations from free-form text' },
       { name: 'mem timeline', desc: 'List recent sessions and observations' },
       { name: 'mem status',   desc: 'Memory health dashboard' },
-      { name: 'mem prune',    desc: 'Remove old observations',                         opts: ['--older-than <d>  Duration (e.g. 90d)'] },
-      { name: 'mem export',   desc: 'Export observations',                             opts: ['--format <f>  jsonl | md'] },
-      { name: 'mem reembed',  desc: 'Re-embed after model change' },
-      { name: 'mem lint',     desc: 'Health check and auto-repair',                    opts: ['--fix  Auto-fix issues'] },
+      { name: 'mem prune',    desc: 'Remove old observations',                                    opts: ['--older-than <d>  Duration (e.g. 90d)'] },
+      { name: 'mem export',   desc: 'Export observations',                                        opts: ['--format <f>  jsonl | md'] },
+      { name: 'mem lint',     desc: 'Health check and auto-repair',                               opts: ['--fix  Auto-fix issues'] },
+      { name: 'mem reembed',  desc: 'Re-embed all observations after model change' },
+      { name: 'mem conflicts list',   desc: 'List pending conflict relations' },
+      { name: 'mem conflicts ignore', args: '<id>', desc: 'Dismiss a pending conflict relation' },
+      { name: 'mem watchmen status',    desc: 'Show watchmen observation counter and last synthesis time' },
+      { name: 'mem watchmen synthesize', desc: 'Run watchmen synthesis: produce brief and/or skill files' },
+      { name: 'mem watchmen reset',     desc: 'Reset the watchmen observation counter to zero' },
     ],
     examples: [
       ['kirograph mem search "auth decision"', 'Search for past decisions'],
       ['kirograph mem store "use idempotency keys" --kind decision', 'Store a decision'],
-      ['kirograph mem timeline', 'See recent sessions'],
+      ['kirograph mem prune --older-than 90d', 'Remove observations older than 90 days'],
+      ['kirograph mem conflicts list', 'See pending conflict relations'],
+      ['kirograph mem watchmen status', 'Check watchmen counter and last synthesis'],
+      ['kirograph mem watchmen synthesize', 'Trigger watchmen synthesis manually'],
     ],
   },
   {
@@ -207,19 +387,27 @@ const GROUPS: Group[] = [
     commands: [
       { name: 'caveman',     args: '[mode]',  desc: 'Communication style (off | lite | full | ultra)' },
       { name: 'compression', args: '[level]', desc: 'Shell compression level (off | normal | aggressive | ultra)' },
-      { name: 'exec',        args: '<cmd>',   desc: 'Run command with token-optimized output', opts: ['-l <level>  Compression level', '-t <sec>  Timeout'] },
-      { name: 'gain',        desc: 'Token savings statistics',                                 opts: ['--graph  ASCII chart', '--history  Recent commands', '--daily  Day breakdown'] },
-      { name: 'serve',       desc: 'Start the MCP server',                                    opts: ['--mcp  Run as stdio MCP', '--path <p>  Project path'] },
+      { name: 'exec',        args: '<cmd>',   desc: 'Run command with token-optimized output',              opts: ['-l <level>  Compression level', '-t <sec>  Timeout'] },
+      { name: 'gain',        desc: 'Token savings statistics',                                              opts: ['--graph  ASCII chart', '--history  Recent commands', '--daily  Day breakdown'] },
+      { name: 'bench',       desc: 'Run local token-efficiency benchmark across KiroGraph tools',           opts: ['--quiet  Suppress per-tool output'] },
+      { name: 'monitor',     desc: 'Live tail of mcp-calls.jsonl — watch MCP tool usage in real time',     opts: ['--lines <n>  Initial lines to show'] },
+      { name: 'upgrade',     desc: 'Update KiroGraph to the latest version',                               opts: ['--dry-run  Show what would change without installing'] },
+      { name: 'cost',        args: '[sessionDir]', desc: 'Analyze MCP tool usage and token cost from Claude session transcripts', opts: ['--last <n>  Last N sessions', '--category  Group by tool category'] },
+      { name: 'serve',       desc: 'Start the MCP server',                                                 opts: ['--mcp  Run as stdio MCP', '--path <p>  Project path'] },
     ],
     examples: [
       ['kirograph caveman lite', 'Enable lite caveman mode'],
       ['kirograph exec git status', 'Run git status with compression'],
       ['kirograph gain --graph', 'Show token savings graph'],
+      ['kirograph bench', 'Run token-efficiency benchmark'],
+      ['kirograph monitor', 'Watch MCP tool calls live'],
+      ['kirograph cost --last 5', 'Cost breakdown for the last 5 sessions'],
+      ['kirograph upgrade --dry-run', 'Preview available KiroGraph update'],
     ],
   },
 ];
 
-function renderGroup(group: Group, highlightIdx: number): string[] {
+function renderGroup(group: Group, highlightIdx: number, interactive = false): string[] {
   const lines: string[] = [];
   const nameWidth = Math.max(...group.commands.map(cmd => (cmd.name + (cmd.args ? ' ' + cmd.args : '')).length)) + 2;
 
@@ -237,7 +425,8 @@ function renderGroup(group: Group, highlightIdx: number): string[] {
       : `${c.lavender}${cmd.name}${c.reset}${cmd.args ? ' ' + c.dim + cmd.args + c.reset : ''}`;
     const pad = ' '.repeat(Math.max(0, nameWidth - signature.length));
     lines.push(`${prefix}${namePart}${pad}${c.gray}${cmd.desc}${c.reset}`);
-    if (cmd.opts) {
+    // In interactive mode show only the highlighted command's opts
+    if (cmd.opts && (!interactive || isHighlighted)) {
       for (const opt of cmd.opts) {
         const [flag, ...rest] = opt.split(/  +/);
         lines.push(`    ${c.purple}${flag}${c.reset}${rest.length ? '  ' + c.dim + rest.join('  ') + c.reset : ''}`);
@@ -245,7 +434,7 @@ function renderGroup(group: Group, highlightIdx: number): string[] {
     }
   }
 
-  if (group.examples.length > 0) {
+  if (!interactive && group.examples.length > 0) {
     lines.push('');
     lines.push(`  ${c.bold}${c.paleLavender}EXAMPLES${c.reset}`);
     lines.push('');
@@ -257,6 +446,7 @@ function renderGroup(group: Group, highlightIdx: number): string[] {
 
   return lines;
 }
+
 
 function renderTabs(selectedIdx: number): string {
   return GROUPS.map((g, i) => {
@@ -271,42 +461,35 @@ function renderTabs(selectedIdx: number): string {
  * Interactive tabbed help — left/right for tabs, up/down for commands, enter to copy.
  */
 export function printInteractiveHelp(): void {
-  const CLEAR_LINE = '\x1b[2K\x1b[G';
   let selectedTab = 0;
   let selectedCmd = 0;
-  let prevLineCount = 0;
 
-  function render(first: boolean) {
-    if (!first && prevLineCount > 0) {
-      process.stdout.write(`\x1b[${prevLineCount}A`);
-      for (let i = 0; i < prevLineCount; i++) {
-        process.stdout.write(`${CLEAR_LINE}\n`);
-      }
-      process.stdout.write(`\x1b[${prevLineCount}A`);
-    }
+  function render() {
+    // Move to top-left and clear from cursor to end of screen
+    process.stdout.write('\x1b[H\x1b[J');
 
     const lines: string[] = [];
     lines.push('');
     lines.push(`  ${renderTabs(selectedTab)}`);
     lines.push(`  ${c.dim}← → tabs · ↑ ↓ commands · enter to use · q quit${c.reset}`);
-    lines.push(...renderGroup(GROUPS[selectedTab]!, selectedCmd));
-    lines.push('');
+    lines.push(...renderGroup(GROUPS[selectedTab]!, selectedCmd, true));
 
-    for (const line of lines) {
-      process.stdout.write(`${CLEAR_LINE}${line}\n`);
-    }
-    prevLineCount = lines.length;
+    process.stdout.write(lines.join('\n') + '\n');
   }
+
+  // Enter alternate screen + hide cursor so rendering never scrolls or flickers
+  process.stdout.write('\x1b[?1049h\x1b[?25l');
 
   printBanner();
   console.log(`\n${c.bold}${c.paleLavender}USAGE${c.reset}  ${c.lavender}kirograph${c.reset} ${c.gray}<command>${c.reset} ${c.dim}[options]${c.reset}`);
 
-  render(true);
+  render();
 
   // Enter raw mode for interactive navigation
   const stdin = process.stdin;
   if (!stdin.isTTY) {
-    // Non-interactive: just print all groups
+    // Non-interactive: leave alternate screen and print all groups normally
+    process.stdout.write('\x1b[?25h\x1b[?1049l');
     for (let i = 1; i < GROUPS.length; i++) {
       const lines = renderGroup(GROUPS[i]!, -1);
       for (const line of lines) console.log(line);
@@ -322,6 +505,8 @@ export function printInteractiveHelp(): void {
     stdin.removeListener('data', onData);
     stdin.setRawMode(false);
     stdin.pause();
+    // Leave alternate screen and restore cursor
+    process.stdout.write('\x1b[?25h\x1b[?1049l');
   }
 
   function onData(key: string) {
@@ -330,18 +515,18 @@ export function printInteractiveHelp(): void {
       if (key === '\x1b[C') { // right arrow — next tab
         selectedTab = (selectedTab + 1) % GROUPS.length;
         selectedCmd = 0;
-        render(false);
+        render();
       } else if (key === '\x1b[D') { // left arrow — prev tab
         selectedTab = (selectedTab - 1 + GROUPS.length) % GROUPS.length;
         selectedCmd = 0;
-        render(false);
+        render();
       } else if (key === '\x1b[B') { // down arrow — next command
         const maxCmd = GROUPS[selectedTab]!.commands.length - 1;
         selectedCmd = Math.min(selectedCmd + 1, maxCmd);
-        render(false);
+        render();
       } else if (key === '\x1b[A') { // up arrow — prev command
         selectedCmd = Math.max(selectedCmd - 1, 0);
-        render(false);
+        render();
       }
       // Ignore other escape sequences
       return;
@@ -351,12 +536,6 @@ export function printInteractiveHelp(): void {
       cleanup();
       const cmd = GROUPS[selectedTab]!.commands[selectedCmd]!;
       const fullCmd = `kirograph ${cmd.name}${cmd.args ? ' ' + cmd.args : ''}`;
-      // Clear the interactive UI and print the command
-      process.stdout.write(`\x1b[${prevLineCount}A`);
-      for (let i = 0; i < prevLineCount; i++) {
-        process.stdout.write(`${CLEAR_LINE}\n`);
-      }
-      process.stdout.write(`\x1b[${prevLineCount}A`);
       console.log(`\n  ${c.green}${c.bold}$${c.reset} ${fullCmd}\n`);
       process.exit(0);
     } else if (key === 'q' || key === '\x03') { // q, ctrl+c

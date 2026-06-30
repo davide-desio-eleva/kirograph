@@ -52,7 +52,7 @@ function validatePath(filePath: string, projectRoot: string): boolean {
  * Extract symbols from a single file.
  * Optionally accepts pre-read content for batch I/O efficiency.
  */
-export async function extractFile(filePath: string, projectRoot: string, content?: Buffer | string): Promise<ExtractedFile | null> {
+export async function extractFile(filePath: string, projectRoot: string, content?: Buffer | string, opts?: { enableComplexity?: boolean }): Promise<ExtractedFile | null> {
   const language = detectLanguage(filePath);
   if (!isSupportedLanguage(language)) return null;
 
@@ -106,6 +106,28 @@ export async function extractFile(filePath: string, projectRoot: string, content
   const now = Date.now();
 
   walkTree(tree.rootNode, source, relPath, language, nodes, edges, unresolvedRefs, now);
+
+  // Complexity post-processing: compute metrics for function/method nodes when enabled.
+  if (opts?.enableComplexity) {
+    const sourceLines = source.split('\n');
+    for (const n of nodes) {
+      if (n.kind !== 'function' && n.kind !== 'method') continue;
+      const fnSource = sourceLines.slice(n.startLine - 1, n.endLine).join('\n');
+      const cc = computeTextCyclomaticComplexity(fnSource);
+      const depth = computeTextNestingDepth(fnSource);
+      const loc = n.endLine - n.startLine + 1;
+      const tokens = fnSource.match(/\b\w+\b|[+\-*/=<>!&|^~%]+|[(){}[\],;.]/g) ?? [];
+      const volume = tokens.length > 0 && tokens.length > 1
+        ? tokens.length * Math.log2(new Set(tokens).size || 1)
+        : 0;
+      const mi = Math.max(0, Math.min(100,
+        171 - 5.2 * Math.log(Math.max(1, volume)) - 0.23 * cc - 16.2 * Math.log(Math.max(1, loc))
+      ));
+      n.complexityCyclomatic = cc;
+      n.nestingDepth = depth;
+      n.maintainabilityIndex = Math.round(mi * 10) / 10;
+    }
+  }
 
   return { filePath: relPath, language, contentHash, fileSize, nodes, edges, unresolvedRefs };
 }
@@ -1122,4 +1144,39 @@ function extractInheritance(
       }
     }
   }
+}
+
+// ── Text-based complexity helpers ─────────────────────────────────────────────
+// Used when enableComplexity=true in extractFile(). Text heuristics are less
+// accurate than full AST walking but require no per-language grammar handling.
+
+const CC_PATTERNS = [
+  /\bif\b/g, /\belse\s+if\b/g, /\belif\b/g,
+  /\bfor\b/g, /\bwhile\b/g, /\bdo\b/g,
+  /\bcase\b/g, /\bcatch\b/g, /\bexcept\b/g,
+  /&&/g, /\|\|/g, /\?\?/g,
+  // ternary ? that is not ?. or ?: or optional chaining
+  /(?<![?!])\?(?![.?:])/g,
+];
+
+function computeTextCyclomaticComplexity(src: string): number {
+  // Strip string literals and comments to avoid counting keywords inside them
+  const stripped = src
+    .replace(/`[^`]*`/g, '``')
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+    .replace(/\/\/[^\n]*/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  let count = 0;
+  for (const pat of CC_PATTERNS) count += (stripped.match(pat) ?? []).length;
+  return 1 + count;
+}
+
+function computeTextNestingDepth(src: string): number {
+  let depth = 0, max = 0;
+  for (const ch of src) {
+    if (ch === '{') { depth++; if (depth > max) max = depth; }
+    else if (ch === '}') depth = Math.max(0, depth - 1);
+  }
+  return max;
 }

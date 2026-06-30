@@ -46,6 +46,12 @@ export interface Node {
   decorators?: string[];
   typeParameters?: string[];
   updatedAt: number;
+  // Complexity metrics (populated when enableComplexity=true)
+  complexityCyclomatic?: number;
+  complexityCognitive?: number;
+  complexityHalstead?: string;  // JSON: {n1,n2,N1,N2,vocabulary,length,volume,difficulty,effort}
+  maintainabilityIndex?: number;
+  nestingDepth?: number;
 }
 
 export interface Edge {

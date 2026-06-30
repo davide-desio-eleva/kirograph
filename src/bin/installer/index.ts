@@ -12,7 +12,7 @@ import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
-import { loadConfig, updateConfig } from '../../config';
+import { loadConfig, updateConfig, addExcludePatterns } from '../../config';
 import { printBanner } from '../banner';
 import { renderIndexProgress } from '../progress';
 import { dim, reset } from '../ui';
@@ -24,6 +24,26 @@ import type { InstallTarget, LateInstallOptions } from './common';
 import { getTargetInstaller } from './targets';
 import type { CavemanMode } from './caveman';
 import { applyImportedGlobalHooks } from '../../hooks/import-prompt';
+
+// Converts user-typed folder names/paths into glob exclude patterns:
+//   "src/gen"      -> "src/gen/**"   (relative path, anchored at root)
+//   "vendor"       -> "**/vendor/**" (bare name, matches at any depth)
+//   "/tools/build" -> "tools/build/**" (leading slash stripped)
+function normalizeFolderExcludes(raw: string): string[] {
+  return raw
+    .split(',')
+    .map(s => s.trim().replace(/\\/g, '/'))
+    .filter(Boolean)
+    .map(s => {
+      const stripped = s.startsWith('/') ? s.slice(1) : s;
+      if (!stripped) return '';
+      // Bare folder name (no path separator) → match at any depth
+      if (!stripped.includes('/')) return `**/${stripped}/**`;
+      // Path → anchor at project root
+      return stripped.endsWith('/**') ? stripped : `${stripped}/**`;
+    })
+    .filter(Boolean);
+}
 
 function _findRustc(): string | null {
   // Check PATH first, then the default rustup install location
@@ -114,7 +134,7 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
 
     // Ask Kiro IDE version as the first question for the kiro target
     let kiroHookFormat: 'v1-legacy' | 'v2' = 'v2';
-    if (target === 'kiro') {
+    if (target === 'kiro' && !opts.yes) {
       kiroHookFormat = await arrowSelect<'v1-legacy' | 'v2'>(rl, 'Which version of Kiro IDE are you using?', [
         { value: 'v1-legacy', label: 'Beta Version 0.x.x', description: 'Kiro IDE beta releases (uses .kiro.hook format)' },
         { value: 'v2',        label: 'Version 1.x.x',      description: 'Kiro IDE stable releases (uses .json hook format)' },
@@ -138,7 +158,11 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
     let wikiSynthesisMode: 'local' | 'agent' = 'agent';
     let wikiLocalModel = 'onnx-community/gemma-4-E4B-it-ONNX';
     let enableCodeHealth = false;
-    let enableAdvancedAnalysis = false;
+    let enableNavigation = false;
+    let enableComplexity = false;
+    let enableGitContext = false;
+    let enableEditPrimitives = false;
+    let enableBranch = false;
     let enableAgentUtils = false;
     let enableGeneralCompression = false;
     let trackCallSites = false;
@@ -163,8 +187,12 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
         enableWiki = config.enableWiki ?? false;
         wikiSynthesisMode = config.wikiSynthesisMode ?? 'agent';
         wikiLocalModel = config.wikiLocalModel ?? 'onnx-community/gemma-4-E4B-it-ONNX';
-        enableCodeHealth = config.enableCodeHealth ?? true;
-        enableAdvancedAnalysis = config.enableAdvancedAnalysis ?? false;
+        enableCodeHealth = config.enableCodeHealth ?? false;
+        enableNavigation = config.enableNavigation ?? false;
+        enableComplexity = config.enableComplexity ?? false;
+        enableGitContext = config.enableGitContext ?? false;
+        enableEditPrimitives = config.enableEditPrimitives ?? false;
+        enableBranch = config.enableBranch ?? false;
         enableAgentUtils = config.enableAgentUtils ?? true;
         enableGeneralCompression = config.enableGeneralCompression ?? false;
         trackCallSites = config.trackCallSites ?? false;
@@ -219,7 +247,11 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
         wikiSynthesisMode = (patch as any).wikiSynthesisMode ?? 'agent';
         wikiLocalModel = (patch as any).wikiLocalModel ?? 'onnx-community/gemma-4-E4B-it-ONNX';
         enableCodeHealth = patch.enableCodeHealth ?? false;
-        enableAdvancedAnalysis = patch.enableAdvancedAnalysis ?? false;
+        enableNavigation = patch.enableNavigation ?? false;
+        enableComplexity = patch.enableComplexity ?? false;
+        enableGitContext = patch.enableGitContext ?? false;
+        enableEditPrimitives = patch.enableEditPrimitives ?? false;
+        enableBranch = patch.enableBranch ?? false;
         enableAgentUtils = patch.enableAgentUtils ?? false;
         enableGeneralCompression = patch.enableGeneralCompression ?? false;
         trackCallSites = patch.trackCallSites ?? false;
@@ -394,8 +426,9 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
       const lateOpts: LateInstallOptions = {
         cavemanMode, shellCompressionLevel, enableMemory, enableDocs, enableData, enableSecurity,
         enableArchitecture, enablePatterns, enableWatchmen, watchmenSynthesisMode, enableWiki,
-        wikiSynthesisMode, wikiLocalModel, enableCodeHealth, enableAdvancedAnalysis, enableAgentUtils,
-        enableGeneralCompression, trackCallSites, kiroHookFormat,
+        wikiSynthesisMode, wikiLocalModel,
+        enableCodeHealth, enableNavigation, enableComplexity, enableGitContext, enableEditPrimitives, enableBranch,
+        enableAgentUtils, enableGeneralCompression, trackCallSites, kiroHookFormat,
       };
       installer.installLate(cwd, lateOpts);
       if (target === 'kiro' && hooksToImport && hooksToImport.length > 0) {
@@ -412,7 +445,17 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
       await ensureQdrantUI(cwd);
     }
 
-    // 6. Optionally init + index
+    // 6. Optionally exclude folders before indexing
+    if (shouldOfferIndex && !opts.yes) {
+      const rawExclude = await ask(rl, `  \x1b[38;5;99mAny folders to exclude from indexing?\x1b[0m \x1b[2m(optional, comma-separated, e.g. src/generated, vendor, /tools/scripts)\x1b[0m `);
+      const extraExcludes = normalizeFolderExcludes(rawExclude);
+      if (extraExcludes.length > 0) {
+        await addExcludePatterns(cwd, extraExcludes);
+        console.log(`  ✓ Excluding: ${extraExcludes.join(', ')}`);
+      }
+    }
+
+    // 7. Optionally init + index
     const doIndex = shouldOfferIndex && (opts.yes || await askToggle(rl, 'Initialize and index this project now?', 'Creates .kirograph/ and indexes all source files. Takes a few seconds for small projects, longer for large ones.'));
     if (doIndex) {
       const KiroGraph = (await import('../../index')).default;

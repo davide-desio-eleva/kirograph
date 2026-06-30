@@ -56,7 +56,7 @@
     <div class="sidebar-section">
       <div class="sidebar-heading">Core Concepts</div>
       <a href="#how-indexing-works" class="sidebar-link">How Indexing Works</a>
-      <a href="#token-budget" class="sidebar-link" style="padding-left:1.5rem;">↳ Token budget <span style="display:inline-block;padding:0.1rem 0.45rem;background:rgba(100,100,100,0.12);border:1px solid rgba(100,100,100,0.2);border-radius:4px;font-size:0.7em;color:var(--muted);vertical-align:middle;margin-left:0.3rem;">~4,367 tok</span></a>
+      <a href="#token-budget" class="sidebar-link" style="padding-left:1.5rem;">↳ Token budget <span style="display:inline-block;padding:0.1rem 0.45rem;background:rgba(100,100,100,0.12);border:1px solid rgba(100,100,100,0.2);border-radius:4px;font-size:0.7em;color:var(--muted);vertical-align:middle;margin-left:0.3rem;">~5,290 tok</span></a>
       <a href="#languages" class="sidebar-link">Languages</a>
       <a href="#frameworks" class="sidebar-link">Frameworks</a>
       <a href="#using-with-kiro" class="sidebar-link">Using with Kiro</a>
@@ -195,22 +195,22 @@ kirograph install --target kiro   # install for a specific platform only</code><
     <h3 id="cmp-code-graph">Code Graph &amp; Analysis</h3>
     <div style="overflow-x:auto;">
     <table class="config-table cmp-filterable">
-      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>jMunch</th></tr></thead>
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>jMunch</th><th>tokensave</th></tr></thead>
       <tbody>
-        <tr><td>Tree-sitter AST parsing</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Symbol search (FTS)</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Call graph (callers/callees)</td><td>✅</td><td>✅</td><td>✅</td><td>—</td></tr>
-        <tr><td>Impact/blast radius</td><td>✅</td><td>✅</td><td>✅</td><td>—</td></tr>
-        <tr><td>Type hierarchy traversal</td><td>✅</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Circular dependency detection</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
-        <tr><td>Dead code detection</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
-        <tr><td>Hotspot/hub detection</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
-        <tr><td>Execution flow tracing</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
-        <tr><td>Community/cluster detection</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
-        <tr><td>Edge confidence scoring</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
-        <tr><td>Framework-aware routes</td><td>✅ (14+)</td><td>✅ (14)</td><td>—</td><td>—</td></tr>
-        <tr><td>Trace (path between symbols)</td><td>✅</td><td>✅</td><td>—</td><td>—</td></tr>
-        <tr><td>Mixed iOS/RN bridging</td><td>✅</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td>Tree-sitter AST parsing</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Symbol search (FTS)</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Call graph (callers/callees)</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>✅</td></tr>
+        <tr><td>Impact/blast radius</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>✅</td></tr>
+        <tr><td>Type hierarchy traversal</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Circular dependency detection</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>✅</td></tr>
+        <tr><td>Dead code detection</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>✅</td></tr>
+        <tr><td>Hotspot/hub detection</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td>Execution flow tracing</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>✅</td></tr>
+        <tr><td>Community/cluster detection</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td>Edge confidence scoring</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td>Framework-aware routes</td><td>✅ (14+)</td><td>✅ (14)</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Trace (path between symbols)</td><td>✅</td><td>✅</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Mixed iOS/RN bridging</td><td>✅</td><td>✅</td><td>—</td><td>—</td><td>—</td></tr>
       </tbody>
     </table>
     </div>
@@ -220,13 +220,13 @@ kirograph install --target kiro   # install for a specific platform only</code><
     <h3 id="cmp-architecture">Architecture &amp; Refactoring</h3>
     <div style="overflow-x:auto;">
     <table class="config-table cmp-filterable">
-      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th></tr></thead>
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>tokensave</th></tr></thead>
       <tbody>
-        <tr><td>Package graph</td><td>✅</td><td>—</td><td>—</td></tr>
-        <tr><td>Layer detection</td><td>✅</td><td>—</td><td>—</td></tr>
-        <tr><td>Coupling metrics (Ca/Ce/instability)</td><td>✅</td><td>—</td><td>—</td></tr>
-        <tr><td>Refactoring suggestions</td><td>✅</td><td>—</td><td>✅</td></tr>
-        <tr><td>Rename preview</td><td>✅</td><td>—</td><td>✅</td></tr>
+        <tr><td>Package graph</td><td>✅</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Layer detection</td><td>✅</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Coupling metrics (Ca/Ce/instability)</td><td>✅</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Refactoring suggestions</td><td>✅</td><td>—</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Rename preview</td><td>✅</td><td>—</td><td>✅</td><td>✅</td></tr>
       </tbody>
     </table>
     </div>
@@ -237,34 +237,34 @@ kirograph install --target kiro   # install for a specific platform only</code><
     <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1rem;">None of the compared MCP tools include dependency vulnerability scanning. The relevant comparison for this module is against dedicated SCA tools — see the <a href="#security" style="color:var(--accent);">security section</a> for configuration and CLI reference, or the table below for a direct SCA comparison.</p>
     <div style="overflow-x:auto;">
     <table class="config-table cmp-filterable">
-      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>jMunch</th><th>cavemem</th><th>rtk</th></tr></thead>
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>jMunch</th><th>cavemem</th><th>rtk</th><th>tokensave</th></tr></thead>
       <tbody>
-        <tr><td>Dependency vulnerability scanning</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>OSV vulnerability database</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Batch OSV queries (1000 deps/request)</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Call-graph reachability analysis</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Combined risk score (CVSS + EPSS + reachability + staleness)</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Architecture-layer impact (affected layers)</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>CycloneDX 1.5 SBOM export</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>CycloneDX 1.5 VEX export</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Fix suggestions per ecosystem</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>EPSS exploitation probability</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>License compliance (SPDX + policy)</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Dependency staleness score</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Dashboard security overlay</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>CVE suppression list</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Manual CVE registration</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Queryable via MCP by AI agents</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Call-graph attack surface mapping</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Secrets detection with blast radius</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>SAST-lite (SQL injection, eval, path traversal)</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>AST-based SAST (ast-grep patterns)</td><td>✅ opt-in</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Live structural code search (kirograph_live_search)</td><td>✅ opt-in</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Supply chain health (OpenSSF Scorecard)</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Dependency confusion detection</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Remediation SLA tracking</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>CI/CD SARIF export (GitHub Security tab)</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>OWASP Top 10 mapping</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Dependency vulnerability scanning</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>OSV vulnerability database</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Batch OSV queries (1000 deps/request)</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Call-graph reachability analysis</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Combined risk score (CVSS + EPSS + reachability + staleness)</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Architecture-layer impact (affected layers)</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>CycloneDX 1.5 SBOM export</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>CycloneDX 1.5 VEX export</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Fix suggestions per ecosystem</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>EPSS exploitation probability</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>License compliance (SPDX + policy)</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Dependency staleness score</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Dashboard security overlay</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>CVE suppression list</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Manual CVE registration</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Queryable via MCP by AI agents</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Call-graph attack surface mapping</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Secrets detection with blast radius</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>SAST-lite (SQL injection, eval, path traversal)</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>AST-based SAST (ast-grep patterns)</td><td>✅ opt-in</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Live structural code search (kirograph_live_search)</td><td>✅ opt-in</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Supply chain health (OpenSSF Scorecard)</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Dependency confusion detection</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Remediation SLA tracking</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>CI/CD SARIF export (GitHub Security tab)</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>OWASP Top 10 mapping</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
       </tbody>
     </table>
     </div>
@@ -290,26 +290,26 @@ kirograph install --target kiro   # install for a specific platform only</code><
     <h3 id="cmp-memory">Semantic Search &amp; Memory</h3>
     <div style="overflow-x:auto;">
     <table class="config-table cmp-filterable">
-      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>cavemem</th><th>lean-ctx</th><th>Engram</th></tr></thead>
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>cavemem</th><th>lean-ctx</th><th>Engram</th><th>tokensave</th></tr></thead>
       <tbody>
-        <tr><td>Vector embeddings</td><td>✅</td><td>—</td><td>✅</td><td>✅</td><td>—</td><td>—</td></tr>
-        <tr><td>9 pluggable semantic engines</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Custom HuggingFace models</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Embedding compression 20–30× (TurboQuant)</td><td>✅ (v0.21.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>SIMD-accelerated ANN (TurboVec/Rust)</td><td>✅ (v0.23.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Persistent cross-session memory</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
-        <tr><td>Observations linked to symbols</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Conflict detection (relations)</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>Stale observation review</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>Passive learning capture</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>Stable topic key</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>Session synthesis / workspace briefs</td><td>✅ (v0.20.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Compressed storage</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>✅</td><td>—</td></tr>
-        <tr><td>Zero LLM tokens on write</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>✅</td><td>—</td></tr>
-        <tr><td>FTS search</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>Cloud / git sync</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>Knowledge graph (temporal facts)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
-        <tr><td>Property graph (code edges)</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Vector embeddings</td><td>✅</td><td>—</td><td>✅</td><td>✅</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>9 pluggable semantic engines</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Custom HuggingFace models</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Embedding compression 20–30× (TurboQuant)</td><td>✅ (v0.21.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>SIMD-accelerated ANN (TurboVec/Rust)</td><td>✅ (v0.23.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Persistent cross-session memory</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>—</td></tr>
+        <tr><td>Observations linked to symbols</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Conflict detection (relations)</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Stale observation review</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Passive learning capture</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Stable topic key</td><td>✅ (v0.24.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Session synthesis / workspace briefs</td><td>✅ (v0.20.0)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Compressed storage</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td>Zero LLM tokens on write</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td>FTS search</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Cloud / git sync</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Knowledge graph (temporal facts)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td>Property graph (code edges)</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td></tr>
       </tbody>
     </table>
     </div>
@@ -319,15 +319,15 @@ kirograph install --target kiro   # install for a specific platform only</code><
     <h3 id="cmp-docs-data">Documentation &amp; Data</h3>
     <div style="overflow-x:auto;">
     <table class="config-table cmp-filterable">
-      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>jMunch</th></tr></thead>
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>jMunch</th><th>tokensave</th></tr></thead>
       <tbody>
-        <tr><td>Documentation indexing</td><td>✅ (9 formats)</td><td>—</td><td>—</td><td>✅ (8+)</td></tr>
-        <tr><td>Section-level retrieval</td><td>✅</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>Code ↔ docs cross-references</td><td>✅</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Tabular data querying</td><td>✅</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>CSV/JSON/Excel/Parquet</td><td>✅</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>PDF indexing (page-level)</td><td>✅ (v0.22.0)</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>Server-side aggregations</td><td>✅</td><td>—</td><td>—</td><td>✅</td></tr>
+        <tr><td>Documentation indexing</td><td>✅ (9 formats)</td><td>—</td><td>—</td><td>✅ (8+)</td><td>—</td></tr>
+        <tr><td>Section-level retrieval</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Code ↔ docs cross-references</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Tabular data querying</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>CSV/JSON/Excel/Parquet</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>PDF indexing (page-level)</td><td>✅ (v0.22.0)</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Server-side aggregations</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
       </tbody>
     </table>
     </div>
@@ -337,19 +337,19 @@ kirograph install --target kiro   # install for a specific platform only</code><
     <h3 id="cmp-tokens">Token Optimization</h3>
     <div style="overflow-x:auto;">
     <table class="config-table cmp-filterable">
-      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>caveman</th><th>rtk</th><th>lean-ctx</th><th>headroom</th></tr></thead>
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>caveman</th><th>rtk</th><th>lean-ctx</th><th>headroom</th><th>tokensave</th></tr></thead>
       <tbody>
-        <tr><td>Shell output compression</td><td>✅ (kirograph_exec)</td><td>—</td><td>—</td><td>—</td><td>✅ (20+)</td><td>✅ (56 modules)</td><td>✅</td></tr>
-        <tr><td>Agent prose compression</td><td>✅ (lite/full/ultra)</td><td>—</td><td>—</td><td>✅</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>On-demand compression (any text)</td><td>✅ (kirograph_compress)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅ (CCR core)</td></tr>
-        <tr><td>File read caching</td><td>✅ (kirograph_read)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅ (~13 tokens)</td><td>✅</td></tr>
-        <tr><td>CCR (retrieve cached content)</td><td>✅ (kirograph_retrieve)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>KV cache prefix stability</td><td>✅ (stable markers)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>Multiple read modes (map/sig/diff)</td><td>✅ (kirograph_read)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅ (10 modes)</td><td>—</td></tr>
-        <tr><td>Token analytics/tracking</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td><td>✅ (dashboard)</td><td>—</td></tr>
-        <tr><td>Context budget/governance</td><td>✅ (kirograph_budget)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
-        <tr><td>Estimated context savings</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
-        <tr><td>Reproducible benchmarks</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Shell output compression</td><td>✅ (kirograph_exec)</td><td>—</td><td>—</td><td>—</td><td>✅ (20+)</td><td>✅ (56 modules)</td><td>✅</td><td>—</td></tr>
+        <tr><td>Agent prose compression</td><td>✅ (lite/full/ultra)</td><td>—</td><td>—</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>On-demand compression (any text)</td><td>✅ (kirograph_compress)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅ (CCR core)</td><td>—</td></tr>
+        <tr><td>File read caching</td><td>✅ (kirograph_read)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅ (~13 tokens)</td><td>✅</td><td>—</td></tr>
+        <tr><td>CCR (retrieve cached content)</td><td>✅ (kirograph_retrieve)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>KV cache prefix stability</td><td>✅ (stable markers)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Multiple read modes (map/sig/diff)</td><td>✅ (kirograph_read)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅ (10 modes)</td><td>—</td><td>—</td></tr>
+        <tr><td>Token analytics/tracking</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td><td>✅ (dashboard)</td><td>—</td><td>✅</td></tr>
+        <tr><td>Context budget/governance</td><td>✅ (kirograph_budget)</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td><td>—</td></tr>
+        <tr><td>Estimated context savings</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>—</td><td>✅</td></tr>
+        <tr><td>Reproducible benchmarks</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>—</td><td>✅</td><td>—</td><td>✅ (per-call metrics)</td></tr>
       </tbody>
     </table>
     </div>
@@ -359,15 +359,15 @@ kirograph install --target kiro   # install for a specific platform only</code><
     <h3 id="cmp-integration">Integration &amp; Platform Support</h3>
     <div style="overflow-x:auto;">
     <table class="config-table cmp-filterable">
-      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>jMunch</th><th>cavemem</th><th>rtk</th><th>lean-ctx</th></tr></thead>
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>jMunch</th><th>cavemem</th><th>rtk</th><th>lean-ctx</th><th>tokensave</th></tr></thead>
       <tbody>
-        <tr><td>MCP server (stdio)</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>✅ (62 tools)</td></tr>
-        <tr><td>Multi-platform targets</td><td>✅ (34)</td><td>✅ (7)</td><td>✅ (13)</td><td>—</td><td>—</td><td>✅ (any)</td><td>✅ (28+)</td></tr>
-        <tr><td>Auto-detection</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>Auto-sync hooks</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>✅</td></tr>
-        <tr><td>Interactive visualization</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>✅ (dashboard)</td></tr>
-        <tr><td>Graph export (GraphML/Cypher/Obsidian)</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-        <tr><td>100% local (no API keys)</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>MCP server (stdio)</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>✅ (62 tools)</td><td>✅</td></tr>
+        <tr><td>Multi-platform targets</td><td>✅ (34)</td><td>✅ (7)</td><td>✅ (13)</td><td>—</td><td>—</td><td>✅ (any)</td><td>✅ (28+)</td><td>—</td></tr>
+        <tr><td>Auto-detection</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Auto-sync hooks</td><td>✅</td><td>✅</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>✅</td><td>—</td></tr>
+        <tr><td>Interactive visualization</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>✅ (dashboard)</td><td>—</td></tr>
+        <tr><td>Graph export (GraphML/Cypher/Obsidian)</td><td>✅</td><td>—</td><td>✅</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>100% local (no API keys)</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
       </tbody>
     </table>
     </div>
@@ -377,11 +377,11 @@ kirograph install --target kiro   # install for a specific platform only</code><
     <h3 id="cmp-languages">Language &amp; Framework Support</h3>
     <div style="overflow-x:auto;">
     <table class="config-table cmp-filterable">
-      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>jMunch</th></tr></thead>
+      <thead><tr><th>Feature</th><th>KiroGraph</th><th>CodeGraph</th><th>CRG</th><th>jMunch</th><th>tokensave</th></tr></thead>
       <tbody>
-        <tr><td>Languages supported</td><td>33+</td><td>22</td><td>30+</td><td>20+</td></tr>
-        <tr><td>Framework detection</td><td>✅ (26)</td><td>✅ (14)</td><td>—</td><td>—</td></tr>
-        <tr><td>Route extraction</td><td>✅ (14+)</td><td>✅ (14)</td><td>—</td><td>—</td></tr>
+        <tr><td>Languages supported</td><td>33+</td><td>22</td><td>30+</td><td>20+</td><td>50+</td></tr>
+        <tr><td>Framework detection</td><td>✅ (26)</td><td>✅ (14)</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>Route extraction</td><td>✅ (14+)</td><td>✅ (14)</td><td>—</td><td>—</td><td>—</td></tr>
       </tbody>
     </table>
     </div>
@@ -477,26 +477,31 @@ kirograph install --target kiro   # install for a specific platform only</code><
     <p>Each dataset is profiled with column types, cardinality, null rates, min/max, sample values, and auto-generated NL summaries. Data files are cross-referenced to code symbols via path detection (<code>readFileSync</code>, <code>pd.read_csv</code>, SQL <code>COPY FROM</code>, <code>pdfplumber.open</code>, etc.) and stored as <code>data_code_refs</code>.</p>
 
     <h3 id="token-budget">Context token budget per module</h3>
-    <p>Every enabled tool is registered in the model context on each MCP call. The full tool list costs <strong>~4,367 tokens</strong> with all flags enabled; enabling only the modules you need cuts this proportionally.</p>
+    <p>Every enabled tool is registered in the model context on each MCP call. The full tool list costs <strong>~5,290 tokens</strong> with all flags enabled; enabling only the modules you need cuts this proportionally.</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Flag</th><th>Tools</th><th>~Tokens</th></tr></thead>
         <tbody>
-          <tr><td><em>core (always-on)</em></td><td>8</td><td>~472</td></tr>
+          <tr><td><em>core (always-on)</em></td><td>3</td><td>~170</td></tr>
+          <tr><td><code>enableNavigation</code></td><td>3</td><td>~120</td></tr>
           <tr><td><code>enableMemory</code></td><td>16</td><td>~746</td></tr>
           <tr><td><code>enableSecurity</code></td><td>15</td><td>~675</td></tr>
           <tr><td><code>enableData</code></td><td>10</td><td>~519</td></tr>
           <tr><td><code>enableWiki</code></td><td>10</td><td>~319</td></tr>
-          <tr><td><code>enableCodeHealth</code></td><td>7</td><td>~309</td></tr>
-          <tr><td><code>enableAdvancedAnalysis</code></td><td>4</td><td>~210</td></tr>
+          <tr><td><code>enableCodeHealth</code></td><td>25</td><td>~935</td></tr>
+          <tr><td><code>enableDocs</code></td><td>5</td><td>~241</td></tr>
           <tr><td><code>enableAgentUtils</code></td><td>4</td><td>~278</td></tr>
-          <tr><td><code>enableArchitecture</code></td><td>3</td><td>~142</td></tr>
+          <tr><td><code>enableArchitecture</code></td><td>5</td><td>~205</td></tr>
           <tr><td><code>enableWatchmen</code></td><td>3</td><td>~140</td></tr>
           <tr><td><code>enablePatterns</code></td><td>3</td><td>~93</td></tr>
+          <tr><td><code>trackCallSites</code></td><td>2</td><td>~84</td></tr>
+          <tr><td><code>enableGitContext</code></td><td>7</td><td>~410</td></tr>
+          <tr><td><code>enableComplexity</code></td><td>5</td><td>~660</td></tr>
+          <tr><td><code>enableEditPrimitives</code></td><td>5</td><td>~280</td></tr>
+          <tr><td><code>enableBranch</code></td><td>3</td><td>~300</td></tr>
           <tr><td><code>enableShellExec</code></td><td>1</td><td>~71</td></tr>
           <tr><td><code>enableGeneralCompression</code></td><td>1</td><td>~68</td></tr>
-          <tr><td><code>trackCallSites</code></td><td>2</td><td>~84</td></tr>
-          <tr style="font-weight:600;border-top:2px solid var(--border)"><td>Total (all flags)</td><td>92</td><td>~4,367</td></tr>
+          <tr style="font-weight:600;border-top:2px solid var(--border)"><td>Total (all flags)</td><td>126</td><td>~6,240</td></tr>
         </tbody>
       </table>
     </div>
@@ -1833,6 +1838,7 @@ npm run build   # requires Rust toolchain — https://rustup.rs</code></pre>
       <li><a href="https://github.com/danilodevhub/turboquant-js" target="_blank" rel="noopener">turboquant-js</a> by <a href="https://github.com/danilodevhub" target="_blank" rel="noopener">Danilo Dev</a>: the TurboQuant engine — TypeScript implementation of Google's Walsh-Hadamard + Lloyd-Max quantization algorithm used for embedding compression.</li>
       <li><a href="https://github.com/RyanCodrai/turbovec" target="_blank" rel="noopener">turbovec</a> by <a href="https://github.com/RyanCodrai" target="_blank" rel="noopener">Ryan Codrai</a>: the TurboVec engine — Rust implementation of TurboQuant with SIMD acceleration, exposed to Node.js via a napi-rs native addon.</li>
       <li><a href="https://github.com/firecrawl/pdf-inspector" target="_blank" rel="noopener">pdf-inspector</a> by <a href="https://github.com/firecrawl" target="_blank" rel="noopener">Firecrawl</a>: the PDF parser used in the data module — pure Rust, no OCR, no network, prebuilt binaries for linux-x64 and macOS ARM64. Exposes per-page markdown extraction with OCR and layout flags via a napi-rs native addon.</li>
+      <li><a href="https://tokensave.dev" target="_blank" rel="noopener">tokensave</a>: gap-close roadmap inspiration — code quality tools (complexity, god class, recursion, doc coverage), git workflow context tools (diff_context, commit_context, test_map), atomic edit primitives, multi-branch indexing, per-call token metrics, and MCP protocol annotations (<code>readOnlyHint</code>, <code>alwaysLoad</code>).</li>
     </ul>
 
     <h3 id="credits-contributors">Contributors</h3>

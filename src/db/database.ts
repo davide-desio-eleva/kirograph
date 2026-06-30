@@ -11,7 +11,7 @@ import type { ArchPackage, ArchLayer, ArchPackageDep, ArchLayerDep, ArchCoupling
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { Database } = require('node-sqlite3-wasm');
 
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
 
 export class GraphDatabase {
   private db: any;
@@ -165,11 +165,23 @@ export class GraphDatabase {
     const versionRow = this.db.get('SELECT version FROM schema_versions ORDER BY version DESC LIMIT 1');
     const currentVersion = versionRow ? versionRow.version : 0;
 
-    if (currentVersion < CURRENT_SCHEMA_VERSION) {
-      // Migration 1: schema.sql now includes all columns — nothing extra needed.
-      // The schema CREATE IF NOT EXISTS statements handle initial setup.
+    if (currentVersion < 2) {
+      // Migration 2: add complexity metric columns to nodes table.
+      for (const col of [
+        'complexity_cyclomatic INTEGER',
+        'complexity_cognitive INTEGER',
+        'complexity_halstead TEXT',
+        'maintainability_index REAL',
+        'nesting_depth INTEGER',
+      ]) {
+        try { this.db.run(`ALTER TABLE nodes ADD COLUMN ${col}`); } catch { /* already exists */ }
+      }
+      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [2, Date.now()]);
+    }
+    if (currentVersion < 1) {
+      // Migration 1: schema.sql CREATE IF NOT EXISTS handles initial setup.
       this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)',
-        [CURRENT_SCHEMA_VERSION, Date.now()]);
+        [1, Date.now()]);
     }
 
     // Add attempted_strategies column to unresolved_refs if not present.
@@ -238,8 +250,10 @@ export class GraphDatabase {
          start_line, end_line, start_column, end_column,
          docstring, signature, visibility,
          is_exported, is_async, is_static, is_abstract,
-         decorators, type_parameters, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         decorators, type_parameters, updated_at,
+         complexity_cyclomatic, complexity_cognitive, complexity_halstead,
+         maintainability_index, nesting_depth)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         node.id, node.kind, node.name, node.qualifiedName, node.filePath, node.language,
         node.startLine, node.endLine, node.startColumn, node.endColumn,
@@ -249,6 +263,9 @@ export class GraphDatabase {
         node.decorators ? JSON.stringify(node.decorators) : null,
         node.typeParameters ? JSON.stringify(node.typeParameters) : null,
         node.updatedAt,
+        node.complexityCyclomatic ?? null, node.complexityCognitive ?? null,
+        node.complexityHalstead ?? null, node.maintainabilityIndex ?? null,
+        node.nestingDepth ?? null,
       ]
     );
     // Keep FTS in sync
@@ -378,6 +395,11 @@ export class GraphDatabase {
       decorators: row.decorators ? JSON.parse(row.decorators) : undefined,
       typeParameters: row.type_parameters ? JSON.parse(row.type_parameters) : undefined,
       updatedAt: row.updated_at,
+      complexityCyclomatic: row.complexity_cyclomatic ?? undefined,
+      complexityCognitive: row.complexity_cognitive ?? undefined,
+      complexityHalstead: row.complexity_halstead ?? undefined,
+      maintainabilityIndex: row.maintainability_index ?? undefined,
+      nestingDepth: row.nesting_depth ?? undefined,
     };
   }
 

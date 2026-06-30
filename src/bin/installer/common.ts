@@ -20,7 +20,11 @@ export interface LateInstallOptions {
   wikiSynthesisMode?: 'local' | 'agent';
   wikiLocalModel?: string;
   enableCodeHealth?: boolean;
-  enableAdvancedAnalysis?: boolean;
+  enableNavigation?: boolean;
+  enableComplexity?: boolean;
+  enableGitContext?: boolean;
+  enableEditPrimitives?: boolean;
+  enableBranch?: boolean;
   enableAgentUtils?: boolean;
   enableGeneralCompression?: boolean;
   trackCallSites?: boolean;
@@ -160,7 +164,11 @@ export function buildInstructionOpts(opts: LateInstallOptions, hasHooks?: boolea
     enablePatterns: opts.enablePatterns ?? false,
     enableWiki: opts.enableWiki ?? false,
     enableCodeHealth: opts.enableCodeHealth ?? false,
-    enableAdvancedAnalysis: opts.enableAdvancedAnalysis ?? false,
+    enableNavigation: opts.enableNavigation ?? false,
+    enableComplexity: opts.enableComplexity ?? false,
+    enableGitContext: opts.enableGitContext ?? false,
+    enableEditPrimitives: opts.enableEditPrimitives ?? false,
+    enableBranch: opts.enableBranch ?? false,
     enableAgentUtils: opts.enableAgentUtils ?? false,
     enableGeneralCompression: opts.enableGeneralCompression ?? false,
     trackCallSites: opts.trackCallSites ?? false,

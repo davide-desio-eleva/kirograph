@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KiroGraph: MCP Tools Reference</title>
-  <meta name="description" content="Full reference for all 92 KiroGraph MCP tools: parameters, types, defaults, and descriptions.">
+  <meta name="description" content="Full reference for all 126 KiroGraph MCP tools: parameters, types, defaults, and descriptions.">
   <link rel="stylesheet" href="style.css">
   <link rel="icon" href="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png">
 </head>
@@ -51,8 +51,8 @@
       <a href="docs.html">Docs</a> <span class="breadcrumb-sep">/</span> <span>MCP Tools</span>
     </nav>
 
-    <h2 id="core-tools" style="border-top: none; margin-top: 0; padding-top: 0;">Core Tools <span class="badge" style="background: rgba(100,100,100,0.12); color: var(--muted); border: 1px solid rgba(100,100,100,0.2); font-size: 0.7em;">8 tools · ~472 tok</span></h2>
-    <p>All <strong>92</strong> tools are auto-approved and available to Kiro once installed. The MCP server is started by Kiro automatically when needed.</p>
+    <h2 id="core-tools" style="border-top: none; margin-top: 0; padding-top: 0;">Core Tools <span class="badge" style="background: rgba(100,100,100,0.12); color: var(--muted); border: 1px solid rgba(100,100,100,0.2); font-size: 0.7em;">3 tools · ~145 tok</span></h2>
+    <p>All <strong>126</strong> tools are auto-approved and available to Kiro once installed. The MCP server is started by Kiro automatically when needed.</p>
 
     <div class="search-box" style="margin-bottom: 1.5rem;">
       <input type="text" id="tool-search-input" placeholder="Search tools..." aria-label="Search tools" style="width: 100%; padding: 0.6rem 1rem; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-card); color: var(--text); font-size: 0.95rem; outline: none;" />
@@ -93,22 +93,6 @@
       </div>
     </div>
 
-    <!-- kirograph_impact -->
-    <div class="tool-card" id="tool-impact">
-      <h3>kirograph_impact</h3>
-      <p class="tool-desc">Analyze what code would be affected by changing a symbol. Use before making changes. BFS traversal of all incoming edges.</p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
-          <tbody>
-            <tr><td><code>symbol</code></td><td>string</td><td><em>required</em></td><td>Symbol name</td></tr>
-            <tr><td><code>depth</code></td><td>number</td><td>2</td><td>Traversal depth</td></tr>
-            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
     <!-- kirograph_node -->
     <div class="tool-card" id="tool-node">
       <h3>kirograph_node</h3>
@@ -126,16 +110,17 @@
       </div>
     </div>
 
-    <!-- kirograph_path -->
-    <div class="tool-card" id="tool-path">
-      <h3>kirograph_path</h3>
-      <p class="tool-desc">Find the shortest path between two symbols in the dependency graph. Undirected BFS across all edge types.</p>
+    <!-- ── Navigation ── -->
+    <h2 id="navigation-tools" style="margin-top: 3rem;">Navigation <span class="badge">enableNavigation</span> <span class="badge" style="background: rgba(100,100,100,0.12); color: var(--muted); border: 1px solid rgba(100,100,100,0.2); font-size: 0.7em;">3 tools · ~100 tok</span></h2>
+
+    <!-- kirograph_status -->
+    <div class="tool-card" id="tool-status">
+      <h3>kirograph_status <span class="badge">requires enableNavigation</span></h3>
+      <p class="tool-desc">Check index health and statistics: files indexed, symbol count, edge count, breakdown by kind and language, frameworks detected, database size, semantic search status, and sync state.</p>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td><code>from</code></td><td>string</td><td><em>required</em></td><td>Source symbol name</td></tr>
-            <tr><td><code>to</code></td><td>string</td><td><em>required</em></td><td>Target symbol name</td></tr>
             <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
           </tbody>
         </table>
@@ -144,7 +129,7 @@
 
     <!-- kirograph_files -->
     <div class="tool-card" id="tool-files">
-      <h3>kirograph_files</h3>
+      <h3>kirograph_files <span class="badge">requires enableNavigation</span></h3>
       <p class="tool-desc">List the indexed file structure with filtering and format options.</p>
       <div class="table-wrap">
         <table>
@@ -161,14 +146,16 @@
       </div>
     </div>
 
-    <!-- kirograph_status -->
-    <div class="tool-card" id="tool-status">
-      <h3>kirograph_status</h3>
-      <p class="tool-desc">Check index health and statistics: files indexed, symbol count, edge count, breakdown by kind and language, frameworks detected, database size, semantic search status, and sync state.</p>
+    <!-- kirograph_impact -->
+    <div class="tool-card" id="tool-impact">
+      <h3>kirograph_impact <span class="badge">requires enableNavigation</span></h3>
+      <p class="tool-desc">Analyze what code would be affected by changing a symbol. Use before making changes. BFS traversal of all incoming edges.</p>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
           <tbody>
+            <tr><td><code>symbol</code></td><td>string</td><td><em>required</em></td><td>Symbol name</td></tr>
+            <tr><td><code>depth</code></td><td>number</td><td>2</td><td>Traversal depth</td></tr>
             <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
           </tbody>
         </table>
@@ -211,7 +198,7 @@
     </div>
 
     <!-- ── Code Health ── -->
-    <h2 id="codehealth-tools" style="margin-top: 3rem;">Code Health <span class="badge">enableCodeHealth</span> <span class="badge" style="background: rgba(100,100,100,0.12); color: var(--muted); border: 1px solid rgba(100,100,100,0.2); font-size: 0.7em;">7 tools · ~309 tok</span></h2>
+    <h2 id="codehealth-tools" style="margin-top: 3rem;">Code Health <span class="badge">enableCodeHealth</span> <span class="badge" style="background: rgba(100,100,100,0.12); color: var(--muted); border: 1px solid rgba(100,100,100,0.2); font-size: 0.7em;">25 tools · ~935 tok</span></h2>
 
     <!-- kirograph_dead_code -->
     <div class="tool-card" id="tool-dead-code">
@@ -287,9 +274,6 @@
       </div>
     </div>
 
-    <!-- ── Advanced Analysis ── -->
-    <h2 id="advanced-tools" style="margin-top: 3rem;">Advanced Analysis <span class="badge">enableAdvancedAnalysis</span> <span class="badge" style="background: rgba(100,100,100,0.12); color: var(--muted); border: 1px solid rgba(100,100,100,0.2); font-size: 0.7em;">4 tools · ~210 tok</span></h2>
-
     <!-- kirograph_type_hierarchy -->
     <div class="tool-card" id="tool-type-hierarchy">
       <h3>kirograph_type_hierarchy</h3>
@@ -306,8 +290,298 @@
       </div>
     </div>
 
+    <!-- kirograph_snapshot_save -->
+    <div class="tool-card" id="tool-snapshot-save">
+      <h3>kirograph_snapshot_save</h3>
+      <p class="tool-desc">Save a snapshot of the current graph state.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>label</code></td><td>string</td><td>-</td><td>Snapshot label</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_snapshot_list -->
+    <div class="tool-card" id="tool-snapshot-list">
+      <h3>kirograph_snapshot_list</h3>
+      <p class="tool-desc">List all saved graph snapshots.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_path (Code Health) -->
+    <div class="tool-card" id="tool-path-health">
+      <h3>kirograph_path</h3>
+      <p class="tool-desc">Find shortest path between two symbols.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>from</code></td><td>string</td><td><em>required</em></td><td>Source symbol name</td></tr>
+            <tr><td><code>to</code></td><td>string</td><td><em>required</em></td><td>Target symbol name</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_affected -->
+    <div class="tool-card" id="tool-affected">
+      <h3>kirograph_affected</h3>
+      <p class="tool-desc">Find test files affected by changes to a symbol.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>symbol</code></td><td>string</td><td><em>required</em></td><td>Symbol name</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_module_api -->
+    <div class="tool-card" id="tool-module-api">
+      <h3>kirograph_module_api</h3>
+      <p class="tool-desc">List all exported symbols in a file or directory.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>path</code></td><td>string</td><td>-</td><td>File or directory path to inspect</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>50</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_rename_preview -->
+    <div class="tool-card" id="tool-rename-preview">
+      <h3>kirograph_rename_preview</h3>
+      <p class="tool-desc">Show all reference sites for a symbol before renaming.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>symbol</code></td><td>string</td><td><em>required</em></td><td>Symbol name</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>50</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_doc_coverage -->
+    <div class="tool-card" id="tool-doc-coverage">
+      <h3>kirograph_doc_coverage</h3>
+      <p class="tool-desc">Find exported symbols missing docstrings.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>path</code></td><td>string</td><td>-</td><td>Filter by file/directory</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>50</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_god_class -->
+    <div class="tool-card" id="tool-god-class">
+      <h3>kirograph_god_class</h3>
+      <p class="tool-desc">Classes ranked by member count.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_inheritance_depth -->
+    <div class="tool-card" id="tool-inheritance-depth">
+      <h3>kirograph_inheritance_depth</h3>
+      <p class="tool-desc">Find deepest inheritance chains via BFS.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_recursion -->
+    <div class="tool-card" id="tool-recursion">
+      <h3>kirograph_recursion</h3>
+      <p class="tool-desc">Find recursive and mutually-recursive functions.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>limit</code></td><td>number</td><td>30</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_largest -->
+    <div class="tool-card" id="tool-largest">
+      <h3>kirograph_largest</h3>
+      <p class="tool-desc">Symbols ranked by lines of code.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results</td></tr>
+            <tr><td><code>kind</code></td><td>string</td><td>-</td><td>Filter by symbol kind</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_rank -->
+    <div class="tool-card" id="tool-rank">
+      <h3>kirograph_rank</h3>
+      <p class="tool-desc">Symbols ranked by fan-in or fan-out edge count.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>by</code></td><td>string</td><td><code>fan-in</code></td><td><code>fan-in</code> or <code>fan-out</code></td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_distribution -->
+    <div class="tool-card" id="tool-distribution">
+      <h3>kirograph_distribution</h3>
+      <p class="tool-desc">Symbol-kind breakdown per file or directory.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>path</code></td><td>string</td><td>-</td><td>Filter by directory</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>30</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_annotations -->
+    <div class="tool-card" id="tool-annotations">
+      <h3>kirograph_annotations</h3>
+      <p class="tool-desc">Decorator/attribute histogram across the codebase.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>decorator</code></td><td>string</td><td>-</td><td>Filter by decorator name</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_session_start -->
+    <div class="tool-card" id="tool-session-start">
+      <h3>kirograph_session_start</h3>
+      <p class="tool-desc">Save current graph state as session baseline for tracking changes.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_session_end -->
+    <div class="tool-card" id="tool-session-end">
+      <h3>kirograph_session_end</h3>
+      <p class="tool-desc">Show what changed since the session baseline.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_unused_imports -->
+    <div class="tool-card" id="tool-unused-imports">
+      <h3>kirograph_unused_imports</h3>
+      <p class="tool-desc">Find import nodes with zero resolved downstream edges.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>limit</code></td><td>number</td><td>50</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_gini -->
+    <div class="tool-card" id="tool-gini">
+      <h3>kirograph_gini</h3>
+      <p class="tool-desc">Gini inequality coefficient (0=equal, 1=total inequality) on LOC, fan-in, or fan-out.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>metric</code></td><td>string</td><td><code>loc</code></td><td><code>loc</code>, <code>fan-in</code>, or <code>fan-out</code></td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_dependency_depth -->
+    <div class="tool-card" id="tool-dependency-depth">
+      <h3>kirograph_dependency_depth</h3>
+      <p class="tool-desc">Longest import chains via Kahn topological sort.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- ── Architecture ── -->
-    <h2 id="architecture-tools" style="margin-top: 3rem;">Architecture <span class="badge badge-orange">enableArchitecture</span> <span class="badge" style="background: rgba(100,100,100,0.12); color: var(--muted); border: 1px solid rgba(100,100,100,0.2); font-size: 0.7em;">3 tools · ~142 tok</span></h2>
+    <h2 id="architecture-tools" style="margin-top: 3rem;">Architecture <span class="badge badge-orange">enableArchitecture</span> <span class="badge" style="background: rgba(100,100,100,0.12); color: var(--muted); border: 1px solid rgba(100,100,100,0.2); font-size: 0.7em;">5 tools · ~205 tok</span></h2>
 
     <!-- kirograph_architecture -->
     <div class="tool-card" id="tool-architecture">
@@ -351,6 +625,373 @@
           <tbody>
             <tr><td><code>package</code></td><td>string</td><td><em>required</em></td><td>Package name or path (partial match accepted)</td></tr>
             <tr><td><code>includeFiles</code></td><td>boolean</td><td>true</td><td>List files in the package</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_communities -->
+    <div class="tool-card" id="tool-communities">
+      <h3>kirograph_communities <span class="badge badge-orange">requires enableArchitecture</span></h3>
+      <p class="tool-desc">Detect code communities using the Leiden algorithm.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>resolution</code></td><td>number</td><td>1.0</td><td>Resolution parameter — higher values = smaller communities</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>15</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_manifest -->
+    <div class="tool-card" id="tool-manifest">
+      <h3>kirograph_manifest <span class="badge badge-orange">requires enableArchitecture</span></h3>
+      <p class="tool-desc">Workspace manifest summary: all packages with versions, dependencies, and licenses. Pass <code>package</code> to drill in, <code>ecosystem</code> to filter, <code>showDrift</code> for version conflicts.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>package</code></td><td>string</td><td>-</td><td>Drill into a specific package</td></tr>
+            <tr><td><code>ecosystem</code></td><td>string</td><td>-</td><td>e.g. npm, cargo, go, python</td></tr>
+            <tr><td><code>showDrift</code></td><td>boolean</td><td>false</td><td>Surface packages with conflicting versions</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Complexity ── -->
+    <h2 id="complexity-tools" style="margin-top: 3rem;">Complexity <span class="badge">enableComplexity</span> <span class="badge" style="background: rgba(100,100,100,0.12); color: var(--muted); border: 1px solid rgba(100,100,100,0.2); font-size: 0.7em;">5 tools · ~660 tok</span></h2>
+
+    <!-- kirograph_complexity -->
+    <div class="tool-card" id="tool-complexity">
+      <h3>kirograph_complexity <span class="badge">requires enableComplexity</span></h3>
+      <p class="tool-desc">Rank functions by cyclomatic complexity, cognitive complexity, and maintainability index. Flags symbols exceeding threshold.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results</td></tr>
+            <tr><td><code>sortBy</code></td><td>string</td><td><code>cyclomatic</code></td><td><code>cyclomatic</code>, <code>cognitive</code>, or <code>maintainability</code></td></tr>
+            <tr><td><code>threshold</code></td><td>number</td><td>-</td><td>Only show symbols above this value</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_simplify_scan -->
+    <div class="tool-card" id="tool-simplify-scan">
+      <h3>kirograph_simplify_scan <span class="badge">requires enableComplexity</span></h3>
+      <p class="tool-desc">Quality scan of the codebase: finds simplification candidates by complexity, dead code, and LOC thresholds.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_health -->
+    <div class="tool-card" id="tool-health">
+      <h3>kirograph_health <span class="badge">requires enableComplexity</span></h3>
+      <p class="tool-desc">Composite 0–10000 graph health score across complexity, dead code, coupling, and circular dependencies.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_dsm -->
+    <div class="tool-card" id="tool-dsm">
+      <h3>kirograph_dsm <span class="badge">requires enableComplexity</span></h3>
+      <p class="tool-desc">Design Structure Matrix — dependency matrix between top-level modules.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>limit</code></td><td>number</td><td>15</td><td>Max modules to include</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_test_risk -->
+    <div class="tool-card" id="tool-test-risk">
+      <h3>kirograph_test_risk <span class="badge">requires enableComplexity</span></h3>
+      <p class="tool-desc">Risk-ranked functions: complexity × fan-in. Highest risk = most likely to break.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results</td></tr>
+            <tr><td><code>threshold</code></td><td>number</td><td>-</td><td>Minimum risk score to include</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Git Context ── -->
+    <h2 id="gitcontext-tools" style="margin-top: 3rem;">Git Context <span class="badge">enableGitContext</span> <span class="badge" style="background: rgba(100,100,100,0.12); color: var(--muted); border: 1px solid rgba(100,100,100,0.2); font-size: 0.7em;">7 tools · ~410 tok</span></h2>
+
+    <!-- kirograph_flows -->
+    <div class="tool-card" id="tool-flows">
+      <h3>kirograph_flows <span class="badge">requires enableGitContext</span></h3>
+      <p class="tool-desc">Trace execution flows between symbols using call edges.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>from</code></td><td>string</td><td><em>required</em></td><td>Source symbol name</td></tr>
+            <tr><td><code>to</code></td><td>string</td><td>-</td><td>Target symbol name</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_diff_context -->
+    <div class="tool-card" id="tool-diff-context">
+      <h3>kirograph_diff_context <span class="badge">requires enableGitContext</span></h3>
+      <p class="tool-desc">Changed symbols (unstaged or staged) with callers/callees and affected tests.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>staged</code></td><td>boolean</td><td>false</td><td>Use staged changes only</td></tr>
+            <tr><td><code>ref</code></td><td>string</td><td>-</td><td>Compare against git ref</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_commit_context -->
+    <div class="tool-card" id="tool-commit-context">
+      <h3>kirograph_commit_context <span class="badge">requires enableGitContext</span></h3>
+      <p class="tool-desc">Structured summary of staged changes, ready for a commit message.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_pr_context -->
+    <div class="tool-card" id="tool-pr-context">
+      <h3>kirograph_pr_context <span class="badge">requires enableGitContext</span></h3>
+      <p class="tool-desc">Semantic diff between two git refs for PR descriptions.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>base</code></td><td>string</td><td><em>required</em></td><td>Base git ref</td></tr>
+            <tr><td><code>head</code></td><td>string</td><td><code>HEAD</code></td><td>Target ref</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_changelog -->
+    <div class="tool-card" id="tool-changelog">
+      <h3>kirograph_changelog <span class="badge">requires enableGitContext</span></h3>
+      <p class="tool-desc">Human-readable semantic diff between two refs.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>ref1</code></td><td>string</td><td><em>required</em></td><td>First git ref</td></tr>
+            <tr><td><code>ref2</code></td><td>string</td><td><em>required</em></td><td>Second git ref</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_test_map -->
+    <div class="tool-card" id="tool-test-map">
+      <h3>kirograph_test_map <span class="badge">requires enableGitContext</span></h3>
+      <p class="tool-desc">Map symbols to test files; detect uncovered symbols.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>symbol</code></td><td>string</td><td>-</td><td>Focus on a specific symbol</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_test_coverage -->
+    <div class="tool-card" id="tool-test-coverage">
+      <h3>kirograph_test_coverage <span class="badge">requires enableGitContext</span></h3>
+      <p class="tool-desc">Parse lcov/Istanbul/Cobertura coverage files → per-file coverage %, sorted worst-first.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>sortBy</code></td><td>string</td><td><code>asc</code></td><td>Sort order: <code>asc</code> (worst first) or <code>desc</code> (best first)</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>30</td><td>Max results</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Edit Primitives ── -->
+    <h2 id="editprimitives-tools" style="margin-top: 3rem;">Edit Primitives <span class="badge">enableEditPrimitives</span> <span class="badge" style="background: rgba(100,100,100,0.12); color: var(--muted); border: 1px solid rgba(100,100,100,0.2); font-size: 0.7em;">5 tools · ~280 tok</span></h2>
+
+    <!-- kirograph_refactor -->
+    <div class="tool-card" id="tool-refactor">
+      <h3>kirograph_refactor <span class="badge">requires enableEditPrimitives</span></h3>
+      <p class="tool-desc">Structured search-and-replace across the graph.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>pattern</code></td><td>string</td><td><em>required</em></td><td>Search pattern</td></tr>
+            <tr><td><code>replacement</code></td><td>string</td><td><em>required</em></td><td>Replacement string</td></tr>
+            <tr><td><code>dryRun</code></td><td>boolean</td><td>true</td><td>Preview changes without applying</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_str_replace -->
+    <div class="tool-card" id="tool-str-replace">
+      <h3>kirograph_str_replace <span class="badge">requires enableEditPrimitives</span></h3>
+      <p class="tool-desc">Replace a unique string anchor in a file; fails on 0 or &gt;1 matches.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>file</code></td><td>string</td><td><em>required</em></td><td>File path</td></tr>
+            <tr><td><code>old_str</code></td><td>string</td><td><em>required</em></td><td>String to replace (must be unique)</td></tr>
+            <tr><td><code>new_str</code></td><td>string</td><td><em>required</em></td><td>Replacement string</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_multi_str_replace -->
+    <div class="tool-card" id="tool-multi-str-replace">
+      <h3>kirograph_multi_str_replace <span class="badge">requires enableEditPrimitives</span></h3>
+      <p class="tool-desc">Multiple replacements as an all-or-nothing transaction.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>file</code></td><td>string</td><td><em>required</em></td><td>File path</td></tr>
+            <tr><td><code>pairs</code></td><td>array</td><td><em>required</em></td><td>Array of <code>{old_str, new_str}</code> objects</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_insert_at -->
+    <div class="tool-card" id="tool-insert-at">
+      <h3>kirograph_insert_at <span class="badge">requires enableEditPrimitives</span></h3>
+      <p class="tool-desc">Insert content before or after an anchor string or line number.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>file</code></td><td>string</td><td><em>required</em></td><td>File path</td></tr>
+            <tr><td><code>anchor</code></td><td>string</td><td><em>required</em></td><td>Anchor string or line number</td></tr>
+            <tr><td><code>content</code></td><td>string</td><td><em>required</em></td><td>Content to insert</td></tr>
+            <tr><td><code>after</code></td><td>boolean</td><td>false</td><td>Insert after anchor (default: before)</td></tr>
+            <tr><td><code>line</code></td><td>boolean</td><td>false</td><td>Treat anchor as line number</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_ast_grep_rewrite -->
+    <div class="tool-card" id="tool-ast-grep-rewrite">
+      <h3>kirograph_ast_grep_rewrite <span class="badge">requires enableEditPrimitives</span></h3>
+      <p class="tool-desc">Structural rewrite via ast-grep (requires ast-grep on PATH).</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>file</code></td><td>string</td><td><em>required</em></td><td>File path</td></tr>
+            <tr><td><code>pattern</code></td><td>string</td><td><em>required</em></td><td>ast-grep pattern</td></tr>
+            <tr><td><code>rewrite</code></td><td>string</td><td><em>required</em></td><td>Rewrite template</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Branch ── -->
+    <h2 id="branch-tools" style="margin-top: 3rem;">Branch <span class="badge">enableBranch</span> <span class="badge" style="background: var(--bg-card); color: var(--text-muted); font-weight: 400;">3 tools · ~300 tok</span></h2>
+    <p>Multi-branch graph management. Each branch gets its own SQLite DB at <code>.kirograph/branch-&lt;name&gt;.db</code>. Use <code>kirograph branch add</code> to start tracking a branch.</p>
+
+    <!-- kirograph_branch_list -->
+    <div class="tool-card" id="tool-branch-list">
+      <h3>kirograph_branch_list <span class="badge">requires enableBranch</span></h3>
+      <p class="tool-desc">List tracked branches with DB sizes and last sync times.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_branch_diff -->
+    <div class="tool-card" id="tool-branch-diff">
+      <h3>kirograph_branch_diff <span class="badge">requires enableBranch</span></h3>
+      <p class="tool-desc">Symbols added, removed, or changed between two tracked branches.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>branchA</code></td><td>string</td><td><em>required</em></td><td>First branch to compare</td></tr>
+            <tr><td><code>branchB</code></td><td>string</td><td><code>main</code></td><td>Second branch to compare against</td></tr>
+            <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- kirograph_branch_search -->
+    <div class="tool-card" id="tool-branch-search">
+      <h3>kirograph_branch_search <span class="badge">requires enableBranch</span></h3>
+      <p class="tool-desc">Search for symbols in a specific tracked branch graph.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>query</code></td><td>string</td><td><em>required</em></td><td>Symbol name or partial name</td></tr>
+            <tr><td><code>branch</code></td><td>string</td><td><em>required</em></td><td>Branch to search in</td></tr>
+            <tr><td><code>limit</code></td><td>number</td><td>20</td><td>Max results</td></tr>
             <tr><td><code>projectPath</code></td><td>string</td><td>cwd</td><td>Project root path</td></tr>
           </tbody>
         </table>
@@ -432,7 +1073,7 @@
 
     <!-- kirograph_gain -->
     <div class="tool-card" id="tool-gain">
-      <h3>kirograph_gain</h3>
+      <h3>kirograph_gain <span class="badge">requires enableAgentUtils</span></h3>
       <p class="tool-desc">Show token savings statistics from compressed command outputs via kirograph_exec.</p>
       <div class="table-wrap">
         <table>
@@ -889,11 +1530,11 @@
       <a href="#core-tools" class="sidebar-link">— Core Tools —</a>
       <a href="#tool-context" class="sidebar-link">kirograph_context</a>
       <a href="#tool-search" class="sidebar-link">kirograph_search</a>
-      <a href="#tool-impact" class="sidebar-link">kirograph_impact</a>
       <a href="#tool-node" class="sidebar-link">kirograph_node</a>
-      <a href="#tool-path" class="sidebar-link">kirograph_path</a>
-      <a href="#tool-files" class="sidebar-link">kirograph_files</a>
+      <a href="#navigation-tools" class="sidebar-link">— Navigation —</a>
       <a href="#tool-status" class="sidebar-link">kirograph_status</a>
+      <a href="#tool-files" class="sidebar-link">kirograph_files</a>
+      <a href="#tool-impact" class="sidebar-link">kirograph_impact</a>
       <a href="#callsites-tools" class="sidebar-link">— Call Sites —</a>
       <a href="#tool-callers" class="sidebar-link">kirograph_callers</a>
       <a href="#tool-callees" class="sidebar-link">kirograph_callees</a>
@@ -903,12 +1544,56 @@
       <a href="#tool-hotspots" class="sidebar-link">kirograph_hotspots</a>
       <a href="#tool-surprising" class="sidebar-link">kirograph_surprising</a>
       <a href="#tool-diff" class="sidebar-link">kirograph_diff</a>
-      <a href="#advanced-tools" class="sidebar-link">— Advanced Analysis —</a>
       <a href="#tool-type-hierarchy" class="sidebar-link">kirograph_type_hierarchy</a>
+      <a href="#tool-snapshot-save" class="sidebar-link">kirograph_snapshot_save</a>
+      <a href="#tool-snapshot-list" class="sidebar-link">kirograph_snapshot_list</a>
+      <a href="#tool-path-health" class="sidebar-link">kirograph_path</a>
+      <a href="#tool-affected" class="sidebar-link">kirograph_affected</a>
+      <a href="#tool-module-api" class="sidebar-link">kirograph_module_api</a>
+      <a href="#tool-rename-preview" class="sidebar-link">kirograph_rename_preview</a>
+      <a href="#tool-doc-coverage" class="sidebar-link">kirograph_doc_coverage</a>
+      <a href="#tool-god-class" class="sidebar-link">kirograph_god_class</a>
+      <a href="#tool-inheritance-depth" class="sidebar-link">kirograph_inheritance_depth</a>
+      <a href="#tool-recursion" class="sidebar-link">kirograph_recursion</a>
+      <a href="#tool-largest" class="sidebar-link">kirograph_largest</a>
+      <a href="#tool-rank" class="sidebar-link">kirograph_rank</a>
+      <a href="#tool-distribution" class="sidebar-link">kirograph_distribution</a>
+      <a href="#tool-annotations" class="sidebar-link">kirograph_annotations</a>
+      <a href="#tool-session-start" class="sidebar-link">kirograph_session_start</a>
+      <a href="#tool-session-end" class="sidebar-link">kirograph_session_end</a>
+      <a href="#tool-unused-imports" class="sidebar-link">kirograph_unused_imports</a>
+      <a href="#tool-gini" class="sidebar-link">kirograph_gini</a>
+      <a href="#tool-dependency-depth" class="sidebar-link">kirograph_dependency_depth</a>
       <a href="#architecture-tools" class="sidebar-link">— Architecture —</a>
       <a href="#tool-architecture" class="sidebar-link">kirograph_architecture</a>
       <a href="#tool-coupling" class="sidebar-link">kirograph_coupling</a>
       <a href="#tool-package" class="sidebar-link">kirograph_package</a>
+      <a href="#tool-communities" class="sidebar-link">kirograph_communities</a>
+      <a href="#tool-manifest" class="sidebar-link">kirograph_manifest</a>
+      <a href="#complexity-tools" class="sidebar-link">— Complexity —</a>
+      <a href="#tool-complexity" class="sidebar-link">kirograph_complexity</a>
+      <a href="#tool-simplify-scan" class="sidebar-link">kirograph_simplify_scan</a>
+      <a href="#tool-health" class="sidebar-link">kirograph_health</a>
+      <a href="#tool-dsm" class="sidebar-link">kirograph_dsm</a>
+      <a href="#tool-test-risk" class="sidebar-link">kirograph_test_risk</a>
+      <a href="#gitcontext-tools" class="sidebar-link">— Git Context —</a>
+      <a href="#tool-flows" class="sidebar-link">kirograph_flows</a>
+      <a href="#tool-diff-context" class="sidebar-link">kirograph_diff_context</a>
+      <a href="#tool-commit-context" class="sidebar-link">kirograph_commit_context</a>
+      <a href="#tool-pr-context" class="sidebar-link">kirograph_pr_context</a>
+      <a href="#tool-changelog" class="sidebar-link">kirograph_changelog</a>
+      <a href="#tool-test-map" class="sidebar-link">kirograph_test_map</a>
+      <a href="#tool-test-coverage" class="sidebar-link">kirograph_test_coverage</a>
+      <a href="#editprimitives-tools" class="sidebar-link">— Edit Primitives —</a>
+      <a href="#tool-refactor" class="sidebar-link">kirograph_refactor</a>
+      <a href="#tool-str-replace" class="sidebar-link">kirograph_str_replace</a>
+      <a href="#tool-multi-str-replace" class="sidebar-link">kirograph_multi_str_replace</a>
+      <a href="#tool-insert-at" class="sidebar-link">kirograph_insert_at</a>
+      <a href="#tool-ast-grep-rewrite" class="sidebar-link">kirograph_ast_grep_rewrite</a>
+      <a href="#branch-tools" class="sidebar-link">— Branch —</a>
+      <a href="#tool-branch-list" class="sidebar-link">kirograph_branch_list</a>
+      <a href="#tool-branch-diff" class="sidebar-link">kirograph_branch_diff</a>
+      <a href="#tool-branch-search" class="sidebar-link">kirograph_branch_search</a>
       <a href="#shellexec-tools" class="sidebar-link">— Shell Execution —</a>
       <a href="#tool-exec" class="sidebar-link">kirograph_exec</a>
       <a href="#agent-utils-tools" class="sidebar-link">— Agent Utilities —</a>
@@ -923,6 +1608,18 @@
       <a href="#tool-mem-store" class="sidebar-link">kirograph_mem_store</a>
       <a href="#tool-mem-timeline" class="sidebar-link">kirograph_mem_timeline</a>
       <a href="#tool-mem-status" class="sidebar-link">kirograph_mem_status</a>
+      <a href="#tool-mem-review" class="sidebar-link">kirograph_mem_review</a>
+      <a href="#tool-mem-mark-reviewed" class="sidebar-link">kirograph_mem_mark_reviewed</a>
+      <a href="#tool-mem-compare" class="sidebar-link">kirograph_mem_compare</a>
+      <a href="#tool-mem-judge" class="sidebar-link">kirograph_mem_judge</a>
+      <a href="#tool-mem-capture" class="sidebar-link">kirograph_mem_capture</a>
+      <a href="#tool-mem-save-prompt" class="sidebar-link">kirograph_mem_save_prompt</a>
+      <a href="#tool-mem-suggest-topic-key" class="sidebar-link">kirograph_mem_suggest_topic_key</a>
+      <a href="#tool-mem-conflicts-scan" class="sidebar-link">kirograph_mem_conflicts_scan</a>
+      <a href="#tool-mem-prune" class="sidebar-link">kirograph_mem_prune</a>
+      <a href="#tool-mem-lint" class="sidebar-link">kirograph_mem_lint</a>
+      <a href="#tool-mem-conflicts-list" class="sidebar-link">kirograph_mem_conflicts_list</a>
+      <a href="#tool-mem-conflicts-ignore" class="sidebar-link">kirograph_mem_conflicts_ignore</a>
       <a href="#docs-tools" class="sidebar-link">— Documentation Tools —</a>
       <a href="#tool-docs-toc" class="sidebar-link">kirograph_docs_toc</a>
       <a href="#tool-docs-search" class="sidebar-link">kirograph_docs_search</a>
@@ -938,6 +1635,8 @@
       <a href="#tool-data-join" class="sidebar-link">kirograph_data_join</a>
       <a href="#tool-data-correlations" class="sidebar-link">kirograph_data_correlations</a>
       <a href="#tool-data-quality" class="sidebar-link">kirograph_data_quality</a>
+      <a href="#tool-data-drift" class="sidebar-link">kirograph_data_drift</a>
+      <a href="#tool-data-history" class="sidebar-link">kirograph_data_history</a>
       <a href="#security-tools" class="sidebar-link">— Security Tools —</a>
       <a href="#tool-security" class="sidebar-link">kirograph_security</a>
       <a href="#tool-vulns" class="sidebar-link">kirograph_vulns</a>
@@ -947,6 +1646,13 @@
       <a href="#tool-sbom" class="sidebar-link">kirograph_sbom</a>
       <a href="#tool-vex" class="sidebar-link">kirograph_vex</a>
       <a href="#tool-vuln-add" class="sidebar-link">kirograph_vuln_add</a>
+      <a href="#tool-vuln-suppress" class="sidebar-link">kirograph_vuln_suppress</a>
+      <a href="#tool-attack-surface" class="sidebar-link">kirograph_attack_surface</a>
+      <a href="#tool-secrets" class="sidebar-link">kirograph_secrets</a>
+      <a href="#tool-security-flows" class="sidebar-link">kirograph_security_flows</a>
+      <a href="#tool-supply-chain" class="sidebar-link">kirograph_supply_chain</a>
+      <a href="#tool-dep-confusion" class="sidebar-link">kirograph_dep_confusion</a>
+      <a href="#tool-remediation" class="sidebar-link">kirograph_remediation</a>
     </div>
   </aside>
 

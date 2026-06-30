@@ -12,8 +12,52 @@ export interface PromptConfigOptions {
   projectRoot?: string;
   offerHookImport?: boolean;
 }
-export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'turboquantMemDocs' | 'turboquantBits' | 'turbovecMemDocs' | 'turbovecBits' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites' | 'enableArchitecture' | 'cavemanMode' | 'shellCompressionLevel' | 'enableMemory' | 'enableWatchmen' | 'watchmenThreshold' | 'watchmenSynthesisMode' | 'watchmenLocalModel' | 'enableDocs' | 'docsContextLimit' | 'enableData' | 'dataContextLimit' | 'enableSecurity' | 'enablePatterns' | 'enableWiki' | 'wikiSynthesisMode' | 'wikiLocalModel' | 'enableCodeHealth' | 'enableAdvancedAnalysis' | 'enableAgentUtils' | 'enableGeneralCompression'> & { embeddingModel?: string; embeddingDim?: number };
+export type ConfigPatch = Pick<KiroGraphConfig,
+  'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' |
+  'turboquantMemDocs' | 'turboquantBits' | 'turbovecMemDocs' | 'turbovecBits' |
+  'typesenseDashboard' | 'qdrantDashboard' |
+  'extractDocstrings' | 'trackCallSites' | 'enableArchitecture' |
+  'cavemanMode' | 'shellCompressionLevel' |
+  'enableMemory' | 'enableWatchmen' | 'watchmenThreshold' | 'watchmenSynthesisMode' | 'watchmenLocalModel' |
+  'enableDocs' | 'docsContextLimit' |
+  'enableData' | 'dataContextLimit' |
+  'enableSecurity' | 'enablePatterns' |
+  'enableWiki' | 'wikiSynthesisMode' | 'wikiLocalModel' |
+  'enableCodeHealth' | 'enableNavigation' | 'enableComplexity' |
+  'enableGitContext' | 'enableEditPrimitives' | 'enableBranch' |
+  'enableAgentUtils' | 'enableGeneralCompression'
+> & { embeddingModel?: string; embeddingDim?: number };
 export type SemanticEngine = KiroGraphConfig['semanticEngine'];
+
+type InstallMode = 'core' | 'full' | 'custom' | 'profiles';
+
+const PROFILES: Record<string, { label: string; description: string; patch: Partial<ConfigPatch> }> = {
+  developer: {
+    label: 'Developer',
+    description: 'Code health, navigation, complexity, call-site tracking',
+    patch: { enableCodeHealth: true, enableNavigation: true, enableComplexity: true, trackCallSites: true },
+  },
+  team: {
+    label: 'Team',
+    description: 'Developer + architecture, git context, wiki',
+    patch: { enableCodeHealth: true, enableNavigation: true, enableComplexity: true, trackCallSites: true, enableArchitecture: true, enableGitContext: true, enableWiki: true, wikiSynthesisMode: 'agent' },
+  },
+  security: {
+    label: 'Security',
+    description: 'Security analysis, patterns, architecture, code health',
+    patch: { enableSecurity: true, enableArchitecture: true, enablePatterns: true, enableCodeHealth: true },
+  },
+  data: {
+    label: 'Data & Docs',
+    description: 'Tabular data indexing and documentation navigation',
+    patch: { enableData: true, enableDocs: true },
+  },
+  ai: {
+    label: 'AI / LLM Agent',
+    description: 'Memory, watchmen, agent utils, wiki, general compression',
+    patch: { enableMemory: true, enableWatchmen: true, enableAgentUtils: true, enableWiki: true, wikiSynthesisMode: 'agent', enableGeneralCompression: true },
+  },
+};
 
 export const DEFAULT_EMBEDDING_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
 
@@ -55,6 +99,64 @@ export async function promptConfigOptions(
   rl: readline.Interface,
   opts: PromptConfigOptions = {},
 ): Promise<{ patch: ConfigPatch; hooksToImport: string[] | null }> {
+  // ── Install mode ─────────────────────────────────────────────────────────────
+  const installMode = await arrowSelect<InstallMode>(rl, 'Installation mode:', [
+    { value: 'core',     label: 'Core only',  description: '3 always-on tools (search, context, node) — ~170 tok. Zero config.' },
+    { value: 'full',     label: 'Full',        description: 'Enable every feature with sensible defaults. Best for a fresh project.' },
+    { value: 'profiles', label: 'Profiles',   description: 'Choose a preset bundle (Developer, Team, Security, Data & Docs, AI/LLM).' },
+    { value: 'custom',   label: 'Custom',     description: 'Answer each question individually. Maximum control.' },
+  ]);
+
+  const basePatch: ConfigPatch = {
+    enableEmbeddings: false, useVecIndex: false, semanticEngine: 'cosine',
+    turboquantMemDocs: false, turboquantBits: 3, turbovecMemDocs: false, turbovecBits: 4,
+    typesenseDashboard: false, qdrantDashboard: false,
+    extractDocstrings: false, trackCallSites: false,
+    enableArchitecture: false, cavemanMode: 'off', shellCompressionLevel: 'off',
+    enableMemory: false, enableWatchmen: false, watchmenThreshold: 5,
+    watchmenSynthesisMode: 'local', watchmenLocalModel: 'onnx-community/gemma-4-E4B-it-ONNX',
+    enableDocs: false, docsContextLimit: 0,
+    enableData: false, dataContextLimit: 0,
+    enableSecurity: false, enablePatterns: false,
+    enableWiki: false, wikiSynthesisMode: 'agent', wikiLocalModel: 'onnx-community/gemma-4-E4B-it-ONNX',
+    enableCodeHealth: false, enableNavigation: false, enableComplexity: false,
+    enableGitContext: false, enableEditPrimitives: false, enableBranch: false,
+    enableAgentUtils: false, enableGeneralCompression: false,
+  };
+
+  if (installMode === 'core') {
+    return { patch: basePatch, hooksToImport: null };
+  }
+
+  if (installMode === 'full') {
+    const fullPatch: ConfigPatch = {
+      ...basePatch,
+      enableEmbeddings: true, embeddingModel: DEFAULT_EMBEDDING_MODEL, embeddingDim: 768,
+      extractDocstrings: true, trackCallSites: true,
+      enableArchitecture: true, shellCompressionLevel: 'normal',
+      enableCodeHealth: true, enableNavigation: true, enableComplexity: true,
+      enableGitContext: true, enableEditPrimitives: true, enableBranch: true,
+      enableAgentUtils: true, enableGeneralCompression: true,
+      enableSecurity: true, enablePatterns: true,
+      enableDocs: true, enableData: true,
+      enableMemory: true, enableWatchmen: true,
+      enableWiki: true, wikiSynthesisMode: 'agent',
+    };
+    return { patch: fullPatch, hooksToImport: null };
+  }
+
+  if (installMode === 'profiles') {
+    const profileKey = await arrowSelect<string>(rl, 'Select a profile:', Object.entries(PROFILES).map(([key, p]) => ({
+      value: key,
+      label: p.label,
+      description: p.description,
+    })));
+    const profile = PROFILES[profileKey];
+    const patch: ConfigPatch = { ...basePatch, ...profile.patch };
+    return { patch, hooksToImport: null };
+  }
+
+  // ── Custom: ask all questions individually ─────────────────────────────────
   // ── Semantic Search ─────────────────────────────────────────────────────────
   printSection('🔍', 'Semantic Search');
 
@@ -64,7 +166,7 @@ export async function promptConfigOptions(
     'Enables natural-language code search via vector embeddings. A local model (~130MB) is downloaded on first use.',
   );
 
-  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, semanticEngine: 'cosine', turboquantMemDocs: false, turboquantBits: 3, turbovecMemDocs: false, turbovecBits: 4, typesenseDashboard: false, qdrantDashboard: false, extractDocstrings: false, trackCallSites: false, enableArchitecture: false, cavemanMode: 'off', shellCompressionLevel: 'normal', enableMemory: false, enableWatchmen: false, watchmenThreshold: 5, watchmenSynthesisMode: 'local', watchmenLocalModel: 'onnx-community/gemma-4-E4B-it-ONNX', enableDocs: false, docsContextLimit: 0, enableData: false, dataContextLimit: 0, enableSecurity: false, enablePatterns: false, enableWiki: false, wikiSynthesisMode: 'agent', wikiLocalModel: 'onnx-community/gemma-4-E4B-it-ONNX', enableCodeHealth: false, enableAdvancedAnalysis: false, enableAgentUtils: false, enableGeneralCompression: false };
+  const patch: ConfigPatch = { ...basePatch, enableEmbeddings };
 
   if (enableEmbeddings) {
     // ── Model selection ────────────────────────────────────────────────────────
@@ -176,20 +278,36 @@ export async function promptConfigOptions(
     false,
   );
 
-  if (patch.enableArchitecture) {
-    patch.enableAdvancedAnalysis = await askToggle(rl,
-      'Advanced graph analysis (type hierarchies, flows, communities, refactor):',
-      'Enables kirograph_type_hierarchy, kirograph_flows, kirograph_communities, kirograph_refactor. Most useful alongside architecture analysis.',
-      false,
-    );
-  }
-
   // ── Graph Tools ─────────────────────────────────────────────────────────────
   printSection('📊', 'Graph Tools');
 
+  patch.enableNavigation = await askToggle(rl,
+    'Navigation tools (status, files, impact):',
+    'Enables kirograph_status, kirograph_files, kirograph_impact.',
+    false,
+  );
+
   patch.enableCodeHealth = await askToggle(rl,
-    'Code health tools (hotspots, dead code, change tracking):',
-    'Enables kirograph_hotspots, kirograph_surprising, kirograph_diff, kirograph_dead_code, kirograph_circular_deps.',
+    'Code health tools (hotspots, dead code, path analysis, type hierarchy):',
+    'Enables kirograph_hotspots, kirograph_surprising, kirograph_diff, kirograph_dead_code, kirograph_circular_deps, kirograph_path, kirograph_affected, kirograph_type_hierarchy.',
+    false,
+  );
+
+  patch.enableComplexity = await askToggle(rl,
+    'Complexity metrics tools:',
+    'Enables complexity analysis, simplify scan, health score, DSM, test risk.',
+    false,
+  );
+
+  patch.enableGitContext = await askToggle(rl,
+    'Git context tools (diff context, commit context, flows):',
+    'Enables kirograph_flows, kirograph_diff_context, kirograph_commit_context, kirograph_pr_context, kirograph_changelog, kirograph_test_map, kirograph_test_coverage.',
+    false,
+  );
+
+  patch.enableEditPrimitives = await askToggle(rl,
+    'Edit primitive tools (str_replace, insert_at, refactor):',
+    'Enables kirograph_refactor, kirograph_str_replace, kirograph_multi_str_replace, kirograph_insert_at, kirograph_ast_grep_rewrite.',
     false,
   );
 

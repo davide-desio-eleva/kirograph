@@ -16,7 +16,11 @@ export interface McpFeatureFlags {
   enablePatterns?: boolean;
   enableWiki?: boolean;
   enableCodeHealth?: boolean;
-  enableAdvancedAnalysis?: boolean;
+  enableNavigation?: boolean;
+  enableComplexity?: boolean;
+  enableGitContext?: boolean;
+  enableEditPrimitives?: boolean;
+  enableBranch?: boolean;
   enableAgentUtils?: boolean;
   enableGeneralCompression?: boolean;
   enableShellExec?: boolean;
