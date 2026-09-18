@@ -46,6 +46,23 @@ function buildIncludeMatcher(config: KiroGraphConfig): ((s: string) => boolean) 
 }
 
 /**
+ * Returns true when the file at absPath exceeds config.maxFileSize.
+ *
+ * Uses fs.statSync so the size is checked WITHOUT reading the file into memory.
+ * This is what prevents multi-MB compiled bundles from reaching the tree-sitter
+ * parser, where the WASM runtime aborts the whole process (issue #33).
+ * A stat failure is treated as "does not exceed" so the normal read path can
+ * handle (and gracefully skip) an unreadable file.
+ */
+function exceedsMaxFileSize(absPath: string, config: KiroGraphConfig): boolean {
+  try {
+    return fs.statSync(absPath).size > config.maxFileSize;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Recursive filesystem walk. Checks .kirographignore, guards against symlink cycles,
  * respects AbortSignal, and filters files through shouldIncludeFile.
  */
@@ -82,7 +99,7 @@ function scanDirectoryWalk(
       if (entry.isDirectory()) {
         walk(full);
       } else if (entry.isFile()) {
-        if (shouldIncludeFile(rel, config)) {
+        if (shouldIncludeFile(rel, config) && !exceedsMaxFileSize(full, config)) {
           const lang = detectLanguage(full);
           if (lang !== 'unknown') results.push(full);
         }
@@ -175,7 +192,9 @@ export async function scanDirectory(
         .map(rel => path.join(gitRoot, rel))
         .filter(abs => {
           const rel = path.relative(root, abs).replace(/\\/g, '/');
-          return shouldIncludeFile(rel, config) && detectLanguage(abs) !== 'unknown';
+          return shouldIncludeFile(rel, config)
+            && detectLanguage(abs) !== 'unknown'
+            && !exceedsMaxFileSize(abs, config);
         });
       allFiles.push(...files);
     } catch {

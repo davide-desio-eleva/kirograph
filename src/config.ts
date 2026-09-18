@@ -245,7 +245,15 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     version: 2,
     languages: [],
     include: [],
-    exclude: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/.git/**', '*.min.js', '**/.kirograph/**'],
+    exclude: [
+      '**/node_modules/**', '**/dist/**', '**/build/**', '**/.git/**', '**/.kirograph/**',
+      // Compiled / minified output and build artifacts — not meaningful source to index,
+      // and large bundles can crash the parser (issue #33). '*.min.js' was previously
+      // non-recursive (root-only); use '**/' so nested bundles are matched.
+      '**/*.min.js', '**/*.min.css', '**/*.bundle.js', '**/*.map',
+      '**/out/**', '**/.next/**', '**/.nuxt/**', '**/.vite/**', '**/.svelte-kit/**',
+      '**/public/build/**', '**/Resources/Public/**',
+    ],
     maxFileSize: 1_048_576,
     extractDocstrings: false,
     trackCallSites: false,
