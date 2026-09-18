@@ -16,6 +16,15 @@ import { getAllManifestParsers } from '../../architecture/manifest/index';
 import type { ManifestParser as ArchManifestParser, ArchPackage } from '../../architecture/types';
 import type { ParsedDependency, ManifestParseResult } from '../types';
 
+// ── Include/Exclude filter support ────────────────────────────────────────────
+
+export interface ManifestScanOptions {
+  /** Glob patterns for paths to include (relative to projectRoot). Empty = all. */
+  include?: string[];
+  /** Glob patterns for paths to exclude (relative to projectRoot). */
+  exclude?: string[];
+}
+
 // ── Plugin Interface ──────────────────────────────────────────────────────────
 
 /**
@@ -56,9 +65,11 @@ export class SecurityManifestAdapter {
   /** Standalone plugins have no corresponding architecture parser — they own their own discovery. */
   private readonly standalonePlugins: Map<string, VersionExtractionPlugin> = new Map();
   private readonly projectRoot: string;
+  private readonly scanOptions: ManifestScanOptions;
 
-  constructor(projectRoot: string) {
+  constructor(projectRoot: string, scanOptions?: ManifestScanOptions) {
     this.projectRoot = projectRoot;
+    this.scanOptions = scanOptions ?? {};
     this.archParsers = getAllManifestParsers();
   }
 
@@ -98,10 +109,29 @@ export class SecurityManifestAdapter {
   /**
    * Discover all manifest files in the project tree.
    * Includes files known to architecture parsers AND files from standalone plugins.
+   * Respects config include/exclude patterns when provided.
    * Returns absolute paths.
    */
   discoverManifests(): string[] {
-    return this._findManifests(this.projectRoot);
+    const allManifests = this._findManifests(this.projectRoot);
+
+    // If no include patterns, return all discovered manifests
+    if (!this.scanOptions.include || this.scanOptions.include.length === 0) {
+      return allManifests;
+    }
+
+    // Filter manifests to only those within included paths
+    const picomatch = require('picomatch');
+    const includeMatchers = this.scanOptions.include.map((p: string) => picomatch(p));
+    const excludeMatchers = (this.scanOptions.exclude ?? []).map((p: string) => picomatch(p));
+
+    return allManifests.filter(absPath => {
+      const rel = path.relative(this.projectRoot, absPath).replace(/\\/g, '/');
+      const included = includeMatchers.some((m: (s: string) => boolean) => m(rel));
+      if (!included) return false;
+      const excluded = excludeMatchers.some((m: (s: string) => boolean) => m(rel));
+      return !excluded;
+    });
   }
 
   /**

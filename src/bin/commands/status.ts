@@ -211,6 +211,7 @@ async function showIntegrations(projectRoot: string): Promise<void> {
     'cline': { path: path.join(projectRoot, '.cline', 'mcp_settings.json'), key: 'mcpServers' },
     'qoder': { path: path.join(projectRoot, '.qoder', 'mcp.json'), key: 'mcpServers' },
     'qwen': { path: path.join(home, '.qwen', 'settings.json'), key: 'mcpServers' },
+    'commandcode': { path: path.join(projectRoot, '.mcp.json'), key: 'mcpServers' },
   };
 
   function isConfigured(target: string): boolean {

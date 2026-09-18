@@ -1,12 +1,37 @@
 # Changelog
 
-## [Unreleased]
+## [0.30.1] - 2026-09-18: Vulnerability CVSS severity parsing
 
 ### Fixed
 
 - **Security (`kirograph vulns`)**: vulnerabilities were all displayed as `LOW` with `[Risk: 0.0]` regardless of their real severity (issue #39). OSV returns CVSS severity as a *vector string* (e.g. `CVSS:3.1/AV:N/AC:L/...`), but the adapter only handled a plain number — `parseFloat` on a vector yields `NaN`, so every score silently fell back to `0` → `LOW`. Added a proper CVSS v3.0/3.1 base-score computation from the vector, a fallback to the coarse `database_specific.severity` (GHSA) when no CVSS vector is present, and made unknown severities render as `unknown` (null) instead of a false `LOW`.
 - **Security (`kirograph vulns --severity`)**: the `low` filter band was `[0.1, 3.9]` while stored scores were `0`, so `--severity low` returned nothing despite everything showing as LOW. Filter bands are now half-open and mirror the display buckets exactly (CRITICAL ≥ 9.0, HIGH ≥ 7.0, MEDIUM ≥ 4.0, LOW < 4.0), and `unknown`/null severities are excluded from all bands.
 - **Security (`kirograph vulns`)**: added a hint when vulnerabilities are `[pending]` reachability, pointing users to `kirograph index` (which runs the call-graph analysis that resolves the verdict) — `vulns --refresh` only re-queries vulnerability data and does not compute reachability.
+
+## [0.30.0] - 2026-09-18: WASM parser bundling + crash recovery + security fixes
+
+### Fixed
+- **Build**: mainstream language WASM parsers (TypeScript, Go, Python, Java, C#, etc.) are now bundled into `dist/extraction/wasm/` during build, so grammars resolve even when `node_modules` isn't reachable at runtime (e.g. a dist-only or pruned deploy). Underscored grammar filenames (e.g. `tree-sitter-c_sharp.wasm`) are also written under the de-underscored name `resolveWasmPath()` expects (`tree-sitter-csharp.wasm`), fixing silent zero-symbol extraction for C# in that scenario.
+- **Extractor**: `parser.parse()` is now wrapped in try/catch for WASM RuntimeError. A single malformed file no longer crashes and poisons the entire language.
+- **Extractor**: Helm Go template files (`.yaml` containing `{{`) are detected and skipped before tree-sitter parsing, preventing WASM "memory access out of bounds" crashes.
+- **Pipeline**: language poisoning is now threshold-based (3 consecutive crashes required) instead of immediate. Crash count resets on successful parse.
+- **Security**: manifest scanner now respects config `include`/`exclude` patterns. Modules not in the include array are no longer scanned for vulnerabilities.
+- **Security**: reachability analysis uses reverse BFS (O(V+E) per vulnerability) instead of forward BFS from every entry point (O(entryPoints×(V+E))). Orders of magnitude faster on large codebases. The `under_investigation` verdict is preserved: when the traversal hits unresolved imports (dynamic dispatch, reflection, unindexed code) and no entry-point path is found, the vulnerability is reported as `under_investigation` rather than `not_affected`.
+- **Security**: EPSS batch size reduced from 500 to 100 CVEs per request to avoid HTTP 414 (URI Too Long).
+- **Security**: added `python` → `PyPI` and `csproj` → `NuGet` to OSV ecosystem mapping.
+- **Frameworks**: framework detection now searches indexed file paths and up to 2 levels of subdirectories when root-level config files aren't found. Fixes detection of Angular and Docker Compose in multi-root workspaces. FastAPI detection works when `requirements.txt` containing `fastapi` is within the 2-level scan depth.
+
+## [0.29.0] - 2026-09-18: Command Code CLI integration
+
+### Added
+
+- **Installer**: new `commandcode` target for [Command Code](https://commandcode.ai) CLI (issue #30). `kirograph install --target commandcode` registers the MCP server in the project-scoped `.mcp.json` (Command Code auto-discovers it) and writes a KiroGraph instructions block into `AGENTS.md`. Auto-detected via `~/.commandcode/` or the `command-code` binary on PATH, and cleaned up by `kirograph uninit --target commandcode`.
+
+## [0.28.2] - 2026-09-18: Cross-platform installer hooks (Windows fix)
+
+### Fixed
+
+- **Installer (Windows)**: generated hooks and agent configs no longer emit bash-only shell syntax that breaks on Windows `cmd.exe` (issue #40). Commands were producing `2>/dev/null`, `2>&1 > /dev/null`, and `|| true`, none of which `cmd.exe` understands (`/dev/null` is treated as a literal path, `true` is not a valid command). Added a `silentCommand()` helper in `src/bin/installer/common.ts` that detects the host OS at init time and emits `>/dev/null 2>&1 || true` on POSIX or `>nul 2>&1 || exit /b 0` on Windows. Applied across the Kiro Stop/watchmen/wiki hooks, the CLI agent config, and all affected editor targets (Claude, Cursor, Copilot, Codex, Antigravity, Devin, Gemini CLI, Windsurf, OpenCode). Added a `test/hooks` suite that asserts `silentCommand()` and the generated hook/agent files emit the correct POSIX and Windows (`win32`-simulated) forms with no cross-platform regression.
 
 ## [0.28.1] - 2026-07-03: Installer — semantic embeddings prompt available in every install mode
 

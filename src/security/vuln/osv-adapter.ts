@@ -19,9 +19,11 @@ const ECOSYSTEM_MAP: Record<string, string> = {
   maven: 'Maven',
   go: 'Go',
   pypi: 'PyPI',
+  python: 'PyPI',    // manifest parser sends 'python' for requirements.txt
   cargo: 'crates.io',
   pyproject: 'PyPI',  // pyproject.toml (Poetry/Hatch/PDM/PEP 621)
   nuget: 'NuGet',
+  csproj: 'NuGet',   // manifest parser sends 'csproj' for .csproj files
   gradle: 'Maven',    // Gradle projects use Maven Central
   rubygems: 'RubyGems',
   composer: 'Packagist',

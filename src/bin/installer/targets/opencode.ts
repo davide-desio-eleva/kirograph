@@ -8,7 +8,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { ensureDir, buildInstructionOpts, readJson, writeJson, LateInstallOptions } from '../common';
+import { ensureDir, buildInstructionOpts, readJson, writeJson, silentCommand, LateInstallOptions } from '../common';
 import { buildAgentInstructions } from '../instructions';
 
 const OPENCODE_CONFIG = '.opencode.json';
@@ -16,6 +16,8 @@ const OPENCODE_MCP_NAME = 'kirograph';
 const OPENCODE_INSTRUCTIONS_PATH = '.kirograph/opencode.md';
 const OPENCODE_PLUGIN_FILE = 'kirograph-sync.js';
 
+// Built per-platform so the embedded shell command works whether OpenCode's
+// `$` shell resolves to POSIX sh or Windows cmd.exe (see issue #40).
 const OPENCODE_PLUGIN_CONTENT = `/**
  * KiroGraph auto-sync plugin for OpenCode.
  * Syncs the KiroGraph index when the agent session goes idle.
@@ -24,7 +26,7 @@ export const KirographSync = async ({ $ }) => {
   return {
     event: async ({ event }) => {
       if (event.type === "session.idle") {
-        await $\`kirograph sync --quiet 2>/dev/null || true\`
+        await $\`${silentCommand('kirograph sync --quiet')}\`
       }
     },
   }

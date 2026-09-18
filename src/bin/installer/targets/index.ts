@@ -28,6 +28,7 @@ import { installTabnineEarly, installTabnineLate, printTabnineNextSteps, uninitT
 import { mistralVibe, ibmBob, crush, droidFactory, forgeCode, iflowCli, rovoDev } from './generic';
 import { installQoderEarly, installQoderLate, printQoderNextSteps, uninitQoder } from './qoder';
 import { installQwenEarly, installQwenLate, printQwenNextSteps, uninitQwen } from './qwen';
+import { installCommandCodeEarly, installCommandCodeLate, printCommandCodeNextSteps, uninitCommandCode } from './commandcode';
 
 export interface TargetInstaller {
   label: string;
@@ -304,6 +305,15 @@ export function getTargetInstaller(target: InstallTarget): TargetInstaller {
   }
   if (target === 'qoder') {
     return { label: 'Qoder', installEarly: installQoderEarly, installLate: installQoderLate, printNextSteps: printQoderNextSteps, uninit: uninitQoder };
+  }
+  if (target === 'commandcode') {
+    return {
+      label: 'Command Code',
+      installEarly: installCommandCodeEarly,
+      installLate: installCommandCodeLate,
+      printNextSteps: printCommandCodeNextSteps,
+      uninit: uninitCommandCode,
+    };
   }
 
   return {
