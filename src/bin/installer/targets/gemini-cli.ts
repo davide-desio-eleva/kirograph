@@ -21,6 +21,7 @@ import {
   KIROGRAPH_SERVER_NAME,
   upsertGeneratedBlock,
   removeGeneratedBlock,
+  silentCommand,
   LateInstallOptions,
 } from '../common';
 import { buildAgentInstructions } from '../instructions';
@@ -72,7 +73,7 @@ export function installGeminiCliLate(projectRoot: string, opts: LateInstallOptio
       hooks: [
         {
           type: 'command',
-          command: 'kirograph sync --quiet 2>/dev/null || true',
+          command: silentCommand('kirograph sync --quiet'),
           timeout: 5000,
         },
       ],

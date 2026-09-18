@@ -14,6 +14,7 @@ import {
   upsertGeneratedBlock,
   removeGeneratedBlock,
   writeMcpServersConfig,
+  silentCommand,
 } from '../common';
 import { buildAgentInstructions } from '../instructions';
 
@@ -23,7 +24,7 @@ function buildCopilotHooks(): object {
   return {
     hooks: {
       'session-end': [
-        { command: 'kirograph sync --quiet 2>/dev/null || true' },
+        { command: silentCommand('kirograph sync --quiet') },
       ],
     },
   };

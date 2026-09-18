@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Installer (Windows)**: generated hooks and agent configs no longer emit bash-only shell syntax that breaks on Windows `cmd.exe` (issue #40). Commands were producing `2>/dev/null`, `2>&1 > /dev/null`, and `|| true`, none of which `cmd.exe` understands (`/dev/null` is treated as a literal path, `true` is not a valid command). Added a `silentCommand()` helper in `src/bin/installer/common.ts` that detects the host OS at init time and emits `>/dev/null 2>&1 || true` on POSIX or `>nul 2>&1 || exit /b 0` on Windows. Applied across the Kiro Stop/watchmen/wiki hooks, the CLI agent config, and all affected editor targets (Claude, Cursor, Copilot, Codex, Antigravity, Devin, Gemini CLI, Windsurf, OpenCode).
+
 ## [0.28.1] - 2026-07-03: Installer — semantic embeddings prompt available in every install mode
 
 ### Changed

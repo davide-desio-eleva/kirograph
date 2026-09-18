@@ -36,7 +36,30 @@ export type InstallTarget = 'kiro' | 'claude' | 'codex' | 'cursor' | 'antigravit
 export const KIROGRAPH_SERVER_NAME = 'kirograph';
 export const KIROGRAPH_COMMAND = 'kirograph';
 export const KIROGRAPH_MCP_ARGS = ['serve', '--mcp'];
-export const KIROGRAPH_SYNC_CMD = 'kirograph sync-if-dirty --quiet 2>/dev/null || true';
+
+/**
+ * Wrap a kirograph command so it runs quietly and never fails the host process,
+ * emitting shell syntax appropriate for the OS the install is running on.
+ *
+ * Hook commands are executed by the host agent's shell: POSIX sh/bash on
+ * macOS/Linux, cmd.exe on Windows. The two use incompatible syntax for
+ * discarding output and swallowing a non-zero exit code:
+ *   - POSIX:  `<cmd> >/dev/null 2>&1 || true`
+ *   - cmd.exe: `<cmd> >nul 2>&1 || exit /b 0`
+ *
+ * On Windows `/dev/null` is treated as a literal path and `true` is not a valid
+ * command, so the bash form silently breaks hooks (see issue #40).
+ *
+ * @param baseCommand the kirograph invocation without redirection, e.g. `kirograph sync --quiet`
+ */
+export function silentCommand(baseCommand: string): string {
+  const isWindows = process.platform === 'win32';
+  return isWindows
+    ? `${baseCommand} >nul 2>&1 || exit /b 0`
+    : `${baseCommand} >/dev/null 2>&1 || true`;
+}
+
+export const KIROGRAPH_SYNC_CMD = silentCommand('kirograph sync-if-dirty --quiet');
 export const KIROGRAPH_TOOLS = KIROGRAPH_TOOL_NAMES;
 export const KIROGRAPH_SCOPED_TOOLS = KIROGRAPH_TOOL_NAMES.map(name => `@kirograph/${name}`);
 

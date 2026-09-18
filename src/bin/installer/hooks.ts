@@ -15,11 +15,18 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { silentCommand } from './common';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const V2_EXT = '.json';
 const V1_EXT = '.kiro.hook';
+
+// Cross-platform hook commands (see issue #40 — bash syntax breaks on Windows cmd.exe).
+const SYNC_CMD = silentCommand('kirograph sync --quiet');
+const WATCHMEN_SYNTH_CMD = silentCommand('kirograph mem watchmen synthesize --quiet');
+const WIKI_SYNTH_CMD = silentCommand('kirograph wiki synthesize --quiet');
+const WIKI_LINT_CMD = silentCommand('kirograph wiki lint');
 
 // ── Hook builders ─────────────────────────────────────────────────────────────
 
@@ -40,7 +47,7 @@ function buildWatchmenHook(synthesisMode: 'local' | 'agent'): HookDef {
         hooks: [{
           name: 'KiroGraph Watchmen',
           trigger: 'Stop',
-          action: { type: 'command', command: 'kirograph mem watchmen synthesize --quiet 2>&1 || true' },
+          action: { type: 'command', command: WATCHMEN_SYNTH_CMD },
         }],
       },
       v1: {
@@ -48,7 +55,7 @@ function buildWatchmenHook(synthesisMode: 'local' | 'agent'): HookDef {
         version: '1.0.0',
         description: 'After memory capture, run local model synthesis if enough observations have accumulated.',
         when: { type: 'agentStop' },
-        then: { type: 'runCommand', command: 'kirograph mem watchmen synthesize --quiet 2>&1 || true' },
+        then: { type: 'runCommand', command: WATCHMEN_SYNTH_CMD },
       },
     };
   }
@@ -91,7 +98,7 @@ const HOOKS: HookDef[] = [
       hooks: [{
         name: 'KiroGraph Sync on Agent Stop',
         trigger: 'Stop',
-        action: { type: 'command', command: 'kirograph sync --quiet 2>&1 > /dev/null' },
+        action: { type: 'command', command: SYNC_CMD },
       }],
     },
     v1: {
@@ -99,7 +106,7 @@ const HOOKS: HookDef[] = [
       version: '1.0.0',
       description: 'Sync the KiroGraph index when the agent stops, picking up any file edits, creates, or deletes from the session.',
       when: { type: 'agentStop' },
-      then: { type: 'runCommand', command: 'kirograph sync --quiet 2>&1 > /dev/null' },
+      then: { type: 'runCommand', command: SYNC_CMD },
     },
   },
   {
@@ -260,7 +267,7 @@ Skip if the session was trivial (simple bug fix, no new knowledge).`;
           hooks: [{
             name: 'KiroGraph Wiki Synthesize',
             trigger: 'Stop',
-            action: { type: 'command', command: 'kirograph wiki synthesize --quiet 2>&1 || true' },
+            action: { type: 'command', command: WIKI_SYNTH_CMD },
           }],
         },
         v1: {
@@ -268,7 +275,7 @@ Skip if the session was trivial (simple bug fix, no new knowledge).`;
           version: '1.0.0',
           description: 'After each session, run local-model wiki synthesis over queued sources.',
           when: { type: 'agentStop' },
-          then: { type: 'runCommand', command: 'kirograph wiki synthesize --quiet 2>&1 || true' },
+          then: { type: 'runCommand', command: WIKI_SYNTH_CMD },
         },
       }, format);
     } else {
@@ -301,7 +308,7 @@ Skip if the session was trivial (simple bug fix, no new knowledge).`;
         hooks: [{
           name: 'KiroGraph Wiki Lint',
           trigger: 'Stop',
-          action: { type: 'command', command: 'kirograph wiki lint 2>&1 || true' },
+          action: { type: 'command', command: WIKI_LINT_CMD },
         }],
       },
       v1: {
@@ -309,7 +316,7 @@ Skip if the session was trivial (simple bug fix, no new knowledge).`;
         version: '1.0.0',
         description: `Run wiki health check every ${lintFreq} sessions to catch broken links, orphan pages, and contradictions.`,
         when: { type: 'agentStop' },
-        then: { type: 'runCommand', command: 'kirograph wiki lint 2>&1 || true' },
+        then: { type: 'runCommand', command: WIKI_LINT_CMD },
       },
     }, format);
   } else {

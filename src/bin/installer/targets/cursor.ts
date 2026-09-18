@@ -9,6 +9,7 @@ import {
   KIROGRAPH_MCP_ARGS,
   removeMcpServersConfig,
   writeMcpServersConfig,
+  silentCommand,
   LateInstallOptions,
 } from '../common';
 import { buildAgentInstructions } from '../instructions';
@@ -19,13 +20,13 @@ const CURSOR_HOOKS_FILE = 'hooks.json';
 function buildCursorHooks(enableCompression?: boolean): object {
   const hooks: Record<string, Array<{ command: string }>> = {
     stop: [
-      { command: 'kirograph sync --quiet 2>/dev/null || true' },
+      { command: silentCommand('kirograph sync --quiet') },
     ],
   };
 
   if (enableCompression) {
     hooks.beforeShellExecution = [
-      { command: 'kirograph compress-hint 2>/dev/null || true' },
+      { command: silentCommand('kirograph compress-hint') },
     ];
   }
 
