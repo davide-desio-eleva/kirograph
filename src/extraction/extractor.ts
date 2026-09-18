@@ -52,7 +52,7 @@ function validatePath(filePath: string, projectRoot: string): boolean {
  * Extract symbols from a single file.
  * Optionally accepts pre-read content for batch I/O efficiency.
  */
-export async function extractFile(filePath: string, projectRoot: string, content?: Buffer | string, opts?: { enableComplexity?: boolean }): Promise<ExtractedFile | null> {
+export async function extractFile(filePath: string, projectRoot: string, content?: Buffer | string, opts?: { enableComplexity?: boolean; maxFileSize?: number }): Promise<ExtractedFile | null> {
   const language = detectLanguage(filePath);
   if (!isSupportedLanguage(language)) return null;
 
@@ -68,6 +68,25 @@ export async function extractFile(filePath: string, projectRoot: string, content
     }
   } catch {
     return null;
+  }
+
+  // Defensive size guard (issue #33): even though the scanner enforces
+  // maxFileSize via fs.stat, some callers (e.g. git-changed-file sync) bypass
+  // the scanner and hand paths straight here. A multi-MB file handed to the
+  // tree-sitter WASM parser can abort the entire process, so skip oversized
+  // files before parsing. We return the file as tracked-but-unparsed (empty
+  // symbols) rather than null so it's still recorded, not silently dropped.
+  if (opts?.maxFileSize !== undefined && Buffer.byteLength(source, 'utf8') > opts.maxFileSize) {
+    const relPathSkip = path.relative(projectRoot, filePath).replace(/\\/g, '/');
+    return {
+      filePath: relPathSkip,
+      language,
+      contentHash: crypto.createHash('sha256').update(source).digest('hex'),
+      fileSize: Buffer.byteLength(source, 'utf8'),
+      nodes: [],
+      edges: [],
+      unresolvedRefs: [],
+    };
   }
 
   // Delegate Jupyter notebooks to the dedicated notebook extractor

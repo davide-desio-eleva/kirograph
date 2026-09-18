@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Indexing**: `sync`/`index` no longer crash with `Aborted()` on projects containing large compiled bundles (issue #33). `maxFileSize` is now enforced with a cheap `fs.stat` in the scanner, so oversized files are dropped **before** being read into memory or handed to the tree-sitter WASM parser (which aborts the whole process on multi-MB files). A defensive size guard was also added in `extractFile` to cover callers that bypass the scanner (e.g. git-changed-file sync): oversized files are recorded as tracked-but-unparsed instead of crashing. The default `exclude` list now covers common compiled output and build artifacts (`**/*.min.js`, `**/*.min.css`, `**/*.bundle.js`, `**/*.map`, `**/out/**`, `**/.next/**`, `**/.nuxt/**`, `**/.vite/**`, `**/.svelte-kit/**`, `**/public/build/**`, `**/Resources/Public/**`), and the previously non-recursive `*.min.js` pattern is now `**/*.min.js` so nested bundles are matched.
+
 ## [0.28.2] - 2026-09-18: Cross-platform installer hooks (Windows fix)
 
 ### Fixed
