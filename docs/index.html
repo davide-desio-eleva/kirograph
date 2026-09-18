@@ -7,6 +7,10 @@
   <meta name="description" content="KiroGraph gives Kiro a semantic knowledge graph so it queries your codebase instantly instead of doing slow file scans. 100% local, no API keys.">
   <link rel="stylesheet" href="style.css">
   <link rel="icon" href="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png">
+  <!-- Comic-style display font for the v1.0.0 announcement badge -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Luckiest+Guy&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="https://unpkg.com/xterm@5.3.0/css/xterm.css">
   <script src="https://unpkg.com/xterm@5.3.0/lib/xterm.js"></script>
@@ -50,9 +54,77 @@
     <h1 class="hero-title">KiroGraph</h1>
 
     <!-- v1.0.0 announcement badge -->
-    <div style="margin-top: 0.75rem; text-align: center;">
-      <a href="changelog.html#v1-0-0" style="display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.4rem 0.9rem; border: 1px solid var(--accent); border-radius: 999px; background: var(--bg-card); color: var(--accent); text-decoration: none; font-size: 0.9rem; font-weight: 600;">
-        🎉 v1.0.0 is here — first stable release
+    <style>
+      @keyframes kg-v1-pop {
+        0%   { transform: scale(0.6); opacity: 0; }
+        60%  { transform: scale(1.08); opacity: 1; }
+        100% { transform: scale(1); opacity: 1; }
+      }
+      @keyframes kg-v1-gradient {
+        0%   { background-position: 0% 50%; }
+        100% { background-position: 200% 50%; }
+      }
+      @keyframes kg-v1-glow {
+        0%, 100% { box-shadow: 0 0 12px rgba(124, 92, 255, 0.45), 0 0 4px rgba(124, 92, 255, 0.3); }
+        50%      { box-shadow: 0 0 26px rgba(124, 92, 255, 0.85), 0 0 10px rgba(124, 92, 255, 0.55); }
+      }
+      @keyframes kg-v1-shine {
+        0%   { left: -60%; }
+        60%  { left: 140%; }
+        100% { left: 140%; }
+      }
+      .kg-v1-wrap { margin-top: 1.25rem; text-align: center; }
+      .kg-v1-badge {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.7rem;
+        padding: 0.95rem 2.2rem;
+        border-radius: 999px;
+        color: #fff;
+        text-decoration: none;
+        font-family: 'Baloo 2', sans-serif;
+        font-size: 1.6rem;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        background: linear-gradient(90deg, #7c5cff, #a855f7, #6366f1, #7c5cff);
+        background-size: 200% 100%;
+        overflow: hidden;
+        animation: kg-v1-pop 0.6s cubic-bezier(.34,1.56,.64,1) both,
+                   kg-v1-gradient 4s linear infinite,
+                   kg-v1-glow 2.6s ease-in-out infinite;
+        transition: transform 0.2s ease;
+      }
+      .kg-v1-badge:hover { transform: translateY(-3px) scale(1.05) rotate(-1deg); text-decoration: none; }
+      .kg-v1-badge::after {
+        content: "";
+        position: absolute;
+        top: 0; bottom: 0; left: -60%;
+        width: 40%;
+        background: linear-gradient(100deg, transparent, rgba(255,255,255,0.55), transparent);
+        transform: skewX(-20deg);
+        animation: kg-v1-shine 3.2s ease-in-out infinite;
+      }
+      .kg-v1-badge .kg-v1-emoji { font-size: 1.7rem; }
+      .kg-v1-badge .kg-v1-tag {
+        font-family: 'Luckiest Guy', cursive;
+        letter-spacing: 1px;
+        background: rgba(255,255,255,0.25);
+        padding: 0.1rem 0.7rem;
+        border-radius: 12px;
+        font-size: 1.55rem;
+        font-weight: 400;
+        text-shadow: 1.5px 1.5px 0 rgba(0,0,0,0.22);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .kg-v1-badge, .kg-v1-badge::after { animation: none; }
+      }
+    </style>
+    <div class="kg-v1-wrap">
+      <a href="changelog.html#v1-0-0" class="kg-v1-badge">
+        <span class="kg-v1-emoji">🎉</span>
+        <span class="kg-v1-tag">v1.0.0</span>
+        is here — first stable release
       </a>
     </div>
 
@@ -78,10 +150,10 @@
       </a>
     </div>
 
-    <!-- Contributors & Stargazers carousel -->
+    <!-- Contributors carousel -->
     <div style="margin-top: 0.75rem; text-align: center;">
       <div id="avatar-carousel" style="position: relative; max-width: 100%; overflow: hidden; mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent); -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);">
-        <div id="avatar-track" style="display: flex; gap: 0.5rem; align-items: center; padding: 0.5rem 0; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; scroll-behavior: smooth;">
+        <div id="avatar-track" style="display: flex; gap: 0.5rem; align-items: center; justify-content: center; padding: 0.5rem 0; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; scroll-behavior: smooth;">
         </div>
       </div>
     </div>
@@ -514,7 +586,7 @@
   <div class="container">
     <div class="section-header">
       <span class="label">Changelog</span>
-      <h2>From v0.1 to v0.28 in three months</h2>
+      <h2>From v0.1.0 to v1.0.0 in six months</h2>
       <p>Drag or scroll to explore every release.</p>
     </div>
   </div>
@@ -1096,26 +1168,15 @@
     .then(function(r) { return r.json(); })
     .then(function(contributors) {
       if (!Array.isArray(contributors)) return;
-      var contributorLogins = new Set();
       var count = 0;
       contributors.forEach(function(u) {
         if (u.type === 'Bot') return;
         count++;
-        contributorLogins.add(u.login);
         track.appendChild(makeAvatar(u, true));
       });
       document.getElementById('hero-contributor-count').textContent = count;
-
-      // Then fetch stargazers (exclude contributors to avoid duplicates)
-      return fetch('https://api.github.com/repos/' + REPO + '/stargazers?per_page=100')
-        .then(function(r) { return r.json(); })
-        .then(function(stargazers) {
-          if (!Array.isArray(stargazers)) return;
-          stargazers.forEach(function(u) {
-            if (contributorLogins.has(u.login)) return;
-            track.appendChild(makeAvatar(u, false));
-          });
-        });
+      // Stargazers are no longer shown here: GitHub's /stargazers endpoint now
+      // requires authentication, which we can't do from a static page.
     })
     .catch(function() {});
 
