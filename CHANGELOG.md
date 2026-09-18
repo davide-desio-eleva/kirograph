@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Installer**: new `commandcode` target for [Command Code](https://commandcode.ai) CLI (issue #30). `kirograph install --target commandcode` registers the MCP server in the project-scoped `.mcp.json` (Command Code auto-discovers it) and writes a KiroGraph instructions block into `AGENTS.md`. Auto-detected via `~/.commandcode/` or the `command-code` binary on PATH, and cleaned up by `kirograph uninit --target commandcode`.
+
 ## [0.28.2] - 2026-09-18: Cross-platform installer hooks (Windows fix)
 
 ### Fixed
