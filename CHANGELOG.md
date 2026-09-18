@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.28.2] - 2026-09-18: Cross-platform installer hooks (Windows fix)
 
 ### Fixed
 
