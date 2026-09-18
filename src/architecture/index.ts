@@ -32,7 +32,10 @@ export class ArchitectureAnalyzer {
 
     // ── 1. Parse manifests ─────────────────────────────────────────────────────
     log('architecture: parsing manifests');
-    const manifestPackages = await parseAllManifests(this.projectRoot);
+    const manifestPackages = await parseAllManifests(this.projectRoot, {
+      include: this.config.include,
+      exclude: this.config.exclude,
+    });
 
     // ── 2. Get all indexed files ───────────────────────────────────────────────
     const allFiles = this.db.getAllFiles().map(f => f.path); // relative paths

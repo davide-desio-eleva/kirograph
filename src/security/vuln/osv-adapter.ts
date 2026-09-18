@@ -19,9 +19,11 @@ const ECOSYSTEM_MAP: Record<string, string> = {
   maven: 'Maven',
   go: 'Go',
   pypi: 'PyPI',
+  python: 'PyPI',    // manifest parser sends 'python' for requirements.txt
   cargo: 'crates.io',
   pyproject: 'PyPI',  // pyproject.toml (Poetry/Hatch/PDM/PEP 621)
   nuget: 'NuGet',
+  csproj: 'NuGet',   // manifest parser sends 'csproj' for .csproj files
   gradle: 'Maven',    // Gradle projects use Maven Central
   rubygems: 'RubyGems',
   composer: 'Packagist',
@@ -55,6 +57,8 @@ interface OsvVulnerability {
   details?: string;
   severity?: OsvSeverity[];
   affected?: OsvAffected[];
+  /** OSV per-database extras. GHSA records expose a coarse qualitative severity here. */
+  database_specific?: { severity?: string;[key: string]: unknown };
 }
 
 interface OsvQueryResponse {
@@ -77,6 +81,107 @@ const OSV_BATCH_API_URL = 'https://api.osv.dev/v1/querybatch';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const OSV_BATCH_MAX_QUERIES = 1000;
 const MAX_SUMMARY_LENGTH = 500;
+
+// ── CVSS parsing ──────────────────────────────────────────────────────────────
+
+/**
+ * Parse an OSV severity `score` field into a CVSS base score (0.0–10.0).
+ *
+ * The field is either a plain number (rare) or a CVSS vector string such as
+ * "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H". For v3.0/3.1 vectors we compute
+ * the base score from the metrics per the FIRST CVSS specification. Returns null
+ * when the value can't be interpreted.
+ */
+export function parseCvssScore(scoreStr: string | undefined): number | null {
+  if (!scoreStr) return null;
+
+  const trimmed = scoreStr.trim();
+
+  // Plain numeric score.
+  const num = parseFloat(trimmed);
+  if (!isNaN(num) && String(num) === trimmed && num >= 0 && num <= 10) {
+    return num;
+  }
+
+  // CVSS vector string.
+  if (/^CVSS:3\.[01]\//i.test(trimmed)) {
+    return computeCvssV3BaseScore(trimmed);
+  }
+
+  return null;
+}
+
+/** Round up to one decimal place, per the CVSS spec's roundup() function. */
+function cvssRoundUp(value: number): number {
+  const intInput = Math.round(value * 100000);
+  if (intInput % 10000 === 0) return intInput / 100000;
+  return (Math.floor(intInput / 10000) + 1) / 10;
+}
+
+/**
+ * Compute the CVSS v3.0/3.1 base score from a vector string.
+ * Implements the base-score equations from the FIRST CVSS v3.1 specification.
+ * Returns null if required base metrics are missing.
+ */
+export function computeCvssV3BaseScore(vector: string): number | null {
+  const metrics: Record<string, string> = {};
+  for (const part of vector.split('/')) {
+    const [k, v] = part.split(':');
+    if (k && v) metrics[k.toUpperCase()] = v.toUpperCase();
+  }
+
+  // Required base metrics.
+  const AV = { N: 0.85, A: 0.62, L: 0.55, P: 0.2 }[metrics.AV];
+  const AC = { L: 0.77, H: 0.44 }[metrics.AC];
+  const UI = { N: 0.85, R: 0.62 }[metrics.UI];
+  const scopeChanged = metrics.S === 'C';
+  // Privileges Required depends on Scope.
+  const PR = ((): number | undefined => {
+    if (metrics.PR === 'N') return 0.85;
+    if (metrics.PR === 'L') return scopeChanged ? 0.68 : 0.62;
+    if (metrics.PR === 'H') return scopeChanged ? 0.5 : 0.27;
+    return undefined;
+  })();
+  const impactVal = { H: 0.56, L: 0.22, N: 0.0 };
+  const C = impactVal[metrics.C as keyof typeof impactVal];
+  const I = impactVal[metrics.I as keyof typeof impactVal];
+  const A = impactVal[metrics.A as keyof typeof impactVal];
+
+  if ([AV, AC, UI, PR, C, I, A].some(v => v === undefined)) {
+    return null;
+  }
+
+  const iscBase = 1 - (1 - C!) * (1 - I!) * (1 - A!);
+  const impact = scopeChanged
+    ? 7.52 * (iscBase - 0.029) - 3.25 * Math.pow(iscBase - 0.02, 15)
+    : 6.42 * iscBase;
+  const exploitability = 8.22 * AV! * AC! * PR! * UI!;
+
+  if (impact <= 0) return 0.0;
+
+  const raw = scopeChanged
+    ? Math.min(1.08 * (impact + exploitability), 10)
+    : Math.min(impact + exploitability, 10);
+
+  return cvssRoundUp(raw);
+}
+
+/**
+ * Map a coarse qualitative severity label (GHSA `database_specific.severity`,
+ * or a CVSS qualitative rating) to a representative numeric score. Used only as
+ * a fallback when no CVSS vector is available. Returns null for unknown labels.
+ */
+export function qualitativeToScore(label: string | undefined): number | null {
+  if (!label) return null;
+  switch (label.trim().toUpperCase()) {
+    case 'CRITICAL': return 9.8;
+    case 'HIGH': return 7.5;
+    case 'MODERATE':
+    case 'MEDIUM': return 5.5;
+    case 'LOW': return 3.1;
+    default: return null;
+  }
+}
 
 // ── OsvAdapter Implementation ─────────────────────────────────────────────────
 
@@ -300,49 +405,42 @@ export class OsvAdapter implements VulnDatabaseAdapter {
   }
 
   /**
-   * Extract CVSS v3.1 base score from the severity array.
-   * Returns 0 if no CVSS score is available.
+   * Extract a CVSS base score (0.0–10.0) for the vulnerability.
+   *
+   * OSV encodes severity as an array of `{ type, score }`. For CVSS_V3/CVSS_V4
+   * the `score` field is a *vector string* (e.g. "CVSS:3.1/AV:N/AC:L/...") — NOT
+   * a plain number — so the base score must be computed from the vector.
+   *
+   * Resolution order:
+   *   1. CVSS_V3 vector → computed base score
+   *   2. CVSS_V4 vector → computed base score
+   *   3. Any severity entry that happens to be a plain number
+   *   4. Coarse qualitative `database_specific.severity` (GHSA) → representative score
+   *
+   * Returns null when no severity data is available (so callers can distinguish
+   * "unknown" from a genuine 0.0 score).
    */
-  private extractSeverity(vuln: OsvVulnerability): number {
-    if (!vuln.severity || vuln.severity.length === 0) {
-      return 0;
-    }
+  private extractSeverity(vuln: OsvVulnerability): number | null {
+    if (vuln.severity && vuln.severity.length > 0) {
+      // Prefer CVSS v3, then v4, then any parseable entry.
+      const byType = (type: string) =>
+        vuln.severity!.filter(s => s.type === type);
 
-    for (const sev of vuln.severity) {
-      if (sev.type === 'CVSS_V3') {
-        const score = this.parseCvssScore(sev.score);
-        if (score !== null) {
-          return score;
-        }
+      for (const sev of [...byType('CVSS_V3'), ...byType('CVSS_V4')]) {
+        const score = parseCvssScore(sev.score);
+        if (score !== null) return score;
+      }
+      for (const sev of vuln.severity) {
+        const score = parseCvssScore(sev.score);
+        if (score !== null) return score;
       }
     }
 
-    // Try any severity type as fallback
-    for (const sev of vuln.severity) {
-      const score = this.parseCvssScore(sev.score);
-      if (score !== null) {
-        return score;
-      }
-    }
+    // Fallback: GHSA advisories expose a coarse qualitative severity here even
+    // when a CVSS vector is absent.
+    const qualitative = qualitativeToScore(vuln.database_specific?.severity);
+    if (qualitative !== null) return qualitative;
 
-    return 0;
-  }
-
-  /**
-   * Parse a CVSS vector string or numeric score.
-   * CVSS vectors look like: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
-   * The base score is not directly in the vector — we extract it if it's a plain number,
-   * or return null if we can't parse it.
-   */
-  private parseCvssScore(scoreStr: string): number | null {
-    // If it's a plain number
-    const num = parseFloat(scoreStr);
-    if (!isNaN(num) && num >= 0 && num <= 10) {
-      return num;
-    }
-
-    // CVSS vector strings don't contain the base score directly.
-    // OSV sometimes provides the score as a plain number in the score field.
     return null;
   }
 

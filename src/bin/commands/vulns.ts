@@ -188,20 +188,24 @@ export function register(program: Command): void {
       `;
       const params: any[] = [];
 
-      // Apply severity filter
+      // Apply severity filter.
+      // Bounds are half-open [min, max) and MUST mirror the display buckets in
+      // printVulnRow() so the filter and the rendered label never disagree:
+      //   CRITICAL >= 9.0, HIGH >= 7.0, MEDIUM >= 4.0, LOW < 4.0 (incl. 0.0).
       if (opts.severity) {
         const severityRanges: Record<string, [number, number]> = {
-          critical: [9.0, 10.0],
-          high: [7.0, 8.9],
-          medium: [4.0, 6.9],
-          low: [0.1, 3.9],
+          critical: [9.0, 10.01],
+          high: [7.0, 9.0],
+          medium: [4.0, 7.0],
+          low: [0.0, 4.0],
         };
         const range = severityRanges[opts.severity.toLowerCase()];
         if (!range) {
           console.error(`  ✖ Invalid severity: ${opts.severity}. Use: critical, high, medium, low`);
           cg.close(); process.exit(1);
         }
-        query += ` AND v.severity_score >= ? AND v.severity_score <= ?`;
+        // severity_score IS NULL means "unknown" — excluded from every band.
+        query += ` AND v.severity_score IS NOT NULL AND v.severity_score >= ? AND v.severity_score < ?`;
         params.push(range[0], range[1]);
       }
 
@@ -420,6 +424,15 @@ export function register(program: Command): void {
 
       if (suppressedRows.length > 0) {
         console.log(`  ${dim}${suppressedRows.length} CVE(s) suppressed — kirograph vuln suppressions to review${reset}\n`);
+      }
+
+      // Hint when reachability hasn't been computed yet (verdict is pending).
+      // vulns --refresh only re-queries vulnerability data; the call-graph
+      // reachability analysis that resolves [pending] → [affected]/[not affected]
+      // runs during `kirograph index`.
+      const pendingCount = filteredRows.filter(r => !r.verdict).length;
+      if (pendingCount > 0) {
+        console.log(`  ${dim}${pendingCount} vulnerabilit${pendingCount === 1 ? 'y is' : 'ies are'} [pending] reachability analysis — run ${reset}kirograph index${dim} to compute call-graph verdicts.${reset}\n`);
       }
 
       // ── CI exit codes: --fail-on ──────────────────────────────────────────────

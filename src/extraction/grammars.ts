@@ -91,23 +91,37 @@ export async function initGrammars(): Promise<void> {
 
 // ── resolveWasmPath ───────────────────────────────────────────────────────────
 
-/** Languages whose WASM is bundled in src/extraction/wasm/ (not from tree-sitter-wasms). */
+/** Languages whose WASM is bundled in dist/extraction/wasm/ (works with global install). */
 const BUNDLED_WASM_LANGS = new Set<Language>([
-  'pascal', 'hcl', 'scss',
-  // Compiled and bundled locally — no npm package with pre-built WASM available
-  'sql', 'r', 'julia', 'powershell', 'perl', 'gdscript', 'nix', 'verilog', 'astro',
+  // Compiled from grammar sources (always bundled in src/extraction/wasm/)
+  'pascal', 'hcl', 'scss', 'sql', 'r', 'julia', 'powershell', 'perl',
+  'gdscript', 'nix', 'verilog', 'astro',
+  // Copied from tree-sitter-wasms during build (mainstream languages)
+  'typescript', 'tsx', 'javascript', 'go', 'python', 'bash', 'lua', 'java',
+  'ruby', 'rust', 'c', 'cpp', 'csharp', 'kotlin', 'swift', 'dart',
+  'elixir', 'scala', 'php', 'ocaml', 'elm', 'yaml', 'html', 'css',
+  'solidity', 'vue', 'objc', 'zig', 'rescript',
 ]);
 
 /**
  * Resolves the filesystem path to the WASM file for a given language.
- * Languages in BUNDLED_WASM_LANGS use bundled wasm files in src/extraction/wasm/.
- * All others are resolved from the tree-sitter-wasms npm package.
+ * Languages in BUNDLED_WASM_LANGS use bundled wasm files in dist/extraction/wasm/.
+ * Falls back to resolving from the tree-sitter-wasms npm package for local installs.
  * Returns null if the file cannot be located.
  */
 function resolveWasmPath(lang: Language): string | null {
+  // Try bundled path first (works for both local and global installs)
   if (BUNDLED_WASM_LANGS.has(lang)) {
-    return path.join(__dirname, 'wasm', `tree-sitter-${lang}.wasm`);
+    const bundledPath = path.join(__dirname, 'wasm', `tree-sitter-${lang}.wasm`);
+    try {
+      require('fs').accessSync(bundledPath);
+      return bundledPath;
+    } catch {
+      // Bundled file missing — fall through to require.resolve
+    }
   }
+
+  // Fallback: resolve from tree-sitter-wasms (works when node_modules is accessible)
   const grammarFile = GRAMMAR_FILE_MAP[lang];
   if (!grammarFile) return null;
   try {

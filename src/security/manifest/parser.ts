@@ -9,7 +9,7 @@
  *
  * Node ID format: `dep:<ecosystem>:<name>` (e.g. `dep:npm:express`)
  */
-import { SecurityManifestAdapter, type VersionExtractionPlugin } from './adapter';
+import { SecurityManifestAdapter, type VersionExtractionPlugin, type ManifestScanOptions } from './adapter';
 import { parseNpmManifest } from './plugins/npm';
 import { parseMavenManifest } from './plugins/maven';
 import { parseGoManifest } from './plugins/go';
@@ -341,10 +341,10 @@ export class ManifestParser {
   private readonly db: GraphDatabase;
   private readonly projectRoot: string;
 
-  constructor(db: GraphDatabase, projectRoot: string) {
+  constructor(db: GraphDatabase, projectRoot: string, scanOptions?: ManifestScanOptions) {
     this.db = db;
     this.projectRoot = projectRoot;
-    this.adapter = new SecurityManifestAdapter(projectRoot);
+    this.adapter = new SecurityManifestAdapter(projectRoot, scanOptions);
 
     // Wrapped plugins (arch parser exists — ecosystem must match archParser.name)
     this.adapter.registerPlugin(createNpmPlugin());

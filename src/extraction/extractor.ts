@@ -98,7 +98,47 @@ export async function extractFile(filePath: string, projectRoot: string, content
     throw new Error(`Parser unavailable for ${language} (WASM grammar exists but failed to load)`);
   }
 
-  const tree = parser.parse(source);
+  // Skip Go template files disguised as YAML (e.g. Helm templates).
+  // tree-sitter-yaml crashes with "memory access out of bounds" on {{ }} syntax.
+  // These files produce valid YAML only after Helm renders them — raw they're not parseable.
+  if (language === 'yaml' && source.includes('{{')) {
+    return {
+      filePath: relPath,
+      language,
+      contentHash,
+      fileSize,
+      nodes: [],
+      edges: [],
+      unresolvedRefs: [],
+    };
+  }
+
+  // Wrap parser.parse() to catch WASM runtime crashes (e.g. memory access out of bounds
+  // on malformed files like Helm Go templates in .yaml). Skip the file gracefully instead
+  // of letting the crash propagate and poison the entire language.
+  let tree: any;
+  try {
+    tree = parser.parse(source);
+  } catch (parseErr: any) {
+    const parseMsg = parseErr?.message ?? String(parseErr);
+    const isWasmCrash = parseErr?.constructor?.name === 'RuntimeError'
+      || parseMsg.includes('memory access out of bounds')
+      || parseMsg.includes('Aborted(');
+    if (isWasmCrash) {
+      // Individual file crashed the WASM parser — skip this file, return empty nodes.
+      // The next file in this language may parse fine.
+      return {
+        filePath: relPath,
+        language,
+        contentHash,
+        fileSize,
+        nodes: [],
+        edges: [],
+        unresolvedRefs: [],
+      };
+    }
+    throw parseErr; // Re-throw non-WASM errors
+  }
 
   const nodes: Node[] = [];
   const edges: Edge[] = [];

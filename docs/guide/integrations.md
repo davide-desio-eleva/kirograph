@@ -132,6 +132,7 @@ kirograph install --target <name>
 | Tabnine | `tabnine` | `.tabnine/mcp.json` | `.tabnine/instructions.md` | — | A |
 | Claude Code | `claude` | `.mcp.json` | `CLAUDE.md` | ✅ sync on Stop | B |
 | Codex CLI | `codex` | `.codex/hooks.json` | `AGENTS.md` | ✅ sync on Stop | B |
+| Command Code | `commandcode` | `.mcp.json` | `AGENTS.md` | — | B |
 | Gemini CLI | `gemini-cli` | `.gemini/settings.json` | `GEMINI.md` | ✅ SessionEnd | C |
 | OpenCode | `opencode` | `.opencode.json` | `.opencode.json (instructions)` | ✅ plugin | C |
 | Kilo Code | `kilo` | `kilo.json` | `.kilo/rules/kirograph.md` | — | C |
