@@ -74,17 +74,29 @@ function copyAssets(): void {
     }
   }
 
-  // Also bundle mainstream language WASMs from tree-sitter-wasms for global install support.
-  // When installed globally via `npm install -g .`, require.resolve() cannot find
-  // tree-sitter-wasms at runtime. Bundling them in dist/ ensures they're always available.
+  // Also bundle mainstream language WASMs from tree-sitter-wasms so they resolve
+  // when node_modules isn't reachable at runtime (e.g. a dist-only / pruned deploy).
+  //
+  // resolveWasmPath() in src/extraction/grammars.ts looks for `tree-sitter-<lang>.wasm`,
+  // where <lang> is the underscore-free Language identifier (e.g. `csharp`). Some
+  // tree-sitter-wasms files use an underscored stem (e.g. `tree-sitter-c_sharp.wasm`),
+  // so copying them verbatim leaves the bundled lookup unable to find them. For any
+  // such file we also write a de-underscored alias matching the runtime lookup.
   const treeSitterWasmsDir = path.join(root, 'node_modules', 'tree-sitter-wasms', 'out');
   if (fs.existsSync(treeSitterWasmsDir)) {
     const mainstreamWasms = fs.readdirSync(treeSitterWasmsDir).filter(f => f.endsWith('.wasm'));
     for (const f of mainstreamWasms) {
-      const destFile = path.join(wasmDst, f);
-      // Don't overwrite locally-compiled bundled WASMs (e.g. HCL, SCSS, Pascal)
-      if (!fs.existsSync(destFile)) {
-        fs.copyFileSync(path.join(treeSitterWasmsDir, f), destFile);
+      const srcFile = path.join(treeSitterWasmsDir, f);
+      const destNames = [f];
+      // resolveWasmPath never uses underscores, so alias `tree-sitter-c_sharp.wasm`
+      // → `tree-sitter-csharp.wasm` (and any future underscored grammar name).
+      if (f.includes('_')) destNames.push(f.replace(/_/g, ''));
+      for (const name of destNames) {
+        const destFile = path.join(wasmDst, name);
+        // Don't overwrite locally-compiled bundled WASMs (e.g. HCL, SCSS, Pascal)
+        if (!fs.existsSync(destFile)) {
+          fs.copyFileSync(srcFile, destFile);
+        }
       }
     }
   }
