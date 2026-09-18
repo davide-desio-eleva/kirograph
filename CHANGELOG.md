@@ -1,6 +1,7 @@
 # Changelog
 
-## [Unreleased]
+## [0.30.0] - 2026-09-18: WASM parser bundling + crash recovery + security fixes
+
 ### Fixed
 - **Build**: mainstream language WASM parsers (TypeScript, Go, Python, Java, C#, etc.) are now bundled into `dist/extraction/wasm/` during build, so grammars resolve even when `node_modules` isn't reachable at runtime (e.g. a dist-only or pruned deploy). Underscored grammar filenames (e.g. `tree-sitter-c_sharp.wasm`) are also written under the de-underscored name `resolveWasmPath()` expects (`tree-sitter-csharp.wasm`), fixing silent zero-symbol extraction for C# in that scenario.
 - **Extractor**: `parser.parse()` is now wrapped in try/catch for WASM RuntimeError. A single malformed file no longer crashes and poisons the entire language.
@@ -11,6 +12,12 @@
 - **Security**: EPSS batch size reduced from 500 to 100 CVEs per request to avoid HTTP 414 (URI Too Long).
 - **Security**: added `python` → `PyPI` and `csproj` → `NuGet` to OSV ecosystem mapping.
 - **Frameworks**: framework detection now searches indexed file paths and up to 2 levels of subdirectories when root-level config files aren't found. Fixes detection of Angular and Docker Compose in multi-root workspaces. FastAPI detection works when `requirements.txt` containing `fastapi` is within the 2-level scan depth.
+
+## [0.29.0] - 2026-09-18: Command Code CLI integration
+
+### Added
+
+- **Installer**: new `commandcode` target for [Command Code](https://commandcode.ai) CLI (issue #30). `kirograph install --target commandcode` registers the MCP server in the project-scoped `.mcp.json` (Command Code auto-discovers it) and writes a KiroGraph instructions block into `AGENTS.md`. Auto-detected via `~/.commandcode/` or the `command-code` binary on PATH, and cleaned up by `kirograph uninit --target commandcode`.
 
 ## [0.28.2] - 2026-09-18: Cross-platform installer hooks (Windows fix)
 

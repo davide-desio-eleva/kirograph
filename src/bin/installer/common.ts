@@ -31,7 +31,7 @@ export interface LateInstallOptions {
   kiroHookFormat?: 'v1-legacy' | 'v2';
 }
 
-export type InstallTarget = 'kiro' | 'claude' | 'codex' | 'cursor' | 'antigravity' | 'opencode' | 'windsurf' | 'cline' | 'copilot' | 'copilot-cli' | 'junie' | 'gemini-cli' | 'continue' | 'roo' | 'warp' | 'aider' | 'trae' | 'augment' | 'kilo' | 'amp' | 'devin' | 'replit' | 'goose' | 'openhands' | 'tabnine' | 'mistral-vibe' | 'ibm-bob' | 'crush' | 'droid-factory' | 'forgecode' | 'iflow' | 'qwen' | 'rovo' | 'qoder';
+export type InstallTarget = 'kiro' | 'claude' | 'codex' | 'cursor' | 'antigravity' | 'opencode' | 'windsurf' | 'cline' | 'copilot' | 'copilot-cli' | 'junie' | 'gemini-cli' | 'continue' | 'roo' | 'warp' | 'aider' | 'trae' | 'augment' | 'kilo' | 'amp' | 'devin' | 'replit' | 'goose' | 'openhands' | 'tabnine' | 'mistral-vibe' | 'ibm-bob' | 'crush' | 'droid-factory' | 'forgecode' | 'iflow' | 'qwen' | 'rovo' | 'qoder' | 'commandcode';
 
 export const KIROGRAPH_SERVER_NAME = 'kirograph';
 export const KIROGRAPH_COMMAND = 'kirograph';

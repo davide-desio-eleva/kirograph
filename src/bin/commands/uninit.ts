@@ -26,7 +26,7 @@ const ALL_TARGETS: InstallTarget[] = [
   'windsurf', 'cline', 'copilot', 'junie', 'gemini-cli',
   'continue', 'roo', 'warp', 'aider', 'trae',
   'augment', 'kilo', 'amp', 'devin', 'replit', 'goose', 'openhands', 'tabnine',
-  'mistral-vibe', 'ibm-bob', 'crush', 'droid-factory', 'forgecode', 'iflow', 'qwen', 'rovo', 'qoder',
+  'mistral-vibe', 'ibm-bob', 'crush', 'droid-factory', 'forgecode', 'iflow', 'qwen', 'rovo', 'qoder', 'commandcode',
 ];
 
 function isValidTarget(t: string): t is InstallTarget | 'all' {
