@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.30.2] - 2026-09-18: Index TypeScript abstract classes
+
+### Fixed
+
+- **Extraction (TypeScript)**: `abstract class` declarations are now indexed as `class` nodes (issue #34). The tree-sitter TypeScript grammar parses an abstract class as `abstract_class_declaration`, a distinct node type from `class_declaration`, which the extractor's node-type map didn't handle — so abstract classes (and the correct containment of their members) were silently dropped from the graph. Regular classes and Java abstract classes were unaffected. Also populated the previously-unset `isAbstract` flag for abstract classes across TypeScript, Java, C#, Kotlin, and PHP.
+
 ## [0.30.1] - 2026-09-18: Vulnerability CVSS severity parsing
 
 ### Fixed

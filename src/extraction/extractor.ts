@@ -320,6 +320,7 @@ const KIND_MAP: Record<string, NodeKind> = {
   constructor_declaration: 'method',  // Java, C#
   // Classes / structs
   class_declaration: 'class',
+  abstract_class_declaration: 'class', // TypeScript `abstract class` (distinct AST node from class_declaration)
   class_expression: 'class',
   class_definition: 'class',          // Python, Scala
   impl_item: 'class',                 // Rust (impl blocks)
@@ -491,6 +492,7 @@ function walkTree(
         isExported: isExported(node),
         isAsync: isAsync(node),
         isStatic: isStatic(node),
+        isAbstract: isAbstract(node),
         updatedAt: now,
       };
       nodes.push(graphNode);
@@ -1024,6 +1026,26 @@ function isAsync(node: any): boolean {
 function isStatic(node: any): boolean {
   for (let i = 0; i < node.childCount; i++) {
     if (node.child(i).type === 'static') return true;
+  }
+  return false;
+}
+
+/**
+ * Detect abstract declarations. Handles both grammars that use a dedicated
+ * abstract node type (TypeScript: `abstract_class_declaration`) and those that
+ * fold `abstract` into a modifier/keyword child (Java, C#, Kotlin, PHP).
+ */
+function isAbstract(node: any): boolean {
+  if (node.type === 'abstract_class_declaration') return true;
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+    if (child.type === 'abstract') return true;
+    // Java/C#/Kotlin wrap keywords in a `modifiers` child
+    if (child.type === 'modifiers') {
+      for (let j = 0; j < child.childCount; j++) {
+        if (child.child(j).type === 'abstract') return true;
+      }
+    }
   }
   return false;
 }
