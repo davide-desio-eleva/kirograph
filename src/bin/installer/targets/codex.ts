@@ -9,6 +9,7 @@ import {
   printMcpCommand,
   removeGeneratedBlock,
   upsertGeneratedBlock,
+  silentCommand,
   LateInstallOptions,
 } from '../common';
 import { buildAgentInstructions } from '../instructions';
@@ -23,7 +24,7 @@ function buildCodexHooks(): object {
           hooks: [
             {
               type: 'command',
-              command: 'kirograph sync --quiet 2>/dev/null || true',
+              command: silentCommand('kirograph sync --quiet'),
               timeout: 30,
             },
           ],

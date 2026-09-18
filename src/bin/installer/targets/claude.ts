@@ -12,6 +12,7 @@ import {
   removeMcpServersConfig,
   removeImportLine,
   writeMcpServersConfig,
+  silentCommand,
   LateInstallOptions,
 } from '../common';
 import { buildAgentInstructions } from '../instructions';
@@ -22,7 +23,7 @@ function buildClaudeHooks(): object {
   return {
     hooks: {
       Stop: [
-        { type: 'command', command: 'kirograph sync --quiet 2>/dev/null || true' },
+        { type: 'command', command: silentCommand('kirograph sync --quiet') },
       ],
     },
   };

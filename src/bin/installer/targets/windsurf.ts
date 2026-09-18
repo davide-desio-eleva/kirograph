@@ -18,6 +18,7 @@ import {
   KIROGRAPH_COMMAND,
   KIROGRAPH_MCP_ARGS,
   KIROGRAPH_SERVER_NAME,
+  silentCommand,
   LateInstallOptions,
 } from '../common';
 import { buildAgentInstructions } from '../instructions';
@@ -28,7 +29,7 @@ function buildWindsurfHooks(): object {
   return {
     hooks: {
       post_cascade_response: [
-        { command: 'kirograph sync --quiet 2>/dev/null || true', show_output: false },
+        { command: silentCommand('kirograph sync --quiet'), show_output: false },
       ],
     },
   };
