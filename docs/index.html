@@ -49,6 +49,13 @@
   <div class="container">
     <h1 class="hero-title">KiroGraph</h1>
 
+    <!-- v1.0.0 announcement badge -->
+    <div style="margin-top: 0.75rem; text-align: center;">
+      <a href="changelog.html#v1-0-0" style="display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.4rem 0.9rem; border: 1px solid var(--accent); border-radius: 999px; background: var(--bg-card); color: var(--accent); text-decoration: none; font-size: 0.9rem; font-weight: 600;">
+        🎉 v1.0.0 is here — first stable release
+      </a>
+    </div>
+
     <!-- Star, fork & contributors badges -->
     <div style="margin-top: 0.5rem; display: flex; justify-content: center; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
       <a href="https://github.com/davide-desio-eleva/kirograph/stargazers" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-card); color: var(--text); text-decoration: none; font-size: 0.85rem; transition: border-color 0.2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
@@ -80,7 +87,7 @@
     </div>
 
     <p class="hero-tagline">Semantic code knowledge graph for Kiro: fewer tool calls, instant symbol lookups, 100% local.</p>
-    <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.5rem;">Works with Kiro, Cursor, Copilot, Claude Code, Windsurf, Cline, Gemini CLI, and 27 more tools. Auto-detects your setup.</p>
+    <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.5rem;">Works with Kiro, Cursor, Copilot, Claude Code, Windsurf, Cline, Gemini CLI, and 28 more tools. Auto-detects your setup.</p>
 
     <div class="install-block">
       <span class="prompt">$</span>
@@ -562,7 +569,7 @@
       <div class="tl-item above"><div class="tl-content"><span class="tl-ver">v0.27.1</span><span class="tl-title">Hook Library</span></div><div class="tl-connector"></div><div class="tl-dot"></div></div>
       <div class="tl-item below major"><div class="tl-dot"></div><div class="tl-connector"></div><div class="tl-content"><span class="tl-ver">v0.27.2</span><span class="tl-title">Headroom Compression &amp; CLI/MCP Parity</span></div></div>
       <div class="tl-item above major"><div class="tl-content"><span class="tl-ver">v0.28.0</span><span class="tl-title">Code Health, Branch Tracking &amp; Real Embedding Tests</span></div><div class="tl-connector"></div><div class="tl-dot"></div></div>
-      <div class="tl-item below major"><div class="tl-dot"></div><div class="tl-connector"></div><div class="tl-content"><span class="tl-ver">v1.0.0</span><span class="tl-title">First Stable Release — Command Code, WASM Bundling, Crash Recovery &amp; Security Fixes</span></div></div>
+      <div class="tl-item below major"><div class="tl-dot"></div><div class="tl-connector"></div><div class="tl-content"><span class="tl-ver">v1.0.0 🎉</span><span class="tl-title">First Stable Release — Command Code integration, WASM bundling, crash recovery &amp; security fixes</span></div></div>
 
     </div>
   </div>
@@ -892,6 +899,7 @@
           <tr><td>Tabnine</td><td><code>tabnine</code></td><td><code>.tabnine/mcp.json</code></td><td><code>.tabnine/instructions.md</code></td><td>—</td><td>A</td></tr>
           <tr><td>Claude Code</td><td><code>claude</code></td><td><code>.mcp.json</code></td><td><code>CLAUDE.md</code></td><td>✅ sync on Stop</td><td>B</td></tr>
           <tr><td>Codex CLI</td><td><code>codex</code></td><td><code>.codex/hooks.json</code></td><td><code>AGENTS.md</code></td><td>✅ sync on Stop</td><td>B</td></tr>
+          <tr><td>Command Code</td><td><code>commandcode</code></td><td><code>.mcp.json</code></td><td><code>AGENTS.md</code></td><td>—</td><td>B</td></tr>
           <tr><td>Gemini CLI</td><td><code>gemini-cli</code></td><td><code>.gemini/settings.json</code></td><td><code>GEMINI.md</code></td><td>✅ SessionEnd</td><td>C</td></tr>
           <tr><td>OpenCode</td><td><code>opencode</code></td><td><code>.opencode.json</code></td><td><code>.opencode.json (instructions)</code></td><td>✅ plugin</td><td>C</td></tr>
           <tr><td>Kilo Code</td><td><code>kilo</code></td><td><code>kilo.json</code></td><td><code>.kilo/rules/kirograph.md</code></td><td>—</td><td>C</td></tr>

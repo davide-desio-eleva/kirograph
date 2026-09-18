@@ -103,7 +103,7 @@ The hook installed is `runCommand: kirograph mem watchmen synthesize --quiet`, w
 |------|------|
 | Kiro | `.kiro/steering/kirograph-watchmen.md` (`inclusion: always`) |
 | Claude Code | `CLAUDE.md` (`## KiroGraph Watchmen` section, upserted) |
-| Codex, Copilot CLI, Devin, Goose, Warp, Roo, OpenHands, Replit, Junie | `AGENTS.md` |
+| Codex, Command Code, Copilot CLI, Devin, Goose, Warp, Roo, OpenHands, Replit, Junie | `AGENTS.md` |
 | Gemini CLI / AntiGravity | `GEMINI.md` |
 | Aider | `CONVENTIONS.md` |
 | Augment | `augment-guidelines.md` |
