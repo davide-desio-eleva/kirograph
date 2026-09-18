@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Extraction (TypeScript)**: `abstract class` declarations are now indexed as `class` nodes (issue #34). The tree-sitter TypeScript grammar parses an abstract class as `abstract_class_declaration`, a distinct node type from `class_declaration`, which the extractor's node-type map didn't handle — so abstract classes (and the correct containment of their members) were silently dropped from the graph. Regular classes and Java abstract classes were unaffected. Also populated the previously-unset `isAbstract` flag for abstract classes across TypeScript, Java, C#, Kotlin, and PHP.
+
 ## [0.28.1] - 2026-07-03: Installer — semantic embeddings prompt available in every install mode
 
 ### Changed
