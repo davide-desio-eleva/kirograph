@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 ### Fixed
-- **Build**: mainstream language WASM parsers (TypeScript, Go, Python, Java, etc.) are now copied from `tree-sitter-wasms/out/` to `dist/extraction/wasm/` during build. Fixes silent parsing failure when installed globally via `npm install -g .`.
+- **Build**: mainstream language WASM parsers (TypeScript, Go, Python, Java, C#, etc.) are now bundled into `dist/extraction/wasm/` during build, so grammars resolve even when `node_modules` isn't reachable at runtime (e.g. a dist-only or pruned deploy). Underscored grammar filenames (e.g. `tree-sitter-c_sharp.wasm`) are also written under the de-underscored name `resolveWasmPath()` expects (`tree-sitter-csharp.wasm`), fixing silent zero-symbol extraction for C# in that scenario.
 - **Extractor**: `parser.parse()` is now wrapped in try/catch for WASM RuntimeError. A single malformed file no longer crashes and poisons the entire language.
 - **Extractor**: Helm Go template files (`.yaml` containing `{{`) are detected and skipped before tree-sitter parsing, preventing WASM "memory access out of bounds" crashes.
 - **Pipeline**: language poisoning is now threshold-based (3 consecutive crashes required) instead of immediate. Crash count resets on successful parse.
