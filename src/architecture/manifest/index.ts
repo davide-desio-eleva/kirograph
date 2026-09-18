@@ -59,14 +59,36 @@ export function registerManifestParser(parser: ManifestParser): void {
   else MANIFEST_PARSERS.push(parser);
 }
 
+export interface ManifestScanOptions {
+  include?: string[];
+  exclude?: string[];
+}
+
 /**
  * Walk projectRoot looking for manifest files, parse each, deduplicate, and
  * return all detected packages. Packages from manifests take priority; the
  * deduplication ensures that a workspace root pom.xml and a sub-module
  * pom.xml don't produce overlapping directory mappings.
+ *
+ * When scanOptions.include is provided, only manifests within included paths
+ * are processed (aligning with the code graph scope).
  */
-export async function parseAllManifests(projectRoot: string): Promise<ArchPackage[]> {
-  const manifestPaths = _findManifests(projectRoot);
+export async function parseAllManifests(projectRoot: string, scanOptions?: ManifestScanOptions): Promise<ArchPackage[]> {
+  let manifestPaths = _findManifests(projectRoot);
+
+  // Filter by include/exclude if provided
+  if (scanOptions?.include && scanOptions.include.length > 0) {
+    const picomatch = require('picomatch');
+    const includeMatchers = scanOptions.include.map((p: string) => picomatch(p));
+    const excludeMatchers = (scanOptions.exclude ?? []).map((p: string) => picomatch(p));
+    manifestPaths = manifestPaths.filter(absPath => {
+      const rel = path.relative(projectRoot, absPath).replace(/\\/g, '/');
+      const included = includeMatchers.some((m: (s: string) => boolean) => m(rel));
+      if (!included) return false;
+      return !excludeMatchers.some((m: (s: string) => boolean) => m(rel));
+    });
+  }
+
   const all: ArchPackage[] = [];
   const seenIds = new Set<string>();
 

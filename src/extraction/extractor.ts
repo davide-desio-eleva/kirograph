@@ -117,7 +117,47 @@ export async function extractFile(filePath: string, projectRoot: string, content
     throw new Error(`Parser unavailable for ${language} (WASM grammar exists but failed to load)`);
   }
 
-  const tree = parser.parse(source);
+  // Skip Go template files disguised as YAML (e.g. Helm templates).
+  // tree-sitter-yaml crashes with "memory access out of bounds" on {{ }} syntax.
+  // These files produce valid YAML only after Helm renders them — raw they're not parseable.
+  if (language === 'yaml' && source.includes('{{')) {
+    return {
+      filePath: relPath,
+      language,
+      contentHash,
+      fileSize,
+      nodes: [],
+      edges: [],
+      unresolvedRefs: [],
+    };
+  }
+
+  // Wrap parser.parse() to catch WASM runtime crashes (e.g. memory access out of bounds
+  // on malformed files like Helm Go templates in .yaml). Skip the file gracefully instead
+  // of letting the crash propagate and poison the entire language.
+  let tree: any;
+  try {
+    tree = parser.parse(source);
+  } catch (parseErr: any) {
+    const parseMsg = parseErr?.message ?? String(parseErr);
+    const isWasmCrash = parseErr?.constructor?.name === 'RuntimeError'
+      || parseMsg.includes('memory access out of bounds')
+      || parseMsg.includes('Aborted(');
+    if (isWasmCrash) {
+      // Individual file crashed the WASM parser — skip this file, return empty nodes.
+      // The next file in this language may parse fine.
+      return {
+        filePath: relPath,
+        language,
+        contentHash,
+        fileSize,
+        nodes: [],
+        edges: [],
+        unresolvedRefs: [],
+      };
+    }
+    throw parseErr; // Re-throw non-WASM errors
+  }
 
   const nodes: Node[] = [];
   const edges: Edge[] = [];
@@ -299,6 +339,7 @@ const KIND_MAP: Record<string, NodeKind> = {
   constructor_declaration: 'method',  // Java, C#
   // Classes / structs
   class_declaration: 'class',
+  abstract_class_declaration: 'class', // TypeScript `abstract class` (distinct AST node from class_declaration)
   class_expression: 'class',
   class_definition: 'class',          // Python, Scala
   impl_item: 'class',                 // Rust (impl blocks)
@@ -470,6 +511,7 @@ function walkTree(
         isExported: isExported(node),
         isAsync: isAsync(node),
         isStatic: isStatic(node),
+        isAbstract: isAbstract(node),
         updatedAt: now,
       };
       nodes.push(graphNode);
@@ -1003,6 +1045,26 @@ function isAsync(node: any): boolean {
 function isStatic(node: any): boolean {
   for (let i = 0; i < node.childCount; i++) {
     if (node.child(i).type === 'static') return true;
+  }
+  return false;
+}
+
+/**
+ * Detect abstract declarations. Handles both grammars that use a dedicated
+ * abstract node type (TypeScript: `abstract_class_declaration`) and those that
+ * fold `abstract` into a modifier/keyword child (Java, C#, Kotlin, PHP).
+ */
+function isAbstract(node: any): boolean {
+  if (node.type === 'abstract_class_declaration') return true;
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+    if (child.type === 'abstract') return true;
+    // Java/C#/Kotlin wrap keywords in a `modifiers` child
+    if (child.type === 'modifiers') {
+      for (let j = 0; j < child.childCount; j++) {
+        if (child.child(j).type === 'abstract') return true;
+      }
+    }
   }
   return false;
 }

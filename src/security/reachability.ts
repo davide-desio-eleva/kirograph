@@ -21,7 +21,7 @@ import type {
 /** Edge kinds used for reachability traversal */
 const TRAVERSAL_EDGE_KINDS = ['calls', 'imports', 'references'] as const;
 
-/** Maximum unresolved symbols to report */
+/** Maximum unresolved symbols to report (for the under_investigation verdict) */
 const MAX_UNRESOLVED_SYMBOLS = 50;
 
 /** Maximum distinct paths to report in impact summary */
@@ -45,7 +45,7 @@ export class ReachabilityAnalyzer {
    *
    * 1. Find the Dependency_Node linked via `has_vulnerability` edge
    * 2. Find all Entry_Points in the graph
-   * 3. BFS from each entry point toward the dependency node
+   * 3. Reverse BFS from the dependency node through incoming edges toward entry points
    * 4. Assign verdict based on path existence and unresolved imports
    *
    * Requirements: 4.1, 4.2, 4.3, 4.4, 4.6
@@ -89,32 +89,35 @@ export class ReachabilityAnalyzer {
       };
     }
 
-    // Step 3: BFS from each entry point toward the dependency node
+    // Step 3: Reverse BFS from the dependency node through INCOMING edges
+    // to find which entry points can reach it. This is O(V+E) per vulnerability
+    // instead of O(entryPoints × (V+E)) for forward BFS from each entry point.
     const reachingPaths: ReachabilityPath[] = [];
-    const allUnresolvedSymbols = new Set<string>();
-
-    for (const ep of entryPoints) {
-      const result = this.bfsFromEntryPoint(rawDb, ep.id, dependencyNodeId);
-
-      if (result.path) {
-        reachingPaths.push({
-          entryPoint: ep.id,
-          path: result.path,
-        });
-      }
-
-      for (const sym of result.unresolvedSymbols) {
-        allUnresolvedSymbols.add(sym);
-      }
+    const entryPointIds = new Set(entryPoints.map(ep => ep.id));
+    const { reached, unresolvedSymbols } = this.reverseBfsToEntryPoints(
+      rawDb,
+      dependencyNodeId,
+      entryPointIds,
+    );
+    for (const { entryPointId, path } of reached) {
+      reachingPaths.push({
+        entryPoint: entryPointId,
+        path,
+      });
     }
 
-    // Step 4: Assign verdict
-    const unresolvedSymbols = Array.from(allUnresolvedSymbols).slice(0, MAX_UNRESOLVED_SYMBOLS);
-
+    // Step 4: Assign verdict.
+    //  - affected: at least one entry point reaches the dependency.
+    //  - under_investigation: no path found, but the backward traversal hit
+    //    unresolved imports (dead-end import nodes). The graph is incomplete
+    //    near the dependency (dynamic dispatch, reflection, unindexed code),
+    //    so "not reachable" cannot be concluded — treat with caution.
+    //  - not_affected: no path found and no unresolved imports — strong signal.
+    const cappedUnresolved = unresolvedSymbols.slice(0, MAX_UNRESOLVED_SYMBOLS);
     let verdict: ReachabilityVerdict;
     if (reachingPaths.length > 0) {
       verdict = 'affected';
-    } else if (allUnresolvedSymbols.size > 0) {
+    } else if (cappedUnresolved.length > 0) {
       verdict = 'under_investigation';
     } else {
       verdict = 'not_affected';
@@ -123,7 +126,7 @@ export class ReachabilityAnalyzer {
     const result: ReachabilityResult = {
       verdict,
       paths: reachingPaths,
-      unresolvedSymbols: verdict === 'under_investigation' ? unresolvedSymbols : [],
+      unresolvedSymbols: verdict === 'under_investigation' ? cappedUnresolved : [],
       reachingEntryPointCount: reachingPaths.length,
     };
 
@@ -254,71 +257,90 @@ export class ReachabilityAnalyzer {
   }
 
   /**
-   * BFS from a single entry point toward the dependency node.
+   * Reverse BFS: start from the dependency node and walk BACKWARDS through
+   * incoming edges to find which entry points can reach it.
    *
-   * Uses outgoing edges of types: calls, imports, references.
-   * Visits each node at most once (handles cycles).
-   * Tracks unresolved imports encountered during traversal.
+   * This is O(V+E) total (one traversal) regardless of how many entry points exist,
+   * compared to O(entryPoints × (V+E)) for forward BFS from each entry point.
    *
-   * Returns the shortest path if found, plus any unresolved symbols encountered.
+   * While traversing, collects "unresolved imports" — import-kind nodes with no
+   * outgoing traversal edges. These are dead ends in the forward graph: the
+   * traversal reached them but couldn't follow them to a definition (dynamic
+   * dispatch, reflection, unindexed code). When no entry point reaches the
+   * dependency but such imports were encountered on the backward frontier,
+   * "not reachable" cannot be concluded and the caller reports
+   * under_investigation instead of not_affected.
+   *
+   * Returns the entry points that have a path to the dependency (with their
+   * paths) and the set of unresolved import node IDs encountered.
    */
-  private bfsFromEntryPoint(
+  private reverseBfsToEntryPoints(
     rawDb: any,
-    entryPointId: string,
     dependencyNodeId: string,
-  ): { path: string[] | null; unresolvedSymbols: string[] } {
+    entryPointIds: Set<string>,
+  ): {
+    reached: Array<{ entryPointId: string; path: string[] }>;
+    unresolvedSymbols: string[];
+  } {
+    const reached: Array<{ entryPointId: string; path: string[] }> = [];
+    const unresolvedSymbols = new Set<string>();
     const visited = new Set<string>();
-    const unresolvedSymbols: string[] = [];
+    const parentMap = new Map<string, string>(); // child → parent (for path reconstruction)
 
-    // BFS queue: each entry is [nodeId, path from entry point]
-    const queue: Array<[string, string[]]> = [[entryPointId, [entryPointId]]];
-    visited.add(entryPointId);
-
-    // Prepare edge kind filter
     const edgeKinds = TRAVERSAL_EDGE_KINDS.map(k => `'${k}'`).join(',');
+    const queue: string[] = [dependencyNodeId];
+    visited.add(dependencyNodeId);
 
     while (queue.length > 0) {
-      const [currentId, currentPath] = queue.shift()!;
+      const currentId = queue.shift()!;
 
-      // Get outgoing edges from current node (calls, imports, references)
-      const outEdges: Array<{ target: string; kind: string }> = rawDb.all(
-        `SELECT target, kind FROM edges WHERE source = ? AND kind IN (${edgeKinds})`,
+      // Check if we reached an entry point
+      if (currentId !== dependencyNodeId && entryPointIds.has(currentId)) {
+        // Reconstruct path from entry point to dependency
+        const path: string[] = [];
+        let node: string | undefined = currentId;
+        while (node !== undefined) {
+          path.push(node);
+          node = parentMap.get(node);
+        }
+        // path is [entryPoint, ..., dependencyNode] — already correct direction
+        reached.push({ entryPointId: currentId, path });
+        // Keep traversing — other entry points may reach this one transitively
+        // (e.g., main() → authMiddleware() → dep — both should be reported)
+      }
+
+      // Walk INCOMING edges (reverse direction: who calls/imports currentId?)
+      const inEdges: Array<{ source: string }> = rawDb.all(
+        `SELECT source FROM edges WHERE target = ? AND kind IN (${edgeKinds})`,
         [currentId],
       );
 
-      // Check if current node is an unresolved import
-      // An unresolved import is a node with kind='import' that has no outgoing edges
-      if (outEdges.length === 0) {
-        const nodeRow = rawDb.get(
-          `SELECT kind FROM nodes WHERE id = ?`,
+      // An import node reached via incoming edges that has no outgoing traversal
+      // edges is an unresolved import — a dead end that leaves reachability
+      // inconclusive. Detect it here so the verdict can fall back to
+      // under_investigation rather than a false not_affected.
+      if (currentId !== dependencyNodeId) {
+        const outCount: { c: number } = rawDb.get(
+          `SELECT COUNT(*) AS c FROM edges WHERE source = ? AND kind IN (${edgeKinds})`,
           [currentId],
         );
-        if (nodeRow && nodeRow.kind === 'import') {
-          unresolvedSymbols.push(currentId);
+        if (outCount.c === 0) {
+          const nodeRow = rawDb.get(`SELECT kind FROM nodes WHERE id = ?`, [currentId]);
+          if (nodeRow && nodeRow.kind === 'import') {
+            unresolvedSymbols.add(currentId);
+          }
         }
       }
 
-      for (const edge of outEdges) {
-        const targetId = edge.target;
-
-        // Check if we reached the dependency node
-        if (targetId === dependencyNodeId) {
-          return {
-            path: [...currentPath, targetId],
-            unresolvedSymbols,
-          };
-        }
-
-        // Skip already visited nodes (cycle handling)
-        if (visited.has(targetId)) continue;
-        visited.add(targetId);
-
-        queue.push([targetId, [...currentPath, targetId]]);
+      for (const edge of inEdges) {
+        if (visited.has(edge.source)) continue;
+        visited.add(edge.source);
+        parentMap.set(edge.source, currentId);
+        queue.push(edge.source);
       }
     }
 
-    // No path found from this entry point
-    return { path: null, unresolvedSymbols };
+    return { reached, unresolvedSymbols: Array.from(unresolvedSymbols) };
   }
 
   /**

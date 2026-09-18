@@ -45,7 +45,7 @@ export interface CleanupResult {
 
 export interface CVERecord {
   id: string; // e.g. "CVE-2023-12345"
-  severity: number; // CVSS v3.1 base score
+  severity: number | null; // CVSS base score (0.0–10.0), or null when unknown
   affectedVersionRanges: VersionRange[];
   fixedVersion?: string;
   summary: string;

@@ -60,7 +60,10 @@ export class SecurityPipeline {
     // ── Phase 1: Manifest Parsing ─────────────────────────────────────────────
     onProgress?.('manifest-parsing', 0, 4);
 
-    const parser = new ManifestParser(this.db, this.projectRoot);
+    const parser = new ManifestParser(this.db, this.projectRoot, {
+      include: this.config.include,
+      exclude: this.config.exclude,
+    });
     const parseResult = await parser.parseAll();
 
     result.manifestsDiscovered = parseResult.manifestsParsed;
