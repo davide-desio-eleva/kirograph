@@ -281,6 +281,19 @@ const DETECTORS: PlatformDetector[] = [
       return false;
     },
   },
+  {
+    target: 'commandcode',
+    label: 'Command Code',
+    reason: '',
+    detect: () => {
+      // Command Code stores user/global state in ~/.commandcode/ and ships the
+      // `command-code` binary (run as `cmd`). Avoid keying off .mcp.json — it's
+      // shared with other agents (e.g. Claude) and would misfire.
+      if (dirExists(path.join(home, '.commandcode'))) return { target: 'commandcode', label: 'Command Code', reason: '~/.commandcode/ found' };
+      if (whichExists('command-code')) return { target: 'commandcode', label: 'Command Code', reason: 'command-code binary found in PATH' };
+      return false;
+    },
+  },
 ];
 
 /**
