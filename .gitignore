@@ -40,6 +40,8 @@ GEMINI.md
 # dependencies
 node_modules/
 package-lock.json
+# ...but keep the security test fixture's lockfile (needed for npm version-resolution tests)
+!test/security/mock/package-lock.json
 
 # qdrant
 .qdrant-initialized

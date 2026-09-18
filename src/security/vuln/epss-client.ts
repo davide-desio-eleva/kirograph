@@ -11,7 +11,7 @@
 import { logWarn, logError } from '../../errors';
 
 const EPSS_API_URL = 'https://api.first.org/data/v1/epss';
-const CHUNK_SIZE = 500;
+const CHUNK_SIZE = 100; // Keep URL under 2048-char limit (100 CVEs × ~16 chars each)
 const TIMEOUT_MS = 30000;
 
 interface EpssApiResponse {

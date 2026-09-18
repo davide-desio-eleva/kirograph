@@ -58,6 +58,9 @@ export class IndexPipeline {
     // Once a language's parser aborts, every subsequent parse call for that language
     // fails instantly. We skip those files until clearParserCache + initGrammars succeeds.
     const poisonedLanguages = new Set<string>();
+    // Track consecutive WASM crashes per language. Only poison after threshold is exceeded.
+    const crashCounts = new Map<string, number>();
+    const POISON_THRESHOLD = 3;
 
     try {
       const files = await scanDirectory(this.projectRoot, this.config, opts?.signal);
@@ -119,6 +122,8 @@ export class IndexPipeline {
           });
 
           filesIndexed++;
+          // Reset crash count on successful parse for this language
+          crashCounts.set(lang, 0);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           errors.push(`${file}: ${msg}`);
@@ -129,16 +134,23 @@ export class IndexPipeline {
             || msg.includes('RuntimeError')
             || msg.includes('WASM grammar exists but failed to load');
           if (isWasmCrash) {
-            // Mark the language as poisoned so we skip remaining files of this language
             const { detectLanguage } = await import('../extraction/languages');
             const lang = detectLanguage(file);
-            poisonedLanguages.add(lang);
+            const count = (crashCounts.get(lang) ?? 0) + 1;
+            crashCounts.set(lang, count);
+
+            // Only poison the language after multiple consecutive crashes
+            if (count >= POISON_THRESHOLD) {
+              poisonedLanguages.add(lang);
+            }
 
             clearParserCache();
             try {
               await initGrammars();
-              // Recovery succeeded — un-poison all languages
-              poisonedLanguages.clear();
+              // Recovery succeeded — WASM runtime is usable again.
+              // Languages with count >= POISON_THRESHOLD remain permanently disabled
+              // for this run. Other languages (below threshold) were never poisoned
+              // and continue parsing normally.
             } catch {
               errors.push('WASM runtime unrecoverable after crash — aborting batch');
               break;
@@ -385,6 +397,8 @@ export class IndexPipeline {
       onProgress?.({ phase: 'scanning', current: result.filesScanned, total: result.filesScanned });
 
       const poisonedLanguages = new Set<string>();
+      const crashCounts = new Map<string, number>();
+      const POISON_THRESHOLD = 3;
 
       for (let i = 0; i < filesToProcess.length; i++) {
         const file = filesToProcess[i];
@@ -434,6 +448,8 @@ export class IndexPipeline {
           });
 
           this.resolver.invalidateFile(extracted.filePath);
+          // Reset crash count on successful parse for this language
+          crashCounts.set(lang, 0);
           if (isNew) result.added.push(extracted.filePath);
           else { result.modified.push(extracted.filePath); result.nodesUpdated += extracted.nodes.length; }
         } catch (err) {
@@ -448,12 +464,18 @@ export class IndexPipeline {
           if (isWasmCrash) {
             const { detectLanguage } = await import('../extraction/languages');
             const lang = detectLanguage(file);
-            poisonedLanguages.add(lang);
+            const count = (crashCounts.get(lang) ?? 0) + 1;
+            crashCounts.set(lang, count);
+
+            if (count >= POISON_THRESHOLD) {
+              poisonedLanguages.add(lang);
+            }
 
             clearParserCache();
             try {
               await initGrammars();
-              poisonedLanguages.clear();
+              // Recovery succeeded — WASM runtime is usable again.
+              // Languages at POISON_THRESHOLD stay disabled for this run.
             } catch {
               result.errors.push('WASM runtime unrecoverable after crash — aborting sync');
               break;

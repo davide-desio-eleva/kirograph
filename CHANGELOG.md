@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.30.0] - 2026-09-18: WASM parser bundling + crash recovery + security fixes
+
+### Fixed
+- **Build**: mainstream language WASM parsers (TypeScript, Go, Python, Java, C#, etc.) are now bundled into `dist/extraction/wasm/` during build, so grammars resolve even when `node_modules` isn't reachable at runtime (e.g. a dist-only or pruned deploy). Underscored grammar filenames (e.g. `tree-sitter-c_sharp.wasm`) are also written under the de-underscored name `resolveWasmPath()` expects (`tree-sitter-csharp.wasm`), fixing silent zero-symbol extraction for C# in that scenario.
+- **Extractor**: `parser.parse()` is now wrapped in try/catch for WASM RuntimeError. A single malformed file no longer crashes and poisons the entire language.
+- **Extractor**: Helm Go template files (`.yaml` containing `{{`) are detected and skipped before tree-sitter parsing, preventing WASM "memory access out of bounds" crashes.
+- **Pipeline**: language poisoning is now threshold-based (3 consecutive crashes required) instead of immediate. Crash count resets on successful parse.
+- **Security**: manifest scanner now respects config `include`/`exclude` patterns. Modules not in the include array are no longer scanned for vulnerabilities.
+- **Security**: reachability analysis uses reverse BFS (O(V+E) per vulnerability) instead of forward BFS from every entry point (O(entryPoints×(V+E))). Orders of magnitude faster on large codebases. The `under_investigation` verdict is preserved: when the traversal hits unresolved imports (dynamic dispatch, reflection, unindexed code) and no entry-point path is found, the vulnerability is reported as `under_investigation` rather than `not_affected`.
+- **Security**: EPSS batch size reduced from 500 to 100 CVEs per request to avoid HTTP 414 (URI Too Long).
+- **Security**: added `python` → `PyPI` and `csproj` → `NuGet` to OSV ecosystem mapping.
+- **Frameworks**: framework detection now searches indexed file paths and up to 2 levels of subdirectories when root-level config files aren't found. Fixes detection of Angular and Docker Compose in multi-root workspaces. FastAPI detection works when `requirements.txt` containing `fastapi` is within the 2-level scan depth.
+
 ## [0.29.0] - 2026-09-18: Command Code CLI integration
 
 ### Added

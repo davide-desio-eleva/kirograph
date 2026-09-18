@@ -143,6 +143,7 @@ export function registerFrameworkResolver(resolver: FrameworkResolver): void {
 function buildResolutionContext(projectRoot: string, db: GraphDatabase): ResolutionContext {
   const fileCache = new Map<string, string | null>();
   const nodeCache = new Map<string, Node[]>();
+  const allIndexedFiles = db.getAllFiles().map(f => f.path);
 
   return {
     getNodesInFile(filePath: string): Node[] {
@@ -158,24 +159,88 @@ function buildResolutionContext(projectRoot: string, db: GraphDatabase): Resolut
       return db.getNodesByKind(kind);
     },
     fileExists(filePath: string): boolean {
-      return fs.existsSync(path.join(projectRoot, filePath));
+      // Check root first
+      if (fs.existsSync(path.join(projectRoot, filePath))) return true;
+      // Multi-root workspace: check if any indexed file matches the filename
+      const basename = path.basename(filePath);
+      if (allIndexedFiles.some(f => f.endsWith('/' + basename) || f === basename)) return true;
+      // Note: basename matching is intentionally broad — config files like angular.json,
+      // docker-compose.yaml are highly specific names unlikely to cause false positives.
+      // Fallback: scan top-level subdirectories for non-indexed config files (e.g., angular.json)
+      try {
+        const entries = fs.readdirSync(projectRoot, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue;
+          if (entry.name === 'node_modules' || entry.name === '.git') continue;
+          const candidate = path.join(projectRoot, entry.name, filePath);
+          if (fs.existsSync(candidate)) return true;
+          // Check one level deeper (module/app/file pattern)
+          try {
+            const subEntries = fs.readdirSync(path.join(projectRoot, entry.name), { withFileTypes: true });
+            for (const sub of subEntries) {
+              if (!sub.isDirectory() || sub.name === 'node_modules' || sub.name === '.git') continue;
+              if (fs.existsSync(path.join(projectRoot, entry.name, sub.name, filePath))) return true;
+            }
+          } catch { /* skip unreadable */ }
+        }
+      } catch { /* fall through */ }
+      return false;
     },
     readFile(filePath: string): string | null {
       if (fileCache.has(filePath)) return fileCache.get(filePath)!;
-      try {
-        const content = fs.readFileSync(path.join(projectRoot, filePath), 'utf8');
-        fileCache.set(filePath, content);
-        return content;
-      } catch {
-        fileCache.set(filePath, null);
-        return null;
+      // Try root first
+      const rootPath = path.join(projectRoot, filePath);
+      if (fs.existsSync(rootPath)) {
+        try {
+          const content = fs.readFileSync(rootPath, 'utf8');
+          fileCache.set(filePath, content);
+          return content;
+        } catch { /* fall through */ }
       }
+      // Multi-root workspace: find first matching file in indexed paths
+      const basename = path.basename(filePath);
+      const match = allIndexedFiles.find(f => f.endsWith('/' + basename) || f === basename);
+      if (match) {
+        try {
+          const content = fs.readFileSync(path.join(projectRoot, match), 'utf8');
+          fileCache.set(filePath, content);
+          return content;
+        } catch { /* fall through */ }
+      }
+      // Fallback: find first matching file in subdirectories (for non-indexed config files)
+      try {
+        const entries = fs.readdirSync(projectRoot, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isDirectory() || entry.name === 'node_modules' || entry.name === '.git') continue;
+          const candidate = path.join(projectRoot, entry.name, filePath);
+          if (fs.existsSync(candidate)) {
+            const content = fs.readFileSync(candidate, 'utf8');
+            fileCache.set(filePath, content);
+            return content;
+          }
+          // Check one level deeper
+          try {
+            const subEntries = fs.readdirSync(path.join(projectRoot, entry.name), { withFileTypes: true });
+            for (const sub of subEntries) {
+              if (!sub.isDirectory() || sub.name === 'node_modules' || sub.name === '.git') continue;
+              const deepCandidate = path.join(projectRoot, entry.name, sub.name, filePath);
+              if (fs.existsSync(deepCandidate)) {
+                const content = fs.readFileSync(deepCandidate, 'utf8');
+                fileCache.set(filePath, content);
+                return content;
+              }
+            }
+          } catch { /* skip */ }
+        }
+      } catch { /* fall through */ }
+      fileCache.set(filePath, null);
+      return null;
     },
     getProjectRoot(): string {
       return projectRoot;
     },
     getAllFiles(): string[] {
-      return db.getAllFiles().map(f => f.path);
+      return allIndexedFiles;
     },
   };
 }

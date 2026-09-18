@@ -64,13 +64,40 @@ function copyAssets(): void {
     }
   }
 
-  // tree-sitter wasm files
+  // tree-sitter wasm files (bundled from src/extraction/wasm/)
   const wasmSrc = path.join(src, 'extraction', 'wasm');
   const wasmDst = path.join(dist, 'extraction', 'wasm');
   fs.mkdirSync(wasmDst, { recursive: true });
   if (fs.existsSync(wasmSrc)) {
     for (const f of fs.readdirSync(wasmSrc).filter(f => f.endsWith('.wasm'))) {
       fs.copyFileSync(path.join(wasmSrc, f), path.join(wasmDst, f));
+    }
+  }
+
+  // Also bundle mainstream language WASMs from tree-sitter-wasms so they resolve
+  // when node_modules isn't reachable at runtime (e.g. a dist-only / pruned deploy).
+  //
+  // resolveWasmPath() in src/extraction/grammars.ts looks for `tree-sitter-<lang>.wasm`,
+  // where <lang> is the underscore-free Language identifier (e.g. `csharp`). Some
+  // tree-sitter-wasms files use an underscored stem (e.g. `tree-sitter-c_sharp.wasm`),
+  // so copying them verbatim leaves the bundled lookup unable to find them. For any
+  // such file we also write a de-underscored alias matching the runtime lookup.
+  const treeSitterWasmsDir = path.join(root, 'node_modules', 'tree-sitter-wasms', 'out');
+  if (fs.existsSync(treeSitterWasmsDir)) {
+    const mainstreamWasms = fs.readdirSync(treeSitterWasmsDir).filter(f => f.endsWith('.wasm'));
+    for (const f of mainstreamWasms) {
+      const srcFile = path.join(treeSitterWasmsDir, f);
+      const destNames = [f];
+      // resolveWasmPath never uses underscores, so alias `tree-sitter-c_sharp.wasm`
+      // → `tree-sitter-csharp.wasm` (and any future underscored grammar name).
+      if (f.includes('_')) destNames.push(f.replace(/_/g, ''));
+      for (const name of destNames) {
+        const destFile = path.join(wasmDst, name);
+        // Don't overwrite locally-compiled bundled WASMs (e.g. HCL, SCSS, Pascal)
+        if (!fs.existsSync(destFile)) {
+          fs.copyFileSync(srcFile, destFile);
+        }
+      }
     }
   }
 
