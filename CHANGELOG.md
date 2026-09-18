@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.30.1] - 2026-09-18: Vulnerability CVSS severity parsing
+
+### Fixed
+
+- **Security (`kirograph vulns`)**: vulnerabilities were all displayed as `LOW` with `[Risk: 0.0]` regardless of their real severity (issue #39). OSV returns CVSS severity as a *vector string* (e.g. `CVSS:3.1/AV:N/AC:L/...`), but the adapter only handled a plain number — `parseFloat` on a vector yields `NaN`, so every score silently fell back to `0` → `LOW`. Added a proper CVSS v3.0/3.1 base-score computation from the vector, a fallback to the coarse `database_specific.severity` (GHSA) when no CVSS vector is present, and made unknown severities render as `unknown` (null) instead of a false `LOW`.
+- **Security (`kirograph vulns --severity`)**: the `low` filter band was `[0.1, 3.9]` while stored scores were `0`, so `--severity low` returned nothing despite everything showing as LOW. Filter bands are now half-open and mirror the display buckets exactly (CRITICAL ≥ 9.0, HIGH ≥ 7.0, MEDIUM ≥ 4.0, LOW < 4.0), and `unknown`/null severities are excluded from all bands.
+- **Security (`kirograph vulns`)**: added a hint when vulnerabilities are `[pending]` reachability, pointing users to `kirograph index` (which runs the call-graph analysis that resolves the verdict) — `vulns --refresh` only re-queries vulnerability data and does not compute reachability.
+
 ## [0.30.0] - 2026-09-18: WASM parser bundling + crash recovery + security fixes
 
 ### Fixed
