@@ -137,7 +137,74 @@ export async function parseNpmManifest(
     }
   }
 
+  // Transitive dependencies (present only in the lock file, never declared
+  // directly in package.json) would otherwise never become a Dependency_Node,
+  // so they'd silently skip vulnerability scanning entirely. Add them here.
+  const directNames = new Set(dependencies.map(d => d.name));
+  const lockRelativePath = relativeManifest.replace(/package\.json$/, 'package-lock.json');
+  dependencies.push(...extractTransitiveNpmDependencies(manifestDir, lockRelativePath, directNames));
+
   return dependencies;
+}
+
+/**
+ * Extract every package listed in package-lock.json's "packages" map (lockfile
+ * v2/v3) that isn't already a direct dependency. These are transitive-only
+ * packages — e.g. a sub-dependency three levels deep — that `npm audit` reports
+ * on but that package.json never mentions.
+ *
+ * Only the npm "packages" (v2/v3) format is supported here; lockfileVersion 1,
+ * pnpm-lock.yaml, and yarn.lock still resolve versions for direct dependencies
+ * only (tracked as a follow-up).
+ */
+function extractTransitiveNpmDependencies(
+  manifestDir: string,
+  lockRelativePath: string,
+  directNames: Set<string>,
+): ParsedDependency[] {
+  const lockPath = path.join(manifestDir, 'package-lock.json');
+  if (!fs.existsSync(lockPath)) return [];
+
+  let lockData: unknown;
+  try {
+    lockData = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+  } catch (err) {
+    logWarn(`[sec:npm] Failed to parse ${lockRelativePath} for transitive dependencies: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+
+  if (typeof lockData !== 'object' || lockData === null) return [];
+  const packages = (lockData as Record<string, unknown>).packages;
+  if (typeof packages !== 'object' || packages === null) return [];
+
+  const transitive: ParsedDependency[] = [];
+  const seen = new Set<string>();
+
+  for (const [key, value] of Object.entries(packages as Record<string, unknown>)) {
+    if (key === '') continue; // skip the root project entry
+    if (typeof value !== 'object' || value === null) continue;
+    const pkg = value as Record<string, unknown>;
+
+    const name = key.replace(/^.*node_modules\//, '');
+    if (!name || directNames.has(name) || seen.has(name)) continue;
+
+    const version = pkg.version;
+    if (typeof version !== 'string') continue;
+
+    seen.add(name);
+    transitive.push({
+      name,
+      // No real semver range exists at the project level for a transitive
+      // package — the resolved version is the only constraint we have.
+      declaredConstraint: version,
+      resolvedVersion: version,
+      scope: pkg.dev === true ? 'development' : 'production',
+      ecosystem: 'npm',
+      sourceManifest: lockRelativePath,
+    });
+  }
+
+  return transitive;
 }
 
 /**

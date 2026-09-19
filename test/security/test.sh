@@ -146,14 +146,19 @@ NPM_COUNT=$(db_dep_count "npm")
 check_pkg "express" "4.18.2"  "production"
 check_pkg "lodash"  "4.17.21" "production"
 check_pkg "jest"    "29.7.0"  "development"
+# body-parser is NOT declared in package.json — it only exists as a transitive
+# dependency of express in package-lock.json. Regression check for issue #39:
+# purely transitive packages (e.g. elliptic, qs in a real audit) must still
+# become their own Dependency_Node, or they silently skip vulnerability scanning.
+check_pkg "body-parser" "1.20.1" "production"
 EXPRESS_TS=$(db_transitive "express")
 [ "$EXPRESS_TS" = "complete" ] \
   && ok "express transitive_status='complete' (lock parser attivo)" \
   || { [ "$EXPRESS_TS" = "incomplete" ] && fail "express transitive_status='incomplete'" || warn "express transitive_status='${EXPRESS_TS:-null}'"; }
-EDGE_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM edges WHERE kind='depends_on' AND source_id=(SELECT id FROM nodes WHERE label='express') AND target_id=(SELECT id FROM nodes WHERE label='body-parser');" 2>/dev/null || echo 0)
+EDGE_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM edges WHERE kind='depends_on' AND source='dep:npm:express' AND target='dep:npm:body-parser';" 2>/dev/null || echo 0)
 [ "$EDGE_COUNT" -ge 1 ] \
   && ok "edge depends_on: express → body-parser (transitivo npm)" \
-  || warn "edge depends_on express→body-parser non trovato"
+  || fail "edge depends_on express→body-parser non trovato"
 
 # ── A3. Go ────────────────────────────────────────────────────────────────────
 sep
