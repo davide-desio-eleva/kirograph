@@ -23,6 +23,16 @@
         "reference": "def456"
       },
       "type": "library"
+    },
+    {
+      "name": "psr/http-message",
+      "version": "2.0",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/php-fig/http-message.git",
+        "reference": "jkl345"
+      },
+      "type": "library"
     }
   ],
   "packages-dev": [

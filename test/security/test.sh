@@ -181,6 +181,9 @@ check_pkg "serde"   "1.0.193" "production"
 check_pkg "reqwest" "0.11.22" "production"
 check_pkg "tokio"   "1.35.1"  "development"
 SERDE_TS=$(db_transitive "serde")
+# mock-crate itself is NOT a real dependency — Cargo.lock also lists the
+# workspace's own crate as a [[package]] entry, must not become a node.
+[ "$(db_pkg 'mock-crate')" -eq 0 ] && ok "mock-crate (root crate) non aggiunto come dipendenza" || fail "mock-crate (root crate) erroneamente aggiunto come dipendenza"
 [ "$SERDE_TS" = "complete" ] \
   && ok "serde transitive_status='complete' (Cargo.lock parser attivo)" \
   || { [ "$SERDE_TS" = "incomplete" ] && fail "serde transitive_status='incomplete'" || warn "serde transitive_status='${SERDE_TS:-null}'"; }
@@ -188,10 +191,19 @@ SERDE_TS=$(db_transitive "serde")
 # ── A5. pip + pyproject ───────────────────────────────────────────────────────
 sep
 echo -e "  ${BOLD}[A5] pip + pyproject  (requirements.txt + pyproject.toml)${RESET}"
-PYTHON_COUNT=$(db_dep_count "python")
-[ "$PYTHON_COUNT" -ge 2 ] && ok "python: $PYTHON_COUNT dep trovati" || fail "python: attesi >=2 dep, trovati $PYTHON_COUNT"
-[ "$(db_pkg 'fastapi')" -ge 1 ] && ok "fastapi  ${DIM}(ecosystem:python)${RESET}" || fail "fastapi non trovato"
-[ "$(db_pkg 'httpx')"   -ge 1 ] && ok "httpx  ${DIM}(ecosystem:python)${RESET}"   || fail "httpx non trovato"
+# Both requirements.txt (pip) and pyproject.toml (poetry) tag dependencies
+# with ecosystem 'pypi' — 'python' is only the internal plugin lookup key
+# (must match the architecture parser's name), never the persisted value.
+PYTHON_COUNT=$(db_dep_count "pypi")
+[ "$PYTHON_COUNT" -ge 2 ] && ok "pypi: $PYTHON_COUNT dep trovati" || fail "pypi: attesi >=2 dep, trovati $PYTHON_COUNT"
+check_pkg "requests" "2.31.0" "production"
+check_pkg "flask"    "3.0.0"  "production"
+[ "$(db_pkg 'fastapi')" -ge 1 ] && ok "fastapi  ${DIM}(ecosystem:pypi)${RESET}" || fail "fastapi non trovato"
+[ "$(db_pkg 'httpx')"   -ge 1 ] && ok "httpx  ${DIM}(ecosystem:pypi)${RESET}"   || fail "httpx non trovato"
+# anyio + starlette are NOT declared in pyproject.toml — only poetry.lock knows
+# about them as fastapi's own transitive dependencies.
+check_pkg "anyio"     "4.1.0"  "production"
+check_pkg "starlette" "0.32.0" "production"
 
 # ── A6. Maven ─────────────────────────────────────────────────────────────────
 sep
@@ -210,6 +222,9 @@ NUGET_COUNT=$(db_dep_count "nuget")
 check_pkg "Newtonsoft.Json" "13.0.3" "production"
 check_pkg "Serilog"         "3.1.1"  "production"
 check_pkg "xunit"           "2.6.2"  "development"
+# xunit.core is NOT a <PackageReference> in Mock.csproj — only marked "Transitive"
+# in packages.lock.json.
+check_pkg "xunit.core"      "2.6.2"  "production"
 
 # ── A8. Gradle ────────────────────────────────────────────────────────────────
 sep
@@ -218,6 +233,9 @@ GRADLE_COUNT=$(db_dep_count "gradle")
 [ "$GRADLE_COUNT" -ge 2 ] && ok "gradle: $GRADLE_COUNT dep trovati" || fail "gradle: attesi >=2 dep, trovati $GRADLE_COUNT"
 check_pkg "com.google.guava:guava"          "32.1.3-jre" "production"
 check_pkg "org.junit.jupiter:junit-jupiter" "5.10.1"     "development"
+# com.google.guava:failureaccess is NOT declared in build.gradle — only
+# gradle.lockfile knows about it as guava's own transitive dependency.
+check_pkg "com.google.guava:failureaccess"  "1.0.1"      "production"
 
 # ── A9. RubyGems ──────────────────────────────────────────────────────────────
 sep
@@ -227,6 +245,9 @@ RUBYGEMS_COUNT=$(db_dep_count "rubygems")
 check_pkg "rails"       "7.1.2" "production"
 check_pkg "pg"          "1.5.4" "production"
 check_pkg "rspec-rails" "6.1.0" "development"
+# rack is NOT in the Gemfile — only Gemfile.lock knows about it as a
+# transitive dependency of actionpack/rails.
+check_pkg "rack"        "2.2.8" "production"
 
 # ── A10. Composer ─────────────────────────────────────────────────────────────
 sep
@@ -236,6 +257,9 @@ COMPOSER_COUNT=$(db_dep_count "composer")
 check_pkg "symfony/http-foundation" "6.4.0"  "production"
 check_pkg "monolog/monolog"         "3.4.0"  "production"
 check_pkg "phpunit/phpunit"         "10.5.0" "development"
+# psr/http-message is NOT in composer.json's require — only composer.lock
+# knows about it as a transitive dependency.
+check_pkg "psr/http-message"        "2.0"    "production"
 
 # ── A11. Swift ────────────────────────────────────────────────────────────────
 sep
@@ -253,6 +277,9 @@ PUB_COUNT=$(db_dep_count "pub")
 check_pkg "http"     "1.1.2" "production"
 check_pkg "provider" "6.1.1" "production"
 check_pkg "mockito"  "5.4.4" "development"
+# collection is NOT in pubspec.yaml — only pubspec.lock knows about it,
+# marked "dependency: transitive".
+check_pkg "collection" "1.18.0" "production"
 
 # ── A13. Hex (Elixir) ─────────────────────────────────────────────────────────
 sep
@@ -262,6 +289,9 @@ HEX_COUNT=$(db_dep_count "hex")
 check_pkg "phoenix"    "1.7.10" "production"
 check_pkg "ecto"       "3.11.1" "production"
 check_pkg "ex_machina" "2.7.0"  "development"
+# decimal is NOT in mix.exs's deps — only mix.lock knows about it as ecto's
+# own transitive dependency.
+check_pkg "decimal"    "2.1.1"  "production"
 
 # ── A14. Riepilogo ────────────────────────────────────────────────────────────
 sep

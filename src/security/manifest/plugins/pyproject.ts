@@ -88,6 +88,24 @@ export async function parsePyprojectManifest(
     }
   }
 
+  // Transitive-only packages (present in poetry.lock/pdm.lock/uv.lock but
+  // never declared in pyproject.toml) would otherwise never become a
+  // Dependency_Node and would silently skip vulnerability scanning.
+  // resolvedVersions already has every package the lock file resolved,
+  // direct or transitive (lower-cased — original casing isn't retained).
+  const directNames = new Set(dependencies.map(d => d.name.toLowerCase()));
+  for (const [name, version] of resolvedVersions) {
+    if (directNames.has(name)) continue;
+    dependencies.push({
+      name,
+      declaredConstraint: version,
+      resolvedVersion: version,
+      scope: 'production',
+      ecosystem: 'pypi',
+      sourceManifest: relativeManifest,
+    });
+  }
+
   return dependencies;
 }
 

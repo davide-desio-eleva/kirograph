@@ -1,6 +1,11 @@
 /**
  * Python manifest parser.
- * Handles pyproject.toml, setup.py, setup.cfg.
+ * Handles pyproject.toml, setup.py, setup.cfg, requirements.txt.
+ *
+ * requirements.txt has no name/version/externalDeps of its own for the
+ * architecture (import-graph) side — it's listed here purely so the security
+ * module's pip plugin (registered under the same 'python' ecosystem key)
+ * gets it through manifest discovery at all; see security/manifest/adapter.ts.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -8,12 +13,12 @@ import type { ManifestParser, ArchPackage } from '../types';
 
 export const pythonParser: ManifestParser = {
   name: 'python',
-  manifestFiles: ['pyproject.toml', 'setup.py', 'setup.cfg'],
+  manifestFiles: ['pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt'],
   language: 'python',
 
   canParse(manifestPath: string): boolean {
     const base = path.basename(manifestPath);
-    return base === 'pyproject.toml' || base === 'setup.py' || base === 'setup.cfg';
+    return base === 'pyproject.toml' || base === 'setup.py' || base === 'setup.cfg' || base === 'requirements.txt';
   },
 
   async parse(manifestPath: string, projectRoot: string): Promise<ArchPackage[]> {

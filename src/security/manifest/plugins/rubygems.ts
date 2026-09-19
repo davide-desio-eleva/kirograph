@@ -100,6 +100,23 @@ export async function parseRubygemsManifest(
     }
   }
 
+  // Transitive-only gems (present in Gemfile.lock but never declared in the
+  // Gemfile) would otherwise never become a Dependency_Node and would
+  // silently skip vulnerability scanning. resolvedVersions already has every
+  // gem Gemfile.lock resolved, direct or transitive.
+  const directNames = new Set(dependencies.map(d => d.name));
+  for (const [name, version] of resolvedVersions) {
+    if (directNames.has(name)) continue;
+    dependencies.push({
+      name,
+      declaredConstraint: version,
+      resolvedVersion: version,
+      scope: 'production',
+      ecosystem: 'rubygems',
+      sourceManifest: relativeManifest,
+    });
+  }
+
   return dependencies;
 }
 

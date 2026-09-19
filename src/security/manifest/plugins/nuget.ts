@@ -96,6 +96,25 @@ export async function parseNugetManifest(
     }
   }
 
+  // Transitive-only packages (present in packages.lock.json but never
+  // declared in the .csproj) would otherwise never become a Dependency_Node
+  // and would silently skip vulnerability scanning. resolvedVersions already
+  // has every package packages.lock.json resolved, direct or transitive
+  // (lower-cased — no original casing is retained by the lock parser).
+  const directNames = new Set(dependencies.map(d => d.name.toLowerCase()));
+  const lockRelativePath = path.relative(projectRoot, path.join(manifestDir, 'packages.lock.json')).replace(/\\/g, '/');
+  for (const [name, version] of resolvedVersions) {
+    if (directNames.has(name)) continue;
+    dependencies.push({
+      name,
+      declaredConstraint: version,
+      resolvedVersion: version,
+      scope: 'production',
+      ecosystem: 'nuget',
+      sourceManifest: lockRelativePath,
+    });
+  }
+
   return dependencies;
 }
 

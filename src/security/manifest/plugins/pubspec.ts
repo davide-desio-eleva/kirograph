@@ -77,6 +77,23 @@ export async function parsePubspecManifest(
     }
   }
 
+  // Transitive-only packages (present in pubspec.lock but never declared in
+  // pubspec.yaml) would otherwise never become a Dependency_Node and would
+  // silently skip vulnerability scanning. resolvedVersions already has every
+  // package pubspec.lock resolved, direct or transitive.
+  const directNames = new Set(dependencies.map(d => d.name));
+  for (const [name, version] of resolvedVersions) {
+    if (directNames.has(name)) continue;
+    dependencies.push({
+      name,
+      declaredConstraint: version,
+      resolvedVersion: version,
+      scope: 'production',
+      ecosystem: 'pub',
+      sourceManifest: relativeManifest,
+    });
+  }
+
   return dependencies;
 }
 

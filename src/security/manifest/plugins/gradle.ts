@@ -121,6 +121,23 @@ export async function parseGradleManifest(
     });
   }
 
+  // Transitive-only artifacts (present in gradle.lockfile but never declared
+  // in the build script) would otherwise never become a Dependency_Node and
+  // would silently skip vulnerability scanning. resolvedVersions already has
+  // every "group:artifact" gradle.lockfile resolved, direct or transitive.
+  const directNames = new Set(dependencies.map(d => d.name.toLowerCase()));
+  for (const [key, version] of resolvedVersions) {
+    if (directNames.has(key)) continue;
+    dependencies.push({
+      name: key,
+      declaredConstraint: version,
+      resolvedVersion: version,
+      scope: 'production',
+      ecosystem: 'gradle',
+      sourceManifest: relativeManifest,
+    });
+  }
+
   return dependencies;
 }
 

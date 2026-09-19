@@ -142,7 +142,28 @@ export async function parseNpmManifest(
   // so they'd silently skip vulnerability scanning entirely. Add them here.
   const directNames = new Set(dependencies.map(d => d.name));
   const lockRelativePath = relativeManifest.replace(/package\.json$/, 'package-lock.json');
-  dependencies.push(...extractTransitiveNpmDependencies(manifestDir, lockRelativePath, directNames));
+  const npmLockPath = path.join(manifestDir, 'package-lock.json');
+  if (fs.existsSync(npmLockPath)) {
+    // package-lock.json (v2/v3) carries a per-package "dev" flag — parse it
+    // directly so transitive dev-only dependencies keep the right scope.
+    dependencies.push(...extractTransitiveNpmDependencies(manifestDir, lockRelativePath, directNames));
+  } else {
+    // pnpm-lock.yaml, yarn.lock, or a lockfileVersion 1 package-lock.json:
+    // resolvedVersions already has every package the lock file resolved,
+    // direct or transitive — it just doesn't carry a dev/prod distinction,
+    // so default newly-added transitive entries to 'production'.
+    for (const [name, version] of resolvedVersions) {
+      if (directNames.has(name)) continue;
+      dependencies.push({
+        name,
+        declaredConstraint: version,
+        resolvedVersion: version,
+        scope: 'production',
+        ecosystem: 'npm',
+        sourceManifest: relativeManifest,
+      });
+    }
+  }
 
   return dependencies;
 }
@@ -152,10 +173,6 @@ export async function parseNpmManifest(
  * v2/v3) that isn't already a direct dependency. These are transitive-only
  * packages — e.g. a sub-dependency three levels deep — that `npm audit` reports
  * on but that package.json never mentions.
- *
- * Only the npm "packages" (v2/v3) format is supported here; lockfileVersion 1,
- * pnpm-lock.yaml, and yarn.lock still resolve versions for direct dependencies
- * only (tracked as a follow-up).
  */
 function extractTransitiveNpmDependencies(
   manifestDir: string,

@@ -8,6 +8,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.4.7"
+  collection:
+    dependency: transitive
+    description:
+      name: collection
+      sha256: "mno345"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.18.0"
   http:
     dependency: "direct main"
     description:
