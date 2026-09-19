@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.1] - 2026-09-19: Transitive dependency scanning across all ecosystems + OSV batch severity fix
+
+### Fixed
+
+- **Security (npm)**: dependencies that only exist as transitive entries in `package-lock.json` (e.g. `elliptic`, `qs` several levels deep under `node-polyfill-webpack-plugin`/`body-parser`/`express`) never became a `Dependency_Node` and silently skipped vulnerability scanning entirely, even though `npm audit` correctly walks the full tree (issue #39 follow-up). `parseNpmManifest` now also emits every package present in the lock file's resolved list that isn't already a direct dependency, covering `package-lock.json` (lockfile v1/v2/v3), `pnpm-lock.yaml`, and `yarn.lock`.
+- **Security (Cargo, Gradle, NuGet, RubyGems, Composer, Pub, Hex)**: same class of gap — the manifest plugins for `Cargo.lock`, `gradle.lockfile`, `packages.lock.json`, `Gemfile.lock`, `composer.lock`, `pubspec.lock`, and `mix.lock` only used the lock file to resolve versions for packages already declared directly in the manifest, discarding every purely transitive package. Extended the same fix to all seven. Swift already used `Package.resolved` as its authoritative full list and needed no change; Maven has no lock file to resolve from statically, and `requirements.txt` has no dependency-tree format — both remain `incomplete` by design, matching Go's existing behavior.
+- **Security (Python manifest dispatch)**: `pyproject.toml` was silently falling back to version-less extraction instead of using its own dedicated plugin, because the manifest adapter only checked the *wrapped* plugin keyed to the arch parser's name (pip's, which correctly declines `pyproject.toml`) before giving up on version info — standalone plugins were never checked as a fallback. Fixed in `src/security/manifest/adapter.ts`.
+- **Security (Python discovery)**: `requirements.txt` was never actually discoverable as a manifest file at all — the Python architecture parser's `manifestFiles` never listed it (only the security plugin's own, unused-for-discovery list did). Added it to `src/architecture/manifest/python.ts`.
+- **Security (OSV)**: `kirograph vulns` displayed every vulnerability found through the default (batch) enrichment path as `unknown` severity with a flat `[Risk: 0.6]`, regardless of real severity. OSV's `/v1/querybatch` endpoint returns only `{ id, modified }` per match by design — no CVSS, no EPSS-relevant data, no summary, no fixed version — and the adapter never followed up with a detail fetch. `queryBatch()` now collects the unique vulnerability IDs found across a batch and fetches full details for each via `GET /v1/vulns/{id}` (deduplicated across shared advisories, bounded concurrency), falling back to the stub if an individual detail fetch fails. Distinct from the CVSS-vector parsing bug fixed in 1.0.0 (issue #39/PR42): that fix works once severity data arrives, but the batch path never delivered any, so it went unnoticed until verified against this fix.
+
 ## [1.0.0] - 2026-09-18: First stable release — Command Code integration, WASM bundling, crash recovery & security fixes
 
 ### Added
