@@ -160,7 +160,7 @@ export function register(program: Command): void {
           return null;
         }).filter(Boolean) as any[];
 
-        const client = new VulnerabilityDatabaseClient(adapters, db);
+        const client = new VulnerabilityDatabaseClient(adapters, db, undefined, target);
         const result = await client.enrichAll();
 
         console.error(`  ${green}✓${reset} Checked ${bold}${result.dependenciesChecked}${reset} dependencies, found ${bold}${result.vulnerabilitiesFound}${reset} vulnerabilities`);

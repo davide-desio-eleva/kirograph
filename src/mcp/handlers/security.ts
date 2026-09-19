@@ -114,7 +114,7 @@ export async function handleSecurity(toolName: string, args: Record<string, unkn
           return null;
         }).filter(Boolean) as any[];
 
-        const client = new VulnerabilityDatabaseClient(adapters, db);
+        const client = new VulnerabilityDatabaseClient(adapters, db, undefined, projectRoot);
         await client.enrichAll();
       }
 

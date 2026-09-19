@@ -169,6 +169,61 @@ export async function parseNpmManifest(
 }
 
 /**
+ * Find every npm package name that resolves to more than one distinct
+ * version somewhere in package-lock.json's dependency tree. npm's nested
+ * node_modules layout can install different versions of the same package
+ * at different paths (e.g. a top-level `qs@6.16.0` alongside a
+ * `body-parser`-nested `qs@6.15.3`) — but a Dependency_Node only records one
+ * `resolved_version`. Used by vulnerability enrichment to also check every
+ * other installed copy, not just whichever version ended up recorded.
+ *
+ * Only the top-level package-lock.json (lockfile v2/v3 "packages" map) is
+ * checked — a monorepo with per-package lock files, or pnpm/yarn projects,
+ * won't get this extra check (they still get the single recorded version).
+ *
+ * Returns a map from package name to the full set of distinct versions
+ * found; names with only one version are omitted.
+ */
+export function findNpmDuplicateVersions(projectRoot: string): Map<string, Set<string>> {
+  const versionsByName = new Map<string, Set<string>>();
+
+  const lockPath = path.join(projectRoot, 'package-lock.json');
+  if (!fs.existsSync(lockPath)) return versionsByName;
+
+  let lockData: unknown;
+  try {
+    lockData = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+  } catch {
+    return versionsByName;
+  }
+
+  if (typeof lockData !== 'object' || lockData === null) return versionsByName;
+  const packages = (lockData as Record<string, unknown>).packages;
+  if (typeof packages !== 'object' || packages === null) return versionsByName;
+
+  for (const [key, value] of Object.entries(packages as Record<string, unknown>)) {
+    if (key === '') continue; // skip the root project entry
+    if (typeof value !== 'object' || value === null) continue;
+    const pkg = value as Record<string, unknown>;
+
+    const version = pkg.version;
+    if (typeof version !== 'string') continue;
+
+    const name = key.replace(/^.*node_modules\//, '');
+    if (!name) continue;
+
+    if (!versionsByName.has(name)) versionsByName.set(name, new Set());
+    versionsByName.get(name)!.add(version);
+  }
+
+  for (const [name, versions] of versionsByName) {
+    if (versions.size <= 1) versionsByName.delete(name);
+  }
+
+  return versionsByName;
+}
+
+/**
  * Extract every package listed in package-lock.json's "packages" map (lockfile
  * v2/v3) that isn't already a direct dependency. These are transitive-only
  * packages — e.g. a sub-dependency three levels deep — that `npm audit` reports
