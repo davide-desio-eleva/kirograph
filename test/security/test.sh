@@ -213,6 +213,13 @@ MAVEN_COUNT=$(db_dep_count "maven")
 check_pkg "org.springframework:spring-core"                  "6.1.1"   "production"
 check_pkg "junit:junit"                                      "4.13.2"  "development"
 check_pkg "com.fasterxml.jackson.core:jackson-databind"      "2.16.0"  "production"
+# spring-context has no <version> in pom.xml (BOM-managed, like under
+# spring-boot-starter-parent) — resolved only via dependency-tree.txt.
+check_pkg "org.springframework:spring-context"                "6.1.1"   "production"
+# spring-aop + jackson-core are NOT declared in pom.xml at all — only
+# dependency-tree.txt knows about them as transitive dependencies.
+[ "$(db_pkg 'org.springframework:spring-aop')" -ge 1 ] && ok "spring-aop  ${DIM}(transitive, dependency-tree.txt)${RESET}" || fail "spring-aop non trovato"
+[ "$(db_pkg 'com.fasterxml.jackson.core:jackson-core')" -ge 1 ] && ok "jackson-core  ${DIM}(transitive, dependency-tree.txt)${RESET}" || fail "jackson-core non trovato"
 
 # ── A7. NuGet ─────────────────────────────────────────────────────────────────
 sep
