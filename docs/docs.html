@@ -1336,6 +1336,12 @@ kirograph wiki reindex
 # Lint the wiki: detect broken links, orphan pages
 kirograph wiki lint
 
+# Show outgoing/broken/incoming [[slug]] links for a page
+kirograph wiki links auth-service
+
+# Rename a page slug — moves its file and rewrites every [[slug]] reference to it
+kirograph wiki rename auth-service auth
+
 # Wiki status
 kirograph wiki status</code></pre>
 

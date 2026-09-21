@@ -254,6 +254,8 @@ const GROUPS: Group[] = [
       { name: 'wiki page',       args: '<slug>',   desc: 'Print the full content of a wiki page' },
       { name: 'wiki list',       desc: 'List all wiki pages' },
       { name: 'wiki lint',       desc: 'Health check the wiki for broken links, orphans, contradictions' },
+      { name: 'wiki links',      args: '<slug>',   desc: 'Show outgoing, broken, and incoming [[slug]] links for a page' },
+      { name: 'wiki rename',     args: '<from> <to>', desc: 'Rename a page slug, moving its file and updating every [[slug]] reference to it' },
       { name: 'wiki reindex',    desc: 'Rebuild SQLite index from .kirograph/wiki/*.md files' },
       { name: 'wiki status',     desc: 'Wiki subsystem stats: page count, source count, oldest/newest page' },
       { name: 'wiki synthesize', desc: 'Run local-model wiki synthesis over the pending source queue' },

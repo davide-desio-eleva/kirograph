@@ -9,6 +9,8 @@ import { DEFAULT_SCHEMA } from './schema';
 import { parseWikiDiff } from './schema';
 import { buildIngestPrompt, applyDiff, reindexFromDisk, updateManifest } from './ingest';
 import { lintWiki } from './lint';
+import { getPageLinks, type WikiPageLinks } from './links';
+import { renamePage, type RenamePageResult } from './rename';
 import type {
   WikiPage,
   ScoredWikiPage,
@@ -17,7 +19,7 @@ import type {
   WikiStats,
 } from './types';
 
-export type { WikiPage, ScoredWikiPage, WikiDiff, WikiLintIssue, WikiStats };
+export type { WikiPage, ScoredWikiPage, WikiDiff, WikiLintIssue, WikiStats, WikiPageLinks, RenamePageResult };
 
 export class KiroGraphWiki {
   private wikiDb: WikiDatabase;
@@ -125,6 +127,20 @@ export class KiroGraphWiki {
   lint(): WikiLintIssue[] {
     this.initialize();
     return lintWiki(this.wikiDb);
+  }
+
+  // ── Links ──────────────────────────────────────────────────────────────────
+
+  /** Outgoing/broken/incoming `[[slug]]` links for one page. Null if the slug is unknown. */
+  getLinks(slug: string): WikiPageLinks | null {
+    this.initialize();
+    return getPageLinks(this.wikiDb, slug);
+  }
+
+  /** Rename a page's slug, moving its file and rewriting every `[[slug]]` reference to it. */
+  rename(fromSlug: string, toSlug: string): RenamePageResult {
+    this.initialize();
+    return renamePage(this.wikiDir, this.wikiDb, fromSlug, toSlug);
   }
 
   // ── Reindex ────────────────────────────────────────────────────────────────
