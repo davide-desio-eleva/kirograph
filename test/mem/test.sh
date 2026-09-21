@@ -450,6 +450,54 @@ echo ""
 echo "$DUP_OUT" | grep -qi "duplicate\|already" \
   && ok "Duplicate rilevato e saltato correttamente" || warn "Deduplicazione non rilevata"
 
+# ── 24b. memoryStrictWrites (opt-in schema validation) ────────────────────────
+sep
+echo -e "  ${BOLD}[22b] memoryStrictWrites — validazione opt-in${RESET}"
+
+cmd "mem store --kind bogus (memoryStrictWrites: false — atteso successo invariato)"
+LOOSE_OUT=$($KG mem store "[$RUN_ID] kind non valido, ma memoryStrictWrites è off." --kind totally-bogus-kind 2>&1)
+echo "$LOOSE_OUT" | sed 's/^/     /'
+echo "$LOOSE_OUT" | grep -qi "Stored observation" \
+  && ok "memoryStrictWrites off (default): kind non valido accettato senza errori" \
+  || fail "memoryStrictWrites off: scrittura inattesa rifiutata"
+
+info "Abilito memoryStrictWrites nel config..."
+node -e "
+  const fs = require('fs');
+  const cfg = JSON.parse(fs.readFileSync('.kirograph/config.json', 'utf8'));
+  cfg.memoryStrictWrites = true;
+  fs.writeFileSync('.kirograph/config.json', JSON.stringify(cfg, null, 2));
+"
+ok "config.json: memoryStrictWrites=true"
+
+cmd "mem store --kind bogus (memoryStrictWrites: true — atteso rifiuto)"
+set +e
+STRICT_OUT=$($KG mem store "[$RUN_ID] kind non valido, con memoryStrictWrites on." --kind totally-bogus-kind 2>&1)
+STRICT_EXIT=$?
+set -e
+echo "$STRICT_OUT" | sed 's/^/     /'
+if [ "$STRICT_EXIT" -ne 0 ] && echo "$STRICT_OUT" | grep -qi "Invalid observation kind"; then
+  ok "memoryStrictWrites on: kind non valido rifiutato (exit=$STRICT_EXIT, violazione nominata)"
+else
+  fail "memoryStrictWrites on: rifiuto atteso non avvenuto (exit=$STRICT_EXIT)"
+fi
+
+cmd "mem store --kind decision (memoryStrictWrites: true — atteso successo)"
+VALID_OUT=$($KG mem store "[$RUN_ID] kind valido con memoryStrictWrites on." --kind decision --topic-key "test/strict-writes-$RUN_ID" 2>&1)
+echo "$VALID_OUT" | sed 's/^/     /'
+echo "$VALID_OUT" | grep -qi "Stored observation" \
+  && ok "memoryStrictWrites on: kind valido accettato normalmente" \
+  || fail "memoryStrictWrites on: scrittura valida inattesa rifiutata"
+
+info "Disabilito memoryStrictWrites (ripristino default per il resto della suite)..."
+node -e "
+  const fs = require('fs');
+  const cfg = JSON.parse(fs.readFileSync('.kirograph/config.json', 'utf8'));
+  delete cfg.memoryStrictWrites;
+  fs.writeFileSync('.kirograph/config.json', JSON.stringify(cfg, null, 2));
+"
+ok "config.json: memoryStrictWrites rimosso (torna al default false)"
+
 # ── 25. mem prune ─────────────────────────────────────────────────────────────
 sep
 echo -e "  ${BOLD}[23] kirograph mem prune${RESET}"
