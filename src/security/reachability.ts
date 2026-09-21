@@ -61,12 +61,14 @@ export class ReachabilityAnalyzer {
 
     if (!depEdge) {
       // No dependency linked — cannot determine reachability
-      return {
+      const result: ReachabilityResult = {
         verdict: 'under_investigation',
         paths: [],
         unresolvedSymbols: [],
         reachingEntryPointCount: 0,
       };
+      this.storeReachabilityResult(rawDb, vulnerabilityNodeId, result);
+      return result;
     }
 
     const dependencyNodeId: string = depEdge.source;
@@ -81,12 +83,14 @@ export class ReachabilityAnalyzer {
 
     if (entryPoints.length === 0) {
       // No entry points — cannot determine reachability
-      return {
+      const result: ReachabilityResult = {
         verdict: 'not_affected',
         paths: [],
         unresolvedSymbols: [],
         reachingEntryPointCount: 0,
       };
+      this.storeReachabilityResult(rawDb, vulnerabilityNodeId, result);
+      return result;
     }
 
     // Step 3: Reverse BFS from the dependency node through INCOMING edges
