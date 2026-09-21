@@ -11,12 +11,25 @@
 #      - custom-named auth wrapper the heuristic misses is caught by jev
 #      - a genuinely public route stays unauthenticated
 #
-# Uses a local mock server (mock-server.js) standing in for
-# https://api.typesafe.ai — no real API key or network access required.
+# Two modes, chosen automatically:
+#   - MOCK (default): JEV_API_KEY unset. Runs a local mock server
+#     (mock-server.js) standing in for https://api.typesafe.ai — no real API
+#     key or network access required. Assertions check exact expected values,
+#     since the mock's answers are deterministic.
+#   - LIVE: JEV_API_KEY set in the environment. Uses the real jev API — the
+#     key is written to .kirograph/.env (never to config.json), exercising
+#     the .env-loading path end-to-end. Exact-value assertions become
+#     warnings instead of failures (a real model's answer isn't guaranteed
+#     to match, even for an unambiguous fixture) — but every wiring-level
+#     assertion (valid relation type, confidence in range, DB persistence
+#     consistent with what was returned, clean error handling) still runs
+#     as a hard failure in both modes, since those test our code, not jev's
+#     opinion.
 #
 # Uso:
-#   ./test.sh            # test completo (build inclusa)
-#   ./test.sh --no-build # salta la compilazione TypeScript
+#   ./test.sh                        # mock (default)
+#   JEV_API_KEY=sk-... ./test.sh     # live, against the real API
+#   ./test.sh --no-build             # salta la compilazione TypeScript
 
 set -euo pipefail
 
@@ -36,6 +49,9 @@ info() { echo -e "  ${CYAN}›${RESET}  $1"; }
 warn() { echo -e "  ${YELLOW}⚠${RESET}  $1"; }
 cmd()  { echo -e "\n  ${DIM}\$${RESET} ${CYAN}kirograph $1${RESET}"; }
 sep()  { echo -e "\n${DIM}──────────────────────────────────────────────────────${RESET}"; }
+# CLI output is always ANSI-colored (no NO_COLOR support) — strip escape
+# codes before grep/sed-parsing a colored value out of it.
+strip_ansi() { sed -E $'s/\x1b\[[0-9;]*[A-Za-z]//g'; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -43,11 +59,83 @@ TEST_DIR="$SCRIPT_DIR/mock"
 KG="node $ROOT/dist/bin/kirograph.js"
 DB="$TEST_DIR/.kirograph/kirograph.db"
 PORT=8842
-API_KEY="mock-jev-key"
 BASE_URL="http://127.0.0.1:$PORT"
+
+if [ -n "${JEV_API_KEY:-}" ]; then
+  USE_LIVE=true
+  API_KEY="$JEV_API_KEY"
+else
+  USE_LIVE=false
+  API_KEY="mock-jev-key"
+fi
+
+# Parse a "classified by jev: <relation> (confidence: <n>, ...)" line from
+# mem-compare output into $REL_OUT/$CONF_OUT, and assert everything that
+# must hold regardless of which mode produced the answer.
+validate_relation_wiring() {
+  local output="$1" plain relation_id db_status db_relation expect_judged
+  plain=$(echo "$output" | strip_ansi)
+  REL_OUT=$(echo "$plain" | grep -oE 'classified by jev: [a-z_]+' | sed 's/classified by jev: //' || echo "")
+  CONF_OUT=$(echo "$plain" | grep -oE 'confidence: [0-9.]+' | sed 's/confidence: //' || echo "")
+  relation_id=$(echo "$plain" | grep -oE '[0-9a-f-]{36}' | head -1 || echo "")
+
+  case "$REL_OUT" in
+    supersedes|conflicts_with|compatible|scoped|related|not_conflict) ok "relation è un tipo valido: $REL_OUT" ;;
+    *) fail "relation non valida restituita: '$REL_OUT'" ;;
+  esac
+
+  if node -e "process.exit((Number('$CONF_OUT') >= 0 && Number('$CONF_OUT') <= 1) ? 0 : 1)" 2>/dev/null; then
+    ok "confidence in range [0,1]: $CONF_OUT"
+  else
+    fail "confidence fuori range o non numerica: '$CONF_OUT'"
+  fi
+
+  if [ -z "$relation_id" ]; then
+    fail "relationId non estratto dall'output"
+    return
+  fi
+  db_status=$(sqlite3 "$DB" "SELECT judgment_status FROM mem_relations WHERE id = '$relation_id';")
+  db_relation=$(sqlite3 "$DB" "SELECT relation FROM mem_relations WHERE id = '$relation_id';")
+  [ "$db_relation" = "$REL_OUT" ] \
+    && ok "DB: mem_relations.relation coerente con l'output ($db_relation)" \
+    || fail "DB: relation incoerente (output=$REL_OUT db=$db_relation)"
+  if node -e "process.exit(Number('$CONF_OUT') >= 0.8 ? 0 : 1)" 2>/dev/null; then expect_judged=judged; else expect_judged=pending; fi
+  [ "$db_status" = "$expect_judged" ] \
+    && ok "DB: judgment_status coerente con la soglia (confidence=$CONF_OUT -> $expect_judged)" \
+    || fail "DB: judgment_status inatteso (status=$db_status atteso=$expect_judged per confidence=$CONF_OUT)"
+}
+
+# After validate_relation_wiring, check the specific relation/judged-vs-pending
+# a well-behaved classifier should produce for this fixture — hard assertion
+# against the deterministic mock, soft warning against the real model.
+assert_expected_relation() {
+  local expected_relation="$1" expected_judged="$2"  # expected_judged: judged|pending
+  local actual_judged
+  if node -e "process.exit(Number('$CONF_OUT') >= 0.8 ? 0 : 1)" 2>/dev/null; then actual_judged=judged; else actual_judged=pending; fi
+
+  if [ "$USE_LIVE" = false ]; then
+    [ "$REL_OUT" = "$expected_relation" ] \
+      && ok "mock: relation esatta attesa '$expected_relation'" \
+      || fail "mock: attesa '$expected_relation', ottenuta '$REL_OUT'"
+    [ "$actual_judged" = "$expected_judged" ] \
+      && ok "mock: $actual_judged come atteso (confidence=$CONF_OUT)" \
+      || fail "mock: atteso $expected_judged, ottenuto $actual_judged (confidence=$CONF_OUT)"
+  else
+    if [ "$REL_OUT" = "$expected_relation" ]; then
+      ok "live: jev ha classificato '$expected_relation' come atteso per questo scenario"
+    else
+      warn "live: jev ha risposto '$REL_OUT' invece di '$expected_relation' — risposta del modello reale, non un errore di wiring"
+    fi
+  fi
+}
 
 echo -e "\n${BOLD}  KiroGraph jev integration — memory relations · wiki contradictions · attack-surface auth${RESET}"
 echo -e "  ${DIM}$TEST_DIR${RESET}"
+if [ "$USE_LIVE" = true ]; then
+  echo -e "  ${YELLOW}${BOLD}LIVE mode${RESET} ${DIM}— JEV_API_KEY rilevata, uso l'API jev reale (https://api.typesafe.ai)${RESET}"
+else
+  echo -e "  ${DIM}MOCK mode — nessuna JEV_API_KEY nell'ambiente, uso il mock server locale${RESET}"
+fi
 
 # ── 1. Build ──────────────────────────────────────────────────────────────────
 sep
@@ -59,23 +147,27 @@ else
   warn "--no-build: usando dist esistente"
 fi
 
-# ── 2. Start mock jev server ───────────────────────────────────────────────────
+# ── 2. Start mock jev server (mock mode only) ──────────────────────────────────
 sep
-info "Avvio mock jev server su :$PORT..."
-node "$SCRIPT_DIR/mock-server.js" "$PORT" "$API_KEY" > /tmp/jev-mock-server.log 2>&1 &
-MOCK_PID=$!
+MOCK_PID=""
+if [ "$USE_LIVE" = true ]; then
+  info "LIVE mode: nessun mock server da avviare."
+else
+  info "Avvio mock jev server su :$PORT..."
+  node "$SCRIPT_DIR/mock-server.js" "$PORT" "$API_KEY" > /tmp/jev-mock-server.log 2>&1 &
+  MOCK_PID=$!
+  for i in $(seq 1 20); do
+    if curl -s -o /dev/null "http://127.0.0.1:$PORT/v1/systemone" -X POST; then
+      break
+    fi
+    sleep 0.2
+  done
+  ok "Mock jev server avviato (pid $MOCK_PID)"
+fi
 cleanup() {
-  kill "$MOCK_PID" 2>/dev/null || true
+  [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
-
-for i in $(seq 1 20); do
-  if curl -s -o /dev/null "http://127.0.0.1:$PORT/v1/systemone" -X POST; then
-    break
-  fi
-  sleep 0.2
-done
-ok "Mock jev server avviato (pid $MOCK_PID)"
 
 # ── 3. Pulizia + init ──────────────────────────────────────────────────────────
 sep
@@ -84,7 +176,29 @@ rm -rf "$TEST_DIR/.kirograph"
 cd "$TEST_DIR"
 
 mkdir -p .kirograph
-cat > .kirograph/config.json << EOF
+
+# JEV_API_KEY always goes through .kirograph/.env, never config.json — this
+# is the mechanism real users are expected to use, and it's exercised in
+# both mock and live mode. jevBaseUrl (not a secret) stays a config field,
+# and is only set in mock mode — live mode uses the real default.
+cat > .kirograph/.env << EOF
+# test-generated — picked up by loadConfig() via loadDotEnv()
+JEV_API_KEY=$API_KEY
+EOF
+
+if [ "$USE_LIVE" = true ]; then
+  cat > .kirograph/config.json << 'EOF'
+{
+  "version": 1,
+  "enableMemory": true,
+  "enableWiki": true,
+  "enableArchitecture": true,
+  "enableSecurity": true,
+  "securityAutoEnrich": false
+}
+EOF
+else
+  cat > .kirograph/config.json << EOF
 {
   "version": 1,
   "enableMemory": true,
@@ -92,12 +206,12 @@ cat > .kirograph/config.json << EOF
   "enableArchitecture": true,
   "enableSecurity": true,
   "securityAutoEnrich": false,
-  "jevApiKey": "$API_KEY",
   "jevBaseUrl": "$BASE_URL"
 }
 EOF
+fi
 node -e "JSON.parse(require('fs').readFileSync('.kirograph/config.json','utf8'))" \
-  && ok "config.json scritto e valido" || fail "config.json malformato"
+  && ok "config.json scritto e valido (jevApiKey via .kirograph/.env)" || fail "config.json malformato"
 
 cmd "index"
 $KG index 2>&1 | grep -E "✓|file|symbol" | sed 's/^/     /'
@@ -108,7 +222,7 @@ $KG index 2>&1 | grep -E "✓|file|symbol" | sed 's/^/     /'
 # ══════════════════════════════════════════════════════════════════════════════
 
 sep
-echo -e "  ${BOLD}[A1] mem compare — default mode ('agent'): --relation still required${RESET}\n"
+echo -e "  ${BOLD}[A1] mem conflicts compare — default mode ('agent'): --relation still required${RESET}\n"
 
 cmd "mem store (2 osservazioni per il caso 'supersedes')"
 STORE_A1=$($KG mem store "We use in-memory session storage for the MVP." --kind architecture --topic-key "jev-test/session-storage-a" 2>&1)
@@ -131,7 +245,7 @@ else
 fi
 
 sep
-echo -e "  ${BOLD}[A2] mem compare — memoryRelationMode: 'jev', caso alta confidenza (auto-judge)${RESET}\n"
+echo -e "  ${BOLD}[A2] mem conflicts compare — memoryRelationMode: 'jev', caso alta confidenza (auto-judge atteso)${RESET}\n"
 
 info "Abilito memoryRelationMode: jev nel config..."
 node -e "
@@ -145,28 +259,11 @@ ok "config.json: memoryRelationMode=jev"
 cmd "mem conflicts compare jev-test/session-storage-a jev-test/session-storage-b   (nessun --relation, mode=jev)"
 HIGH_CONF_OUT=$($KG mem conflicts compare "jev-test/session-storage-a" "jev-test/session-storage-b" 2>&1)
 echo "$HIGH_CONF_OUT" | sed 's/^/     /'
-echo "$HIGH_CONF_OUT" | grep -qi "supersedes" \
-  && ok "jev classified relation: supersedes" \
-  || fail "jev relation classification: 'supersedes' non trovato nell'output"
-echo "$HIGH_CONF_OUT" | grep -qi "auto-judged" \
-  && ok "confidence 0.92 >= threshold 0.8: auto-judged" \
-  || fail "atteso auto-judged per confidence alta"
-
-RELATION_ID_A=$(echo "$HIGH_CONF_OUT" | grep -oE '[0-9a-f-]{36}' | head -1 || echo "")
-if [ -n "$RELATION_ID_A" ]; then
-  DB_STATUS_A=$(sqlite3 "$DB" "SELECT judgment_status FROM mem_relations WHERE id = '$RELATION_ID_A';")
-  DB_RELATION_A=$(sqlite3 "$DB" "SELECT relation FROM mem_relations WHERE id = '$RELATION_ID_A';")
-  if [ "$DB_STATUS_A" = "judged" ] && [ "$DB_RELATION_A" = "supersedes" ]; then
-    ok "DB: mem_relations riflette judgment_status=judged, relation=supersedes"
-  else
-    fail "DB: stato relazione inatteso (status=$DB_STATUS_A relation=$DB_RELATION_A)"
-  fi
-else
-  fail "relationId non estratto dall'output"
-fi
+validate_relation_wiring "$HIGH_CONF_OUT"
+assert_expected_relation "supersedes" "judged"
 
 sep
-echo -e "  ${BOLD}[A3] mem compare — memoryRelationMode: 'jev', caso bassa confidenza (pending)${RESET}\n"
+echo -e "  ${BOLD}[A3] mem conflicts compare — memoryRelationMode: 'jev', caso bassa confidenza (pending atteso)${RESET}\n"
 
 cmd "mem store (2 osservazioni per il caso 'related', bassa confidenza)"
 STORE_B1=$($KG mem store "Error handling uses try/catch blocks throughout the codebase." --kind pattern --topic-key "jev-test/error-handling" 2>&1)
@@ -177,33 +274,33 @@ echo "$STORE_B2" | grep -qi "Stored observation" && ok "observation D stored" ||
 cmd "mem conflicts compare jev-test/error-handling jev-test/logging   (nessun --relation, mode=jev)"
 LOW_CONF_OUT=$($KG mem conflicts compare "jev-test/error-handling" "jev-test/logging" 2>&1)
 echo "$LOW_CONF_OUT" | sed 's/^/     /'
-echo "$LOW_CONF_OUT" | grep -qi "related" \
-  && ok "jev classified relation: related" \
-  || fail "jev relation classification: 'related' non trovato nell'output"
-echo "$LOW_CONF_OUT" | grep -qi "pending review" \
-  && ok "confidence 0.4 < threshold 0.8: left pending" \
-  || fail "atteso 'pending review' per confidence bassa"
+validate_relation_wiring "$LOW_CONF_OUT"
+assert_expected_relation "related" "pending"
 
 RELATION_ID_B=$(echo "$LOW_CONF_OUT" | grep -oE '[0-9a-f-]{36}' | head -1 || echo "")
 if [ -n "$RELATION_ID_B" ]; then
   PENDING_LIST=$($KG mem conflicts list 2>&1)
-  echo "$PENDING_LIST" | grep -q "$RELATION_ID_B" \
-    && ok "relazione a bassa confidenza visibile in 'mem conflicts list' per review" \
-    || fail "relazione pending non trovata in 'mem conflicts list'"
-else
-  fail "relationId non estratto dall'output"
+  if echo "$PENDING_LIST" | grep -q "$RELATION_ID_B"; then
+    ok "relazione visibile in 'mem conflicts list' per review (se ancora pending)"
+  else
+    DB_STATUS_B=$(sqlite3 "$DB" "SELECT judgment_status FROM mem_relations WHERE id = '$RELATION_ID_B';")
+    if [ "$DB_STATUS_B" = "pending" ]; then
+      fail "relazione pending non trovata in 'mem conflicts list'"
+    else
+      ok "relazione non pending (status=$DB_STATUS_B) — correttamente assente da 'mem conflicts list'"
+    fi
+  fi
 fi
 
 sep
-echo -e "  ${BOLD}[A4] mem compare — chiave API non valida: errore pulito, non un crash${RESET}\n"
+echo -e "  ${BOLD}[A4] mem conflicts compare — chiave API non valida: errore pulito, non un crash${RESET}\n"
 
-node -e "
-  const fs = require('fs');
-  const cfg = JSON.parse(fs.readFileSync('.kirograph/config.json', 'utf8'));
-  cfg.jevApiKey = 'wrong-key';
-  fs.writeFileSync('.kirograph/config.json', JSON.stringify(cfg, null, 2));
-"
-cmd "mem conflicts compare (jevApiKey errata)"
+info "Scrivo una JEV_API_KEY non valida in .kirograph/.env..."
+cat > .kirograph/.env << 'EOF'
+JEV_API_KEY=wrong-key-definitely-invalid
+EOF
+
+cmd "mem conflicts compare (JEV_API_KEY non valida)"
 set +e
 BAD_KEY_OUT=$($KG mem conflicts compare "jev-test/error-handling" "jev-test/logging" 2>&1)
 BAD_KEY_EXIT=$?
@@ -216,14 +313,16 @@ else
 fi
 
 # Restore the correct key for the rest of the suite
+cat > .kirograph/.env << EOF
+JEV_API_KEY=$API_KEY
+EOF
 node -e "
   const fs = require('fs');
   const cfg = JSON.parse(fs.readFileSync('.kirograph/config.json', 'utf8'));
-  cfg.jevApiKey = '$API_KEY';
   cfg.memoryRelationMode = 'agent';
   fs.writeFileSync('.kirograph/config.json', JSON.stringify(cfg, null, 2));
 "
-ok "config.json: jevApiKey ripristinata, memoryRelationMode tornato ad 'agent'"
+ok "config.json/.env: chiave ripristinata, memoryRelationMode tornato ad 'agent'"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # B. Wiki contradictions — wikiContradictionMode: 'jev'
@@ -285,15 +384,29 @@ LINT_OUT=$($KG wiki lint 2>&1)
 echo "$LINT_OUT" | sed 's/^/     /'
 
 CONTRADICTION_BLOCK=$(echo "$LINT_OUT" | grep -A1 -i "\[contradiction\]" || true)
-if echo "$CONTRADICTION_BLOCK" | grep -qi "auth-model" && echo "$CONTRADICTION_BLOCK" | grep -qi "auth-legacy"; then
-  ok "contraddizione auth-model <-> auth-legacy rilevata da jev"
+AUTH_FLAGGED=false
+echo "$CONTRADICTION_BLOCK" | grep -qi "auth-model" && echo "$CONTRADICTION_BLOCK" | grep -qi "auth-legacy" && AUTH_FLAGGED=true
+PAYMENT_FLAGGED=false
+echo "$CONTRADICTION_BLOCK" | grep -qi "payment" && PAYMENT_FLAGGED=true
+
+if [ "$USE_LIVE" = false ]; then
+  [ "$AUTH_FLAGGED" = true ] \
+    && ok "contraddizione auth-model <-> auth-legacy rilevata da jev" \
+    || fail "contraddizione auth-model <-> auth-legacy NON rilevata"
+  [ "$PAYMENT_FLAGGED" = false ] \
+    && ok "nessun falso positivo tra payment-flow / payment-webhooks" \
+    || fail "falso positivo: payment-flow/payment-webhooks segnalate come contraddizione"
 else
-  fail "contraddizione auth-model <-> auth-legacy NON rilevata"
-fi
-if echo "$CONTRADICTION_BLOCK" | grep -qi "payment"; then
-  fail "falso positivo: payment-flow/payment-webhooks segnalate come contraddizione"
-else
-  ok "nessun falso positivo tra payment-flow / payment-webhooks"
+  if [ "$AUTH_FLAGGED" = true ]; then
+    ok "live: contraddizione auth-model <-> auth-legacy rilevata da jev (atteso per questo scenario)"
+  else
+    warn "live: jev non ha rilevato la contraddizione auth-model <-> auth-legacy — risposta del modello reale, non un errore di wiring"
+  fi
+  if [ "$PAYMENT_FLAGGED" = false ]; then
+    ok "live: nessun falso positivo tra payment-flow / payment-webhooks (atteso)"
+  else
+    warn "live: jev ha segnalato payment-flow/payment-webhooks come contraddizione — risposta del modello reale, non un errore di wiring"
+  fi
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -304,7 +417,7 @@ sep
 echo -e "  ${BOLD}[C1] AttackSurfaceAnalyzer — securityAuthDetectionMode heuristic vs jev${RESET}\n"
 echo -e "  ${DIM}Route nodes + call-path edges inseriti direttamente nel grafo (bypassa la pipeline di framework-detection).${RESET}\n"
 
-ROOT_DIR="$ROOT" TEST_DIR="$TEST_DIR" BASE_URL="$BASE_URL" API_KEY="$API_KEY" node --input-type=module << 'NODEEOF'
+ROOT_DIR="$ROOT" TEST_DIR="$TEST_DIR" BASE_URL="$BASE_URL" API_KEY="$API_KEY" USE_LIVE="$USE_LIVE" node --input-type=module << 'NODEEOF'
 import path from 'path';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
@@ -313,6 +426,7 @@ const rootDir = process.env.ROOT_DIR;
 const testDir = process.env.TEST_DIR;
 const baseUrl = process.env.BASE_URL;
 const apiKey = process.env.API_KEY;
+const useLive = process.env.USE_LIVE === 'true';
 
 const KiroGraph = require(path.join(rootDir, 'dist/index.js')).default;
 const cg = await KiroGraph.open(testDir);
@@ -345,6 +459,8 @@ insertEdge('route:app.ts:GET:/public/health:2', 'fn:app.ts:healthCheck', 'calls'
 const { AttackSurfaceAnalyzer } = require(path.join(rootDir, 'dist/security/attack-surface.js'));
 
 // ── Heuristic mode (default): both routes misclassified as unauthenticated ──
+// This is deterministic regardless of mock/live — no jev call happens here —
+// so it stays a hard assertion in both modes.
 const heuristicAnalyzer = new AttackSurfaceAnalyzer(db, { authDetectionMode: 'heuristic' });
 const heuristicResult = await heuristicAnalyzer.analyze();
 const heuristicProfile = heuristicResult.allRoutes.find(r => r.route === 'GET /api/profile');
@@ -355,36 +471,62 @@ if (heuristicProfile.isAuthenticated !== false) throw new Error('expected heuris
 if (heuristicHealth.isAuthenticated !== false) throw new Error('expected /public/health isAuthenticated=false in heuristic mode, got ' + heuristicHealth.isAuthenticated);
 console.log('heuristic:ok /api/profile=false(missed) /public/health=false');
 
-// ── jev mode: custom-named wrapper caught, public route still correctly unauthenticated ──
+// ── jev mode: custom-named wrapper should be caught, public route should stay unauthenticated ──
 const jevAnalyzer = new AttackSurfaceAnalyzer(db, {
   authDetectionMode: 'jev',
   authConfidenceThreshold: 0.6,
   jevApiKey: apiKey,
-  jevBaseUrl: baseUrl,
+  jevBaseUrl: baseUrl, // undefined in live mode — client falls back to the real default
 });
 const jevResult = await jevAnalyzer.analyze();
 const jevProfile = jevResult.allRoutes.find(r => r.route === 'GET /api/profile');
 const jevHealth = jevResult.allRoutes.find(r => r.route === 'GET /public/health');
 
-if (jevProfile.isAuthenticated !== true) throw new Error('expected jev to catch the custom-named wrapper, got isAuthenticated=' + jevProfile.isAuthenticated);
-if (jevHealth.isAuthenticated !== false) throw new Error('expected /public/health isAuthenticated=false in jev mode too, got ' + jevHealth.isAuthenticated);
-console.log('jev:ok /api/profile=true(caught) /public/health=false(confirmed)');
+if (typeof jevProfile?.isAuthenticated !== 'boolean' || typeof jevHealth?.isAuthenticated !== 'boolean') {
+  throw new Error('jev mode did not return a boolean isAuthenticated for both routes: ' + JSON.stringify({ jevProfile, jevHealth }));
+}
+console.log(`jev:wiring-ok /api/profile=${jevProfile.isAuthenticated} /public/health=${jevHealth.isAuthenticated}`);
+
+if (!useLive) {
+  if (jevProfile.isAuthenticated !== true) throw new Error('mock: expected jev to catch the custom-named wrapper, got isAuthenticated=' + jevProfile.isAuthenticated);
+  if (jevHealth.isAuthenticated !== false) throw new Error('mock: expected /public/health isAuthenticated=false, got ' + jevHealth.isAuthenticated);
+  console.log('jev:exact-ok /api/profile=true(caught) /public/health=false(confirmed)');
+} else {
+  if (jevProfile.isAuthenticated === true) {
+    console.log('jev:live-ok /api/profile caught as authenticated, as expected');
+  } else {
+    console.log('jev:live-warn /api/profile NOT caught as authenticated — real model response, not a wiring error');
+  }
+  if (jevHealth.isAuthenticated === false) {
+    console.log('jev:live-ok /public/health correctly left unauthenticated');
+  } else {
+    console.log('jev:live-warn /public/health flagged authenticated — real model response, not a wiring error');
+  }
+}
 
 console.log('ALL_ATTACK_SURFACE_OK');
 NODEEOF
+NODE_EXIT=$?
 
-if [ $? -eq 0 ]; then
+if [ "$NODE_EXIT" -eq 0 ]; then
   ok "heuristic mode: /api/profile misclassificata come non autenticata (falso negativo atteso)"
-  ok "jev mode: /api/profile corretta a isAuthenticated=true (wrapper custom rilevato)"
-  ok "jev mode: /public/health resta isAuthenticated=false (nessun falso positivo)"
+  ok "jev mode: entrambe le route restituiscono un isAuthenticated booleano (wiring corretto)"
+  if [ "$USE_LIVE" = false ]; then
+    ok "mock: /api/profile corretta a isAuthenticated=true, /public/health resta false"
+  else
+    ok "live: verifiche soft sul giudizio di jev stampate sopra (jev:live-ok / jev:live-warn)"
+  fi
 else
-  fail "attack-surface jev test fallito"
+  fail "attack-surface jev test fallito (node exit=$NODE_EXIT)"
 fi
 
 # ── Fine ──────────────────────────────────────────────────────────────────────
 sep
 echo ""
+echo -e "  ${BOLD}Modalità:${RESET} $([ "$USE_LIVE" = true ] && echo "LIVE (API jev reale)" || echo "MOCK (server locale)")"
+echo ""
 echo -e "  ${BOLD}Feature testate:${RESET}"
+echo -e "  ${DIM}·${RESET} .kirograph/.env: JEV_API_KEY caricata automaticamente da loadConfig()"
 echo -e "  ${DIM}·${RESET} memory relations: memoryRelationMode 'agent' (default, invariato) vs 'jev' (auto-judge + pending)"
 echo -e "  ${DIM}·${RESET} memory relations: chiave API non valida -> errore pulito"
 echo -e "  ${DIM}·${RESET} wiki lint: wikiContradictionMode 'jev' (contraddizione reale rilevata, falso positivo evitato)"

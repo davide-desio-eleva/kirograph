@@ -83,9 +83,15 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `enableGeneralCompression` | boolean | `false` | Enable `kirograph_compress` — on-demand compression for arbitrary text. Two engines: rtk-style shell filters (with `command` hint) and caveman grammar (without). Independent from `shellCompressionLevel` and `cavemanMode`. |
 | `minLogLevel` | string | `warn` | Log level: `debug`, `info`, `warn`, `error` |
 | **jev** <a name="jev"></a> | | | |
-| `jevApiKey` | string | — | API key for [jev](https://docs.typesafe.ai) (TypeSafe System One) — powers the opt-in `memoryRelationMode`, `wikiContradictionMode`, and `securityAuthDetectionMode: 'jev'` toggles. Falls back to the `JEV_API_KEY` environment variable when unset here; prefer the env var for a real key, this field exists mainly for pointing a test config at a local mock server. |
+| `jevApiKey` | string | — | API key for [jev](https://docs.typesafe.ai) (TypeSafe System One) — powers the opt-in `memoryRelationMode`, `wikiContradictionMode`, and `securityAuthDetectionMode: 'jev'` toggles. Resolution order: this config field, then `JEV_API_KEY` in `.kirograph/.env`, then `JEV_API_KEY` in the real environment (which is never overridden by the `.env` file). Prefer `.kirograph/.env` (gitignored) for a real key over this config field, which is usually committed. |
 | `jevBaseUrl` | string | `https://api.typesafe.ai` | Override the jev API base URL — for a local mock server in tests, or a self-hosted deployment. |
 | `jevModel` | string | `'jev-latest'` | jev model ID. |
+
+**Setting a real key:** create `.kirograph/.env` (add it to `.gitignore`) with:
+```
+JEV_API_KEY=sk-...
+```
+`loadConfig()` reads this file automatically on every command and populates `process.env.JEV_API_KEY` if it isn't already set — no shell export needed. `kirograph mem conflicts compare`/`wiki lint`/`attack-surface` will use it as soon as the matching `*Mode` is set to `'jev'`. `test/jev/test.sh` follows the same rule: set `JEV_API_KEY` in your shell before running it and it exercises the real API instead of the bundled mock server.
 
 Default exclude patterns: `node_modules/**`, `dist/**`, `build/**`, `.git/**`, `*.min.js`, `.kirograph/**`
 

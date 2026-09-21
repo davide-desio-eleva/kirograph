@@ -928,9 +928,44 @@ function migrateExcludePatterns(patterns: string[]): string[] {
 
 // ── Load / Save ───────────────────────────────────────────────────────────────
 
+/**
+ * Load KEY=VALUE pairs from `.kirograph/.env` into process.env — e.g. JEV_API_KEY
+ * for the opt-in jev integrations. A minimal parser (one assignment per line,
+ * '#' comments, optional surrounding quotes) rather than a dotenv dependency,
+ * to keep secrets out of the CLI's own dependency surface. A variable already
+ * set in the real environment is never overridden — the .env file is a
+ * fallback default, not an override. `.kirograph/.env` should be gitignored.
+ */
+function loadDotEnv(kirographDir: string): void {
+  let content: string;
+  try {
+    content = fs.readFileSync(path.join(kirographDir, '.env'), 'utf8');
+  } catch {
+    return; // no .env file — nothing to do
+  }
+
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq === -1) continue;
+    const key = line.slice(0, eq).trim();
+    if (!key) continue;
+    let value = line.slice(eq + 1).trim();
+    if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
+      value = value.slice(1, -1);
+    }
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
+
 export async function loadConfig(projectRoot: string): Promise<KiroGraphConfig> {
   const dir = path.join(projectRoot, KIROGRAPH_DIR);
   const cfgPath = path.join(dir, CONFIG_FILE);
+
+  loadDotEnv(dir);
 
   if (!fs.existsSync(cfgPath)) {
     // Create default config file

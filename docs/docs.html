@@ -966,7 +966,7 @@ kirograph install --target cursor      # Install for a specific platform only</c
           <tr><td><code>shellCompressionLevel</code></td><td>string</td><td><code>"normal"</code></td><td>Shell command compression: <code>off</code>, <code>normal</code>, <code>aggressive</code>, <code>ultra</code></td></tr>
           <tr><td><code>minLogLevel</code></td><td>string</td><td><code>"warn"</code></td><td>Log level: <code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code></td></tr>
           <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);" id="jev">jev</td></tr>
-          <tr><td><code>jevApiKey</code></td><td>string</td><td>—</td><td>API key for <a href="https://docs.typesafe.ai" target="_blank" rel="noopener">jev</a> (TypeSafe System One). Falls back to the <code>JEV_API_KEY</code> environment variable when unset here.</td></tr>
+          <tr><td><code>jevApiKey</code></td><td>string</td><td>—</td><td>API key for <a href="https://docs.typesafe.ai" target="_blank" rel="noopener">jev</a> (TypeSafe System One). Resolution order: this config field, then <code>JEV_API_KEY</code> in <code>.kirograph/.env</code>, then <code>JEV_API_KEY</code> in the real environment.</td></tr>
           <tr><td><code>jevBaseUrl</code></td><td>string</td><td><code>https://api.typesafe.ai</code></td><td>Override the jev API base URL — for a local mock server in tests, or a self-hosted deployment</td></tr>
           <tr><td><code>jevModel</code></td><td>string</td><td><code>"jev-latest"</code></td><td>jev model ID</td></tr>
         </tbody>
@@ -974,6 +974,7 @@ kirograph install --target cursor      # Install for a specific platform only</c
     </div>
 
     <p style="font-size:0.9rem;color:var(--text-muted);">jev (<a href="https://docs.typesafe.ai" target="_blank" rel="noopener">TypeSafe System One</a>) is a fast typed-classification model — it returns a category, a score, or a calibrated probability for one narrow question, instead of free text. KiroGraph uses it behind three independent opt-in toggles, each defaulting to its existing non-jev behavior: <code>memoryRelationMode</code> (see <a href="#memory">Memory</a>), <code>wikiContradictionMode</code> (see <a href="#wiki">Wiki</a>), and <code>securityAuthDetectionMode</code> (see <a href="#security">Security</a>).</p>
+    <p style="font-size:0.9rem;color:var(--text-muted);">Set a real key by creating <code>.kirograph/.env</code> (add it to <code>.gitignore</code>) with <code>JEV_API_KEY=sk-...</code> — <code>loadConfig()</code> reads it automatically on every command, no shell export needed. <code>test/jev/test.sh</code> follows the same rule: set <code>JEV_API_KEY</code> in your shell before running it and it exercises the real API instead of the bundled mock server.</p>
 
     <script>
     document.getElementById('config-search')?.addEventListener('input', function() {
