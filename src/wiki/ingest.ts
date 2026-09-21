@@ -13,7 +13,7 @@ import type { WikiDatabase } from './database';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function slugToFilePath(slug: string): string {
+export function slugToFilePath(slug: string): string {
   return slug.replace(/\//g, path.sep) + '.md';
 }
 

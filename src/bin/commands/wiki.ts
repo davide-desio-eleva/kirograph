@@ -8,6 +8,8 @@
  * kirograph wiki page <slug>
  * kirograph wiki list
  * kirograph wiki lint
+ * kirograph wiki links <slug>
+ * kirograph wiki rename <from> <to>
  * kirograph wiki reindex
  * kirograph wiki status
  */
@@ -258,6 +260,77 @@ export function register(program: Command): void {
         console.log(`    ${issue.detail}`);
         console.log();
       }
+    });
+
+  // ── links ──────────────────────────────────────────────────────────────────
+
+  wiki
+    .command('links <slug>')
+    .description('Show outgoing, broken, and incoming [[slug]] links for a page')
+    .option('--format <fmt>', 'Output format: text, json', 'text')
+    .action(async (slug: string, opts: { format: string }) => {
+      const cwd = process.cwd();
+      const w = await getWiki(cwd);
+      const links = w.getLinks(slug);
+
+      if (!links) {
+        console.error(`  ✖ Wiki page "${slug}" not found. Run \`kirograph wiki list\` to see available pages.`);
+        process.exit(1);
+      }
+
+      if (opts.format === 'json') {
+        console.log(JSON.stringify(links, null, 2));
+        return;
+      }
+
+      console.log(`\n  ${section('Wiki Links:')} ${violet}${bold}${slug}${reset}\n`);
+
+      console.log(`  ${bold}Outgoing${reset} ${dim}(${links.outgoing.length})${reset}`);
+      if (links.outgoing.length === 0) {
+        console.log(`    ${dim}(none)${reset}`);
+      } else {
+        for (const s of links.outgoing) console.log(`    ${violet}→${reset} [[${s}]]`);
+      }
+
+      if (links.broken.length > 0) {
+        console.log(`\n  ${yellow}Broken${reset} ${dim}(${links.broken.length})${reset}`);
+        for (const s of links.broken) console.log(`    ${yellow}⚠${reset} [[${s}]] ${dim}— page does not exist${reset}`);
+      }
+
+      console.log(`\n  ${bold}Incoming${reset} ${dim}(${links.incoming.length}) — pages that link here${reset}`);
+      if (links.incoming.length === 0) {
+        console.log(`    ${dim}(none)${reset}`);
+      } else {
+        for (const s of links.incoming) console.log(`    ${violet}←${reset} [[${s}]]`);
+      }
+      console.log();
+    });
+
+  // ── rename ─────────────────────────────────────────────────────────────────
+
+  wiki
+    .command('rename <from> <to>')
+    .description('Rename a page slug, moving its file and updating every [[slug]] reference to it')
+    .action(async (from: string, to: string) => {
+      const cwd = process.cwd();
+      const w = await getWiki(cwd);
+
+      let result;
+      try {
+        result = w.rename(from, to);
+      } catch (err) {
+        console.error(`  ✖ ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+
+      console.log(`\n  ${green}✓${reset}  Renamed ${violet}[[${result.from}]]${reset} → ${violet}[[${result.to}]]${reset}\n`);
+      if (result.linksUpdated.length > 0) {
+        console.log(`  ${bold}Links updated in ${result.linksUpdated.length} page(s):${reset}`);
+        for (const s of result.linksUpdated) console.log(`    ${dim}·${reset} ${s}`);
+      } else {
+        console.log(`  ${dim}No other pages referenced [[${result.from}]].${reset}`);
+      }
+      console.log();
     });
 
   // ── reindex ────────────────────────────────────────────────────────────────
