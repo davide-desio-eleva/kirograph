@@ -1196,9 +1196,13 @@ kirograph mem export --format jsonl</code></pre>
           <tr><td><code>memoryContextLimit</code></td><td>number</td><td><code>3</code></td><td>Max observations shown in <code>kirograph_context</code></td></tr>
           <tr><td><code>memoryContextThreshold</code></td><td>number</td><td><code>0.3</code></td><td>Min relevance score to include in context</td></tr>
           <tr><td><code>memoryExcludePatterns</code></td><td>string[]</td><td><code>[]</code></td><td>Glob patterns for paths to never capture</td></tr>
+          <tr><td><code>memoryStrictWrites</code></td><td>boolean</td><td><code>false</code></td><td>Reject an observation write with an unknown <code>kind</code> or blank tags instead of silently accepting it</td></tr>
         </tbody>
       </table>
     </div>
+
+    <h3>Schema validation (opt-in)</h3>
+    <p><code>kind</code> is typed as a fixed 6-value union, but nothing validated it at runtime — the CLI's <code>--kind</code> flag and the MCP tool's <code>kind</code> argument both cast straight through, so an arbitrary string could silently land in the <code>kind</code> column and break every downstream consumer that pattern-matches against the known set (search filters, watchmen's passive-capture kind map, timeline rendering). Set <code>memoryStrictWrites: true</code> to reject a write with an unknown <code>kind</code> or blank tags — the violation is named in the error instead of a silent corruption or an opaque crash. Off by default, so existing free-form writes are unaffected. Inspired by <a href="https://github.com/iwe-org/iwe" target="_blank" rel="noopener">IWE</a>'s schema-validated agent writes over MCP.</p>
 
     <h3>Privacy</h3>
     <p>Wrap sensitive content in <code>&lt;private&gt;...&lt;/private&gt;</code> blocks — they are stripped before storage. All data stays in the local <code>.kirograph/kirograph.db</code> file, same as the rest of the graph.</p>
@@ -1344,6 +1348,10 @@ kirograph wiki rename auth-service auth
 
 # Wiki status
 kirograph wiki status</code></pre>
+
+    <h3>Link graph &amp; rename</h3>
+    <p>The wiki's <code>[[slug]]</code> cross-references form a real link graph over the <code>.md</code> files on disk — <code>wiki lint</code> already used it to detect broken links and orphans. <code>kirograph wiki links &lt;slug&gt;</code> exposes that graph directly: outgoing links, broken links (pointing to a slug that doesn't exist), and incoming links (backlinks — other pages that reference this one), as text or <code>--format json</code>. <code>kirograph wiki rename &lt;from&gt; &lt;to&gt;</code> moves the page's file and rewrites every <code>[[from]]</code> reference across the wiki to <code>[[to]]</code> — including the page's own content, for hub pages that link to themselves — then updates the SQLite index and <code>MANIFEST.md</code>. It refuses to rename onto an existing slug or a missing source page.</p>
+    <p>This is a CLI-first port of the navigation/refactor features <a href="https://github.com/iwe-org/iwe" target="_blank" rel="noopener">IWE</a> gets from a full LSP integration (go-to-definition, find-references, rename-with-link-updates) — built on the link graph the wiki module already had, rather than standing up an LSP server. Not exposed as MCP tools; these are maintenance commands, not part of the agent's read/write loop.</p>
 
     <h3>Local model synthesis</h3>
     <p>When <code>wikiSynthesisMode: 'local'</code>, KiroGraph queues source texts and runs a local HuggingFace model (<code>wikiLocalModel</code>) at <code>agentStop</code> via a <code>runCommand</code> hook. Same infrastructure as Watchmen — model downloaded once to <code>~/.kirograph/models/</code>, runs on-device, no API key required.</p>

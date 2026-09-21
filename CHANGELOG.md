@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.0] - 2026-09-21: Opt-in memory write validation + wiki link-graph navigation
+
+Both features are ports of ideas from [IWE](https://github.com/iwe-org/iwe) (a markdown knowledge-graph tool with an LSP and schema-validated agent writes), scaled down to fit KiroGraph's existing memory and wiki modules rather than adopting IWE's document model or LSP server wholesale.
+
+### Added
+
+- **Memory**: new `memoryStrictWrites` config flag (default `false`). `kirograph_mem_store` / `kirograph mem store` / `MemoryManager.store()` never validated their input at runtime — `kind` is typed as a fixed 6-value union in `MemObservationInput`, but every call site cast through `any` with no check, so an arbitrary string silently landed in the `kind` column and broke every downstream consumer that pattern-matches against the known set (search filters, watchmen's passive-capture kind map, timeline rendering). The MCP tool's declared JSON schema documents an `enum`, but nothing server-side enforced it. When enabled, `memoryStrictWrites` validates `kind` against the known enum and rejects blank tags, naming the violation instead of silently corrupting the store or crashing opaquely. Off by default — existing free-form agent writes are unaffected. Inspired by IWE's `expect`-guarded, schema-validated MCP writes.
+- **Wiki**: `kirograph wiki links <slug>` — shows outgoing, broken, and incoming `[[slug]]` links for a page (text or `--format json`). `kirograph wiki rename <from> <to>` — moves the page's file and rewrites every `[[oldSlug]]` reference across the wiki, including the page's own content for hub pages that link to themselves; rejects renaming onto an existing slug or a missing source page. KiroGraph's wiki module already writes real `.md` files with `[[slug]]` cross-references and `wiki lint` already detects broken links and orphans — these two commands build backlink lookup and a safe rename on top of that existing link graph, CLI-first, rather than standing up a full LSP server (IWE's version of this is real editor go-to-definition/find-references/rename). `lint.ts` now reuses a shared `extractLinks()` helper (`src/wiki/links.ts`) instead of its own duplicate link-parsing regex loop.
+
 ## [1.0.0] - 2026-09-18: First stable release — Command Code integration, WASM bundling, crash recovery & security fixes
 
 ### Added
