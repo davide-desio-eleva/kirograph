@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0] - 2026-09-21: jev-powered classification for memory relations, wiki contradictions, and auth detection
+
+Three independent opt-in `*Mode: 'jev'` toggles, each defaulting to its existing non-jev behavior. [jev](https://docs.typesafe.ai) (TypeSafe's System One) is a fast typed-classification model — it returns a calibrated Choice/Score/Noul answer for one narrow question, instead of a full agent turn spent reasoning out the same kind of decision. Each toggle replaces a place where KiroGraph either delegated a narrow classification to the calling agent, or used a fragile keyword/substring heuristic, with an actual judgment call.
+
+### Added
+
+- **Memory (`memoryRelationMode: 'jev'`)**: `kirograph_mem_compare`/`kirograph mem conflicts compare` previously computed nothing itself — the agent had to reason out the relation type (`supersedes`/`conflicts_with`/`compatible`/`scoped`/`related`/`not_conflict`) and confidence manually, then call `kirograph_mem_judge` to confirm its own answer, burning a full agent turn for a 6-way classification. With `relation` omitted, KiroGraph now classifies it via jev in one call and auto-judges it when confidence is at or above `memoryRelationConfidenceThreshold` (default `0.8`); below that, it's inserted `pending` exactly as before, for review via the existing judge flow. Default mode (`'agent'`) is unchanged — `--relation` stays required.
+- **Wiki (`wikiContradictionMode: 'jev'`)**: `wiki lint`'s contradiction check was a keyword heuristic (co-occurring negation words like `instead of`/`superseded` on FTS-similar pages). In jev mode, each FTS-similar candidate pair is judged by jev instead, reported only when confidence is at or above `wikiContradictionConfidenceThreshold` (default `0.7`). Candidate selection is unchanged; only the judgment is.
+- **Security (`securityAuthDetectionMode: 'jev'`)**: `attack-surface`'s `isAuthenticated` heuristic (substring match against a fixed name list) silently misclassifies a custom-named auth wrapper (e.g. `withSession`) as unauthenticated. In jev mode, only when the heuristic finds nothing does KiroGraph ask jev to confirm/override using the route + call-path names — the heuristic's positive matches are trusted as-is and never re-checked, keeping this cheap.
+- New shared config: `jevApiKey` (falls back to the `JEV_API_KEY` env var), `jevBaseUrl` (override for a local mock server or self-hosted deployment), `jevModel` (default `'jev-latest'`).
+- `src/jev/client.ts`: thin `JevClient` HTTP client for `POST /v1/systemone`, plus `createJevClientFromConfig()`.
+- `test/jev/`: a local mock jev HTTP server (`mock-server.js`, no real API key or network access needed) and a `test.sh` covering all three integrations end-to-end — default-mode behavior unaffected, high/low-confidence branching, invalid-API-key error handling, and the heuristic's actual false-negative/false-positive cases.
+
 ## [1.1.0] - 2026-09-21: Opt-in memory write validation + wiki link-graph navigation
 
 Both features are ports of ideas from [IWE](https://github.com/iwe-org/iwe) (a markdown knowledge-graph tool with an LSP and schema-validated agent writes), scaled down to fit KiroGraph's existing memory and wiki modules rather than adopting IWE's document model or LSP server wholesale.

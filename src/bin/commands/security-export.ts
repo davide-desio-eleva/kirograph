@@ -1366,7 +1366,13 @@ export function register(secCmd: import('commander').Command): void {
       let attackSurface: AttackSurfaceResult | null = null;
       try {
         const { AttackSurfaceAnalyzer } = await import('../../security/attack-surface');
-        const analyzer = new AttackSurfaceAnalyzer(db);
+        const analyzer = new AttackSurfaceAnalyzer(db, {
+          authDetectionMode: config.securityAuthDetectionMode,
+          authConfidenceThreshold: config.securityAuthConfidenceThreshold,
+          jevApiKey: config.jevApiKey,
+          jevBaseUrl: config.jevBaseUrl,
+          jevModel: config.jevModel,
+        });
         attackSurface = await analyzer.analyze();
       } catch { /* non-critical */ }
 

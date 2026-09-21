@@ -301,19 +301,59 @@ export class MemoryManager {
 
   // ── Relations ─────────────────────────────────────────────────────────────
 
+  /** Resolve an observation reference (ID or topic_key) to its ID. Returns the input unchanged if neither resolves. */
+  private resolveObservationId(ref: string): string {
+    if (this.memDb.getObservation(ref)) return ref;
+    const byKey = this.memDb.resolveObservationByTopicKey(ref);
+    return byKey ? byKey.id : ref;
+  }
+
   compareObservations(input: MemRelationInput): string {
-    // Resolve by topic_key if not found by ID
-    let obsA = input.observationA;
-    let obsB = input.observationB;
-    if (!this.memDb.getObservation(obsA)) {
-      const byKey = this.memDb.resolveObservationByTopicKey(obsA);
-      if (byKey) obsA = byKey.id;
-    }
-    if (!this.memDb.getObservation(obsB)) {
-      const byKey = this.memDb.resolveObservationByTopicKey(obsB);
-      if (byKey) obsB = byKey.id;
-    }
+    const obsA = this.resolveObservationId(input.observationA);
+    const obsB = this.resolveObservationId(input.observationB);
     return this.memDb.insertRelation({ ...input, observationA: obsA, observationB: obsB });
+  }
+
+  /**
+   * Classify the relation between two observations via jev instead of
+   * requiring the caller to supply `relation`/`confidence` itself. Only
+   * used when `memoryRelationMode: 'jev'`. Auto-judges the relation when
+   * jev's confidence is at or above `memoryRelationConfidenceThreshold`;
+   * otherwise leaves it `pending` for review via the existing judge flow.
+   */
+  async autoCompareObservations(observationA: string, observationB: string): Promise<{
+    relationId: string;
+    relation: RelationType;
+    confidence: number;
+    autoJudged: boolean;
+  }> {
+    const obsAId = this.resolveObservationId(observationA);
+    const obsBId = this.resolveObservationId(observationB);
+    const obsA = this.memDb.getObservation(obsAId);
+    const obsB = this.memDb.getObservation(obsBId);
+    if (!obsA) throw new Error(`Observation not found: ${observationA}`);
+    if (!obsB) throw new Error(`Observation not found: ${observationB}`);
+
+    const { createJevClientFromConfig } = await import('../jev/client');
+    const { classifyRelationWithJev } = await import('./relation-jev');
+    const client = createJevClientFromConfig(this.config as unknown as { jevApiKey?: string; jevBaseUrl?: string; jevModel?: string });
+    const { relation, confidence } = await classifyRelationWithJev(client, obsA.content, obsB.content);
+
+    const relationId = this.memDb.insertRelation({
+      observationA: obsAId,
+      observationB: obsBId,
+      relation,
+      confidence,
+      reason: 'Auto-classified by jev',
+    });
+
+    const threshold = (this.config as unknown as { memoryRelationConfidenceThreshold?: number }).memoryRelationConfidenceThreshold ?? 0.8;
+    const autoJudged = confidence >= threshold;
+    if (autoJudged) {
+      this.memDb.judgeRelation(relationId, relation, confidence, 'Auto-judged by jev (confidence >= memoryRelationConfidenceThreshold)');
+    }
+
+    return { relationId, relation, confidence, autoJudged };
   }
 
   judgeRelation(relationId: string, relation: RelationType, confidence: number, reason?: string, evidence?: string): void {

@@ -790,7 +790,7 @@ wdb.upsertPage({
   sourceCount: 0,
 });
 
-const issues = wiki.lint();
+const issues = await wiki.lint();
 console.log('lint issues:', JSON.stringify(issues.map(i => ({ kind: i.kind, slug: i.slug })), null, 2));
 
 // Deve trovare broken_link

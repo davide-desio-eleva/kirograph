@@ -62,11 +62,33 @@ export interface AttackSurfaceResult {
   allRoutes: AttackSurfaceEntry[];
 }
 
+export interface AttackSurfaceAnalyzerOptions {
+  /**
+   * 'heuristic' (default): substring match only.
+   * 'jev': when the heuristic finds no auth pattern, ask jev to confirm/override.
+   */
+  authDetectionMode?: 'heuristic' | 'jev';
+  /** Confidence (0.0–1.0) above which a jev auth judgment overrides the heuristic's "not authenticated" default. Default: 0.6. */
+  authConfidenceThreshold?: number;
+  jevApiKey?: string;
+  jevBaseUrl?: string;
+  jevModel?: string;
+}
+
 export class AttackSurfaceAnalyzer {
-  constructor(private readonly db: GraphDatabase) {}
+  constructor(
+    private readonly db: GraphDatabase,
+    private readonly opts: AttackSurfaceAnalyzerOptions = {},
+  ) {}
 
   async analyze(): Promise<AttackSurfaceResult> {
     const rawDb = this.db.getRawDb();
+
+    let jevClient: import('../jev/client').JevClient | undefined;
+    if (this.opts.authDetectionMode === 'jev') {
+      const { createJevClientFromConfig } = await import('../jev/client');
+      jevClient = createJevClientFromConfig(this.opts);
+    }
 
     // Step 1: Query all route nodes
     const routeRows: Array<{ id: string; name: string; file_path: string }> = rawDb.all(
@@ -206,10 +228,25 @@ export class AttackSurfaceAnalyzer {
         [route.id],
       );
 
-      const isAuthenticated = pathNodeNames.some(row => {
+      let isAuthenticated = pathNodeNames.some(row => {
         const lowerName = (row.name ?? '').toLowerCase();
         return AUTH_PATTERNS.some(pattern => lowerName.includes(pattern));
       });
+
+      // jev backstop: only consulted when the heuristic found nothing, to
+      // catch custom-named auth wrappers without re-checking every route.
+      if (!isAuthenticated && jevClient) {
+        const { checkAuthWithJev } = await import('./auth-detection-jev');
+        const jevResult = await checkAuthWithJev(
+          jevClient,
+          route.name ?? route.id,
+          pathNodeNames.map(r => r.name).filter((n): n is string => !!n),
+        );
+        const threshold = this.opts.authConfidenceThreshold ?? 0.6;
+        if (jevResult.authenticated && jevResult.confidence >= threshold) {
+          isAuthenticated = true;
+        }
+      }
 
       // Step 5: Determine exposure level
       const routeName = (route.name ?? '').toLowerCase();

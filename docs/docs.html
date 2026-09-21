@@ -939,6 +939,9 @@ kirograph install --target cursor      # Install for a specific platform only</c
           <tr><td><code>memoryContextLimit</code></td><td>number</td><td><code>3</code></td><td>Max observations surfaced in <code>kirograph_context</code></td></tr>
           <tr><td><code>memoryContextThreshold</code></td><td>number</td><td><code>0.3</code></td><td>Min relevance score to surface in context</td></tr>
           <tr><td><code>memoryExcludePatterns</code></td><td>string[]</td><td><code>[]</code></td><td>Glob patterns for files to exclude from symbol linking</td></tr>
+          <tr><td><code>memoryStrictWrites</code></td><td>boolean</td><td><code>false</code></td><td>Reject an observation write with an unknown <code>kind</code> or blank tags instead of silently accepting it</td></tr>
+          <tr><td><code>memoryRelationMode</code></td><td>string</td><td><code>"agent"</code></td><td><code>agent</code> — caller supplies the relation itself; <code>jev</code> — classified automatically via jev</td></tr>
+          <tr><td><code>memoryRelationConfidenceThreshold</code></td><td>number</td><td><code>0.8</code></td><td>Confidence above which a jev-classified relation is auto-judged instead of left pending</td></tr>
           <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);">Documentation</td></tr>
           <tr><td><code>enableDocs</code></td><td>boolean</td><td><code>false</code></td><td>Enable documentation indexing (section-level retrieval)</td></tr>
           <tr><td><code>docsInclude</code></td><td>string[]</td><td><code>["**/*.md", ...]</code></td><td>Glob patterns for doc files to include</td></tr>
@@ -962,9 +965,15 @@ kirograph install --target cursor      # Install for a specific platform only</c
           <tr><td><code>cavemanMode</code></td><td>string</td><td><code>"off"</code></td><td>Communication compression: <code>off</code>, <code>lite</code>, <code>full</code>, <code>ultra</code></td></tr>
           <tr><td><code>shellCompressionLevel</code></td><td>string</td><td><code>"normal"</code></td><td>Shell command compression: <code>off</code>, <code>normal</code>, <code>aggressive</code>, <code>ultra</code></td></tr>
           <tr><td><code>minLogLevel</code></td><td>string</td><td><code>"warn"</code></td><td>Log level: <code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code></td></tr>
+          <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);" id="jev">jev</td></tr>
+          <tr><td><code>jevApiKey</code></td><td>string</td><td>—</td><td>API key for <a href="https://docs.typesafe.ai" target="_blank" rel="noopener">jev</a> (TypeSafe System One). Falls back to the <code>JEV_API_KEY</code> environment variable when unset here.</td></tr>
+          <tr><td><code>jevBaseUrl</code></td><td>string</td><td><code>https://api.typesafe.ai</code></td><td>Override the jev API base URL — for a local mock server in tests, or a self-hosted deployment</td></tr>
+          <tr><td><code>jevModel</code></td><td>string</td><td><code>"jev-latest"</code></td><td>jev model ID</td></tr>
         </tbody>
       </table>
     </div>
+
+    <p style="font-size:0.9rem;color:var(--text-muted);">jev (<a href="https://docs.typesafe.ai" target="_blank" rel="noopener">TypeSafe System One</a>) is a fast typed-classification model — it returns a category, a score, or a calibrated probability for one narrow question, instead of free text. KiroGraph uses it behind three independent opt-in toggles, each defaulting to its existing non-jev behavior: <code>memoryRelationMode</code> (see <a href="#memory">Memory</a>), <code>wikiContradictionMode</code> (see <a href="#wiki">Wiki</a>), and <code>securityAuthDetectionMode</code> (see <a href="#security">Security</a>).</p>
 
     <script>
     document.getElementById('config-search')?.addEventListener('input', function() {
@@ -1132,6 +1141,14 @@ kirograph gain --graph           # ASCII graph (last 30 days)</code></pre>
       <li><strong>Judge:</strong> <code>kirograph_mem_judge</code> finalizes a pending relation with a confidence score and reason — resolving the conflict or confirming compatibility.</li>
     </ul>
 
+    <h3>Relation classification via jev (opt-in)</h3>
+    <p>By default (<code>memoryRelationMode: 'agent'</code>), <code>kirograph_mem_compare</code>/<code>kirograph mem conflicts compare</code> does nothing but insert a <code>pending</code> row — the calling agent has to reason out the relation type and confidence itself, then call <code>kirograph_mem_judge</code> to confirm its own answer. That's a full agent turn spent on a narrow 6-way classification. Setting <code>memoryRelationMode: 'jev'</code> makes <code>relation</code> optional: when omitted, KiroGraph classifies the relation between the two observations via <a href="https://docs.typesafe.ai" target="_blank" rel="noopener">jev</a> in a single call. When jev's confidence is at or above <code>memoryRelationConfidenceThreshold</code> (default <code>0.8</code>), the relation is auto-judged immediately; below it, the relation is inserted as <code>pending</code> exactly as before, for review via <code>kirograph_mem_judge</code> or <code>mem conflicts list</code>.</p>
+    <pre><code># Explicit — unchanged, works in either mode
+kirograph mem conflicts compare architecture/auth-model architecture/auth-model-v2 --relation supersedes --confidence 0.9
+
+# jev mode — relation and confidence are classified automatically
+kirograph mem conflicts compare architecture/auth-model architecture/auth-model-v2</code></pre>
+
     <h3>Stable addressing and stale scheduling</h3>
     <p><code>topicKey</code> is a stable semantic identifier (e.g. <code>"architecture/auth-model"</code>) that lets multiple sessions address the same concept without knowing its UUID. Pass it to <code>kirograph_mem_store</code> for any decision that may be revisited or superseded.</p>
     <p><code>reviewAfter</code> is an epoch-ms timestamp that schedules an observation for re-evaluation — useful after a planned migration, a library upgrade, or a time-boxed experiment. <code>kirograph_mem_review</code> lists all overdue observations; <code>kirograph_mem_mark_reviewed</code> clears them once validated.</p>
@@ -1197,6 +1214,8 @@ kirograph mem export --format jsonl</code></pre>
           <tr><td><code>memoryContextThreshold</code></td><td>number</td><td><code>0.3</code></td><td>Min relevance score to include in context</td></tr>
           <tr><td><code>memoryExcludePatterns</code></td><td>string[]</td><td><code>[]</code></td><td>Glob patterns for paths to never capture</td></tr>
           <tr><td><code>memoryStrictWrites</code></td><td>boolean</td><td><code>false</code></td><td>Reject an observation write with an unknown <code>kind</code> or blank tags instead of silently accepting it</td></tr>
+          <tr><td><code>memoryRelationMode</code></td><td>string</td><td><code>'agent'</code></td><td><code>'agent'</code> — the calling agent supplies <code>relation</code>+<code>confidence</code> itself; <code>'jev'</code> — <code>relation</code> becomes optional and is classified via <a href="#jev">jev</a> instead</td></tr>
+          <tr><td><code>memoryRelationConfidenceThreshold</code></td><td>number</td><td><code>0.8</code></td><td>Confidence above which a jev-classified relation is auto-judged instead of left pending for review</td></tr>
         </tbody>
       </table>
     </div>
@@ -1353,6 +1372,9 @@ kirograph wiki status</code></pre>
     <p>The wiki's <code>[[slug]]</code> cross-references form a real link graph over the <code>.md</code> files on disk — <code>wiki lint</code> already used it to detect broken links and orphans. <code>kirograph wiki links &lt;slug&gt;</code> exposes that graph directly: outgoing links, broken links (pointing to a slug that doesn't exist), and incoming links (backlinks — other pages that reference this one), as text or <code>--format json</code>. <code>kirograph wiki rename &lt;from&gt; &lt;to&gt;</code> moves the page's file and rewrites every <code>[[from]]</code> reference across the wiki to <code>[[to]]</code> — including the page's own content, for hub pages that link to themselves — then updates the SQLite index and <code>MANIFEST.md</code>. It refuses to rename onto an existing slug or a missing source page.</p>
     <p>This is a CLI-first port of the navigation/refactor features <a href="https://github.com/iwe-org/iwe" target="_blank" rel="noopener">IWE</a> gets from a full LSP integration (go-to-definition, find-references, rename-with-link-updates) — built on the link graph the wiki module already had, rather than standing up an LSP server. Not exposed as MCP tools; these are maintenance commands, not part of the agent's read/write loop.</p>
 
+    <h3>Contradiction detection via jev (opt-in)</h3>
+    <p>By default, <code>wiki lint</code>'s contradiction check is a keyword heuristic: among the FTS-similar candidates for each page, it flags a pair if both contain a co-occurring negation word (<code>instead of</code>, <code>superseded</code>, <code>deprecated</code>, ...) — a crude signal, prone to both false positives and false negatives. Setting <code>wikiContradictionMode: 'jev'</code> replaces that heuristic with an actual judgment call: for each FTS-similar candidate pair, KiroGraph asks <a href="https://docs.typesafe.ai" target="_blank" rel="noopener">jev</a> whether the two pages genuinely contradict each other, and reports it only when jev's confidence is at or above <code>wikiContradictionConfidenceThreshold</code> (default <code>0.7</code>). Candidate selection (FTS similarity on page title) is unchanged — jev only replaces how a candidate pair gets judged, not how candidates are found.</p>
+
     <h3>Local model synthesis</h3>
     <p>When <code>wikiSynthesisMode: 'local'</code>, KiroGraph queues source texts and runs a local HuggingFace model (<code>wikiLocalModel</code>) at <code>agentStop</code> via a <code>runCommand</code> hook. Same infrastructure as Watchmen — model downloaded once to <code>~/.kirograph/models/</code>, runs on-device, no API key required.</p>
     <div class="table-wrap">
@@ -1381,6 +1403,8 @@ kirograph wiki status</code></pre>
           <tr><td><code>wikiContextLimit</code></td><td>number</td><td><code>3</code></td><td>Max wiki pages included in <code>kirograph_context</code> results</td></tr>
           <tr><td><code>wikiContextThreshold</code></td><td>number</td><td><code>0.1</code></td><td>Minimum FTS relevance score to include a page in context</td></tr>
           <tr><td><code>wikiSources</code></td><td>string[]</td><td><code>['docs/']</code></td><td>Source directories for auto-ingest suggestions</td></tr>
+          <tr><td><code>wikiContradictionMode</code></td><td>string</td><td><code>'heuristic'</code></td><td><code>'heuristic'</code> — keyword co-occurrence on FTS-similar pages (current behavior); <code>'jev'</code> — asks <a href="#jev">jev</a> whether each FTS-similar pair actually contradicts</td></tr>
+          <tr><td><code>wikiContradictionConfidenceThreshold</code></td><td>number</td><td><code>0.7</code></td><td>Confidence above which a jev contradiction judgment is reported by <code>wiki lint</code></td></tr>
         </tbody>
       </table>
     </div>
@@ -1601,9 +1625,14 @@ kirograph docs reembed                      # re-embed with current model</code>
           <tr><td><code>enableSecurity</code></td><td>boolean</td><td><code>false</code></td><td>Enable dependency scanning and vulnerability detection</td></tr>
           <tr><td><code>securityDatabases</code></td><td>string[]</td><td><code>["OSV"]</code></td><td>Vulnerability databases to query</td></tr>
           <tr><td><code>securityAutoEnrich</code></td><td>boolean</td><td><code>true</code></td><td>Auto-run vulnerability enrichment after manifest parsing</td></tr>
+          <tr><td><code>securityAuthDetectionMode</code></td><td>string</td><td><code>'heuristic'</code></td><td><code>'heuristic'</code> — substring match against a fixed name list for <code>attack-surface</code>'s <code>isAuthenticated</code> detection; <code>'jev'</code> — when the heuristic finds nothing, <a href="#jev">jev</a> confirms/overrides using the route + call-path names</td></tr>
+          <tr><td><code>securityAuthConfidenceThreshold</code></td><td>number</td><td><code>0.6</code></td><td>Confidence (0.0–1.0) above which a jev auth judgment overrides the heuristic's "not authenticated" default</td></tr>
         </tbody>
       </table>
     </div>
+
+    <h3>Auth detection: heuristic vs jev</h3>
+    <p><code>attack-surface</code>'s <code>isAuthenticated</code> flag is, by default, a substring match: it walks the route's call path looking for a function/middleware name containing <code>auth</code>, <code>guard</code>, <code>protect</code>, and similar patterns. A custom-named wrapper — <code>withSession</code>, <code>checkAccess</code> — is silently misclassified as unauthenticated, which then understates <code>exposureLevel</code> and risk scoring for that route. Setting <code>securityAuthDetectionMode: 'jev'</code> adds a backstop: only when the heuristic finds nothing does KiroGraph ask <a href="https://docs.typesafe.ai" target="_blank" rel="noopener">jev</a> to confirm or override, using the route name and call-path names as context. The heuristic's positive matches are trusted as-is and never re-checked, so this stays cheap — jev only resolves the heuristic's false-negative gap.</p>
 
     <h3>Pipeline</h3>
     <p>The security pipeline runs <strong>after architecture analysis</strong> during indexing:</p>
@@ -1854,6 +1883,7 @@ npm run build   # requires Rust toolchain — https://rustup.rs</code></pre>
       <li><a href="https://github.com/danilodevhub/turboquant-js" target="_blank" rel="noopener">turboquant-js</a> by <a href="https://github.com/danilodevhub" target="_blank" rel="noopener">Danilo Dev</a>: the TurboQuant engine — TypeScript implementation of Google's Walsh-Hadamard + Lloyd-Max quantization algorithm used for embedding compression.</li>
       <li><a href="https://github.com/RyanCodrai/turbovec" target="_blank" rel="noopener">turbovec</a> by <a href="https://github.com/RyanCodrai" target="_blank" rel="noopener">Ryan Codrai</a>: the TurboVec engine — Rust implementation of TurboQuant with SIMD acceleration, exposed to Node.js via a napi-rs native addon.</li>
       <li><a href="https://github.com/firecrawl/pdf-inspector" target="_blank" rel="noopener">pdf-inspector</a> by <a href="https://github.com/firecrawl" target="_blank" rel="noopener">Firecrawl</a>: the PDF parser used in the data module — pure Rust, no OCR, no network, prebuilt binaries for linux-x64 and macOS ARM64. Exposes per-page markdown extraction with OCR and layout flags via a napi-rs native addon.</li>
+      <li><a href="https://docs.typesafe.ai" target="_blank" rel="noopener">jev</a> by <a href="https://typesafe.ai" target="_blank" rel="noopener">TypeSafe</a>: the fast typed-classification model (System One) powering the opt-in <code>memoryRelationMode</code>, <code>wikiContradictionMode</code>, and <code>securityAuthDetectionMode: 'jev'</code> toggles — a calibrated Choice/Score/Noul answer in place of a full agent turn for narrow classification decisions.</li>
       <li><a href="https://tokensave.dev" target="_blank" rel="noopener">tokensave</a>: gap-close roadmap inspiration — code quality tools (complexity, god class, recursion, doc coverage), git workflow context tools (diff_context, commit_context, test_map), atomic edit primitives, multi-branch indexing, per-call token metrics, and MCP protocol annotations (<code>readOnlyHint</code>, <code>alwaysLoad</code>).</li>
     </ul>
 

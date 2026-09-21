@@ -35,6 +35,8 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `enableSecurity` | boolean | `false` | Enable dependency vulnerability detection and reachability analysis. Requires `enableArchitecture` (auto-enabled if missing). |
 | `securityDatabases` | string[] | `["OSV"]` | Vulnerability databases to query. Supported: `OSV`. |
 | `securityAutoEnrich` | boolean | `true` | Auto-run vulnerability enrichment after manifest parsing. Set to `false` for on-demand only (via `kirograph vulns --refresh` or `kirograph_vulns` with `refresh: true`). |
+| `securityAuthDetectionMode` | string | `'heuristic'` | `'heuristic'` — substring match against a fixed name list for `attack-surface`'s `isAuthenticated` detection (misses custom-named auth wrappers); `'jev'` — when the heuristic finds nothing, [jev](#jev) confirms/overrides using the route + call-path names. Requires `jevApiKey`. |
+| `securityAuthConfidenceThreshold` | number | `0.6` | Confidence (0.0–1.0) above which a jev auth judgment overrides the heuristic's "not authenticated" default. |
 | `enablePatterns` | boolean | `false` | Enable AST pattern matching SAST via `@ast-grep/napi`. Requires `npm install @ast-grep/napi`. |
 | `patternLibraryPath` | string | — | Path to custom YAML pattern rules directory (merged with bundled rules) |
 | `patternSeverityThreshold` | string | `low` | Minimum severity to store: `critical`, `high`, `medium`, `low` |
@@ -48,6 +50,8 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `memoryContextThreshold` | number | `0.3` | Min relevance score to surface in context |
 | `memoryExcludePatterns` | string[] | `[]` | Glob patterns for files to exclude from symbol linking |
 | `memoryStrictWrites` | boolean | `false` | Reject `mem store` writes with an unknown `kind` or blank tags instead of silently accepting them. Applies to the CLI, the `kirograph_mem_store` MCP tool, and `MemoryManager.store()` directly. |
+| `memoryRelationMode` | string | `'agent'` | `'agent'` — the calling agent supplies `relation`+`confidence` to `mem conflicts compare` itself; `'jev'` — `relation` becomes optional and is classified via [jev](#jev) instead. Requires `jevApiKey`. |
+| `memoryRelationConfidenceThreshold` | number | `0.8` | Confidence (0.0–1.0) above which a jev-classified relation is auto-judged instead of left pending for review. |
 | **Watchmen** | | | |
 | `enableWatchmen` | boolean | `false` | Enable Watchmen — auto-synthesize workspace briefs from memory observations. Requires `enableMemory: true`. |
 | `watchmenThreshold` | number | `5` | Minimum new observations since last synthesis before `watchmenReady` fires. |
@@ -78,6 +82,10 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `enableAgentUtils` | boolean | `false` | Enable agent utility tools: `kirograph_read` (cached file reads + 7 modes), `kirograph_retrieve` (CCR), `kirograph_budget` (session budget tracking) |
 | `enableGeneralCompression` | boolean | `false` | Enable `kirograph_compress` — on-demand compression for arbitrary text. Two engines: rtk-style shell filters (with `command` hint) and caveman grammar (without). Independent from `shellCompressionLevel` and `cavemanMode`. |
 | `minLogLevel` | string | `warn` | Log level: `debug`, `info`, `warn`, `error` |
+| **jev** <a name="jev"></a> | | | |
+| `jevApiKey` | string | — | API key for [jev](https://docs.typesafe.ai) (TypeSafe System One) — powers the opt-in `memoryRelationMode`, `wikiContradictionMode`, and `securityAuthDetectionMode: 'jev'` toggles. Falls back to the `JEV_API_KEY` environment variable when unset here; prefer the env var for a real key, this field exists mainly for pointing a test config at a local mock server. |
+| `jevBaseUrl` | string | `https://api.typesafe.ai` | Override the jev API base URL — for a local mock server in tests, or a self-hosted deployment. |
+| `jevModel` | string | `'jev-latest'` | jev model ID. |
 
 Default exclude patterns: `node_modules/**`, `dist/**`, `build/**`, `.git/**`, `*.min.js`, `.kirograph/**`
 

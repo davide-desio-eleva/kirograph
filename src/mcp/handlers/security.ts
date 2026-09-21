@@ -602,8 +602,19 @@ export async function handleSecurity(toolName: string, args: Record<string, unkn
       db.applySecuritySchema();
 
       const { AttackSurfaceAnalyzer } = await import('../../security/attack-surface');
-      const analyzer = new AttackSurfaceAnalyzer(db);
-      const result = await analyzer.analyze();
+      const analyzer = new AttackSurfaceAnalyzer(db, {
+        authDetectionMode: config.securityAuthDetectionMode,
+        authConfidenceThreshold: config.securityAuthConfidenceThreshold,
+        jevApiKey: config.jevApiKey,
+        jevBaseUrl: config.jevBaseUrl,
+        jevModel: config.jevModel,
+      });
+      let result;
+      try {
+        result = await analyzer.analyze();
+      } catch (err) {
+        return `Error: ${err instanceof Error ? err.message : String(err)}`;
+      }
 
       if (result.totalRoutes === 0) {
         return 'No route nodes found in the graph. Ensure the project has been indexed with architecture analysis enabled.';

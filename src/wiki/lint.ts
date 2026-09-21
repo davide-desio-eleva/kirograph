@@ -8,9 +8,19 @@
 import * as path from 'path';
 import type { WikiLintIssue } from './types';
 import type { WikiDatabase } from './database';
+import type { JevClient } from '../jev/client';
 import { extractLinks } from './links';
 
-export function lintWiki(wikiDb: WikiDatabase): WikiLintIssue[] {
+export interface LintOptions {
+  /** 'heuristic' (default): keyword co-occurrence. 'jev': ask jev to judge each FTS-similar pair. */
+  contradictionMode?: 'heuristic' | 'jev';
+  /** Confidence (0.0–1.0) above which a jev contradiction judgment is reported. Default: 0.7. */
+  contradictionConfidenceThreshold?: number;
+  /** Required when contradictionMode is 'jev'. */
+  jevClient?: JevClient;
+}
+
+export async function lintWiki(wikiDb: WikiDatabase, opts: LintOptions = {}): Promise<WikiLintIssue[]> {
   const issues: WikiLintIssue[] = [];
   const pages = wikiDb.listPages();
   const slugSet = new Set(pages.map(p => p.slug));
@@ -54,28 +64,41 @@ export function lintWiki(wikiDb: WikiDatabase): WikiLintIssue[] {
     }
 
     // Contradictions: FTS similarity with other pages on the same topic
-    // Simple heuristic: search for the page title and flag pages with conflicting signals
     const similar = wikiDb.search(page.title, 5);
     for (const { page: other } of similar) {
       if (other.slug === page.slug) continue;
-      // Check for negation keywords close to shared terms
+      const alreadyReported = issues.some(
+        i => i.kind === 'contradiction' && i.detail.includes(other.slug)
+      );
+      if (alreadyReported) continue;
+
+      if (opts.contradictionMode === 'jev' && opts.jevClient) {
+        const { checkContradictionWithJev } = await import('./contradiction-jev');
+        const result = await checkContradictionWithJev(opts.jevClient, page.content, other.content);
+        const threshold = opts.contradictionConfidenceThreshold ?? 0.7;
+        if (result.contradicts && result.confidence >= threshold) {
+          issues.push({
+            kind: 'contradiction',
+            slug: page.slug,
+            detail: `Possible contradiction with [[${other.slug}]] — jev confidence: ${result.confidence.toFixed(2)}`,
+            relatedSlug: other.slug,
+          });
+        }
+        continue;
+      }
+
+      // Heuristic (default): co-occurring negation keywords on both pages
       const contradictionSignals = ['instead of', 'not', 'replaced by', 'superseded', 'deprecated'];
       const bothMentionSignal = contradictionSignals.some(
         sig => page.content.toLowerCase().includes(sig) && other.content.toLowerCase().includes(sig)
       );
       if (bothMentionSignal) {
-        const key = [page.slug, other.slug].sort().join('|');
-        const alreadyReported = issues.some(
-          i => i.kind === 'contradiction' && i.detail.includes(other.slug)
-        );
-        if (!alreadyReported) {
-          issues.push({
-            kind: 'contradiction',
-            slug: page.slug,
-            detail: `Possible contradiction with [[${other.slug}]] — both pages contain negation signals on shared topics`,
-            relatedSlug: other.slug,
-          });
-        }
+        issues.push({
+          kind: 'contradiction',
+          slug: page.slug,
+          detail: `Possible contradiction with [[${other.slug}]] — both pages contain negation signals on shared topics`,
+          relatedSlug: other.slug,
+        });
       }
     }
   }

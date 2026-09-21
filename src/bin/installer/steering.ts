@@ -1526,6 +1526,7 @@ Issues to look for:
 - \`orphan\`: a page with no Related section and no incoming links → add Related or merge into another page
 - \`stale_source\`: a source with no date metadata → add a date to the source header
 - \`contradiction\`: two pages make semantically opposite claims → resolve via ingest or manual edit
+  (with \`wikiContradictionMode: "jev"\`, this is an actual judgment call instead of a keyword heuristic)
 
 ## WIKI_DIFF format reference
 
@@ -1635,10 +1636,13 @@ Returns candidate pairs ranked by similarity. Review each one.
 To understand if two observations conflict, are compatible, or one supersedes the other:
 
 \`\`\`
-kirograph_mem_compare(observationA: "<id or topicKey>", observationB: "<id or topicKey>")
+kirograph_mem_compare(observationA: "<id or topicKey>", observationB: "<id or topicKey>", relation: "...")
 \`\`\`
 
 Returns both observations side by side. Read them, then judge.
+
+If \`memoryRelationMode: "jev"\` is set, omit \`relation\` — KiroGraph classifies it automatically and
+auto-judges it when confident, so step 6 is only needed for low-confidence pending relations.
 
 ## 6. Judge a relation
 

@@ -82,6 +82,18 @@ export interface KiroGraphConfig {
    * Default: false.
    */
   memoryStrictWrites: boolean;
+  /**
+   * How `kirograph_mem_compare`/`kirograph mem compare` classifies the
+   * relation between two observations.
+   * 'agent' — the calling agent supplies `relation`+`confidence` itself (current behavior).
+   * 'jev' — `relation` becomes optional; when omitted, KiroGraph classifies it via
+   * the jev API (see `jevApiKey`) and auto-judges it when confidence is above
+   * `memoryRelationConfidenceThreshold`, otherwise leaves it pending for review.
+   * Default: 'agent'.
+   */
+  memoryRelationMode: 'agent' | 'jev';
+  /** Confidence (0.0–1.0) above which a jev-classified relation is auto-judged instead of left pending. Default: 0.8. */
+  memoryRelationConfidenceThreshold: number;
   /** Enable watchmen — auto-synthesize workspace briefs from memory observations. Requires enableMemory. Default: false. */
   enableWatchmen: boolean;
   /** Minimum new observations since last synthesis before watchmenReady fires. Default: 5. */
@@ -121,6 +133,16 @@ export interface KiroGraphConfig {
   wikiSources: string[];
   /** Auto-resolve wiki conflicts by source date. Default: false. */
   wikiAutoResolveConflicts: boolean;
+  /**
+   * How `wiki lint`'s contradiction check works.
+   * 'heuristic' — keyword co-occurrence on FTS-similar pages (current behavior).
+   * 'jev' — asks the jev API whether each FTS-similar pair actually contradicts,
+   * flagged when confidence is above `wikiContradictionConfidenceThreshold`.
+   * Default: 'heuristic'.
+   */
+  wikiContradictionMode: 'heuristic' | 'jev';
+  /** Confidence (0.0–1.0) above which a jev contradiction judgment is reported by `wiki lint`. Default: 0.7. */
+  wikiContradictionConfidenceThreshold: number;
   /** Lint frequency: 'weekly' (every ~20 sessions) or 'off'. Default: 'off'. */
   wikiLintFrequency: 'weekly' | 'off';
   /** Max wiki pages to include in kirograph_context. Default: 3. */
@@ -180,6 +202,19 @@ export interface KiroGraphConfig {
   /** Max age in days for vulnerability data before showing a staleness warning. Default: 7. */
   securityEnrichMaxAgeDays: number;
   /**
+   * How `attack-surface`'s isAuthenticated detection works.
+   * 'heuristic' — substring match against a fixed name list (current behavior);
+   * a custom-named auth wrapper is silently misclassified as unauthenticated.
+   * 'jev' — when the heuristic finds no auth pattern, asks the jev API to
+   * confirm/override using the route + call-path names as context. The
+   * heuristic's positive matches are trusted as-is (not re-checked) to keep
+   * this cheap — jev only resolves the heuristic's false-negative gap.
+   * Default: 'heuristic'.
+   */
+  securityAuthDetectionMode: 'heuristic' | 'jev';
+  /** Confidence (0.0–1.0) above which a jev auth judgment overrides the heuristic's "not authenticated" default. Default: 0.6. */
+  securityAuthConfidenceThreshold: number;
+  /**
    * License policy for dependency compliance.
    * deny: licenses to block (build fails / command exits non-zero).
    * warn: licenses to flag as warnings.
@@ -196,6 +231,19 @@ export interface KiroGraphConfig {
     warnAt: number;
     throttleAt: number;
   };
+  /**
+   * API key for jev (TypeSafe System One, https://docs.typesafe.ai) — a fast
+   * typed-classification model used by the opt-in `*Mode: 'jev'` toggles
+   * (`memoryRelationMode`, `wikiContradictionMode`, `securityAuthDetectionMode`).
+   * Falls back to the JEV_API_KEY environment variable when unset here.
+   * Prefer the env var for a real key; this field exists mainly so a project
+   * (or a test config) can point at a local mock server. Default: undefined.
+   */
+  jevApiKey?: string;
+  /** Override the jev API base URL — for a local mock server in tests, or a self-hosted deployment. Default: https://api.typesafe.ai. */
+  jevBaseUrl?: string;
+  /** jev model ID. Default: 'jev-latest'. */
+  jevModel: string;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -211,19 +259,23 @@ const KNOWN_FIELDS = new Set<string>([
   'enableArchitecture', 'architectureLayers', 'cavemanMode', 'shellCompressionLevel', 'syncWarningThreshold',
   'enableMemory', 'memorySearchAlpha', 'memoryKeepRaw', 'memoryMaxObservations',
   'memorySessionTimeout', 'memoryContextLimit', 'memoryContextThreshold', 'memoryExcludePatterns', 'memoryStrictWrites',
+  'memoryRelationMode', 'memoryRelationConfidenceThreshold',
   'enableWatchmen', 'watchmenThreshold', 'watchmenSynthesisMode', 'watchmenLocalModel',
   'enableWiki', 'wikiSynthesisMode', 'wikiLocalModel', 'wikiSources',
   'wikiAutoResolveConflicts', 'wikiLintFrequency', 'wikiContextLimit', 'wikiContextThreshold',
+  'wikiContradictionMode', 'wikiContradictionConfidenceThreshold',
   'enableDocs', 'docsInclude', 'docsExclude', 'docsLinkCode',
   'docsContextLimit', 'docsContextThreshold', 'docsMaxFileSize', 'docsSummarization',
   'enableData', 'dataInclude', 'dataExclude', 'dataLinkCode',
   'dataContextLimit', 'dataMaxFileSize', 'dataMaxRows', 'dataQueryLimit', 'dataMaxResponseTokens',
   'enableSecurity', 'securityDatabases', 'securityAutoEnrich', 'securityEnrichMaxAgeDays', 'securityLicensePolicy',
+  'securityAuthDetectionMode', 'securityAuthConfidenceThreshold',
   'enablePatterns', 'patternLibraryPath', 'patternSeverityThreshold',
   'enableCodeHealth', 'enableNavigation', 'enableComplexity', 'enableGitContext',
   'enableEditPrimitives', 'enableBranch',
   'enableAgentUtils', 'enableGeneralCompression',
   'contextBudget',
+  'jevApiKey', 'jevBaseUrl', 'jevModel',
   // Legacy aliases / derived fields (accepted but ignored or recomputed)
   'enableCompression', 'compressionLevel', 'enableShellExec',
   // Deprecated: dissolved flag kept here so old configs don't warn
@@ -293,6 +345,8 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     memoryContextThreshold: 0.3,
     memoryExcludePatterns: [],
     memoryStrictWrites: false,
+    memoryRelationMode: 'agent' as const,
+    memoryRelationConfidenceThreshold: 0.8,
     enableWatchmen: false,
     watchmenThreshold: 5,
     watchmenSynthesisMode: 'local',
@@ -305,6 +359,8 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     wikiLintFrequency: 'off' as const,
     wikiContextLimit: 3,
     wikiContextThreshold: 0.4,
+    wikiContradictionMode: 'heuristic' as const,
+    wikiContradictionConfidenceThreshold: 0.7,
     enableDocs: false,
     docsInclude: ['**/*.md', '**/*.mdx', '**/*.rst', '**/*.adoc', '**/*.asciidoc', '**/*.rdoc', '**/*.org', '**/*.cheatmd', 'docs/**/*.txt', 'docs/**/*.html'],
     docsExclude: ['node_modules/**', '**/CHANGELOG*', '**/LICENSE*', '**/CHANGES*', 'dist/**', 'build/**', 'coverage/**', '.git/**', '**/generated/**', '**/auto-generated/**', '**/vendor/**', '_build/**'],
@@ -326,6 +382,8 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     securityDatabases: ['OSV'],
     securityAutoEnrich: true,
     securityEnrichMaxAgeDays: 7,
+    securityAuthDetectionMode: 'heuristic' as const,
+    securityAuthConfidenceThreshold: 0.6,
     securityLicensePolicy: { deny: [], warn: [] },
     enablePatterns: false,
     patternLibraryPath: undefined,
@@ -339,6 +397,9 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     enableAgentUtils: true,
     enableGeneralCompression: false,
     enableShellExec: false,
+    jevApiKey: undefined,
+    jevBaseUrl: undefined,
+    jevModel: 'jev-latest',
   };
 }
 
@@ -477,6 +538,14 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const memoryStrictWrites = typeof raw.memoryStrictWrites === 'boolean'
     ? raw.memoryStrictWrites
     : defaults.memoryStrictWrites;
+  const MEMORY_RELATION_MODES = new Set(['agent', 'jev']);
+  const memoryRelationMode = typeof raw.memoryRelationMode === 'string' && MEMORY_RELATION_MODES.has(raw.memoryRelationMode)
+    ? (raw.memoryRelationMode as KiroGraphConfig['memoryRelationMode'])
+    : defaults.memoryRelationMode;
+  const memoryRelationConfidenceThreshold = typeof raw.memoryRelationConfidenceThreshold === 'number'
+    && raw.memoryRelationConfidenceThreshold >= 0 && raw.memoryRelationConfidenceThreshold <= 1
+    ? raw.memoryRelationConfidenceThreshold
+    : defaults.memoryRelationConfidenceThreshold;
 
   // ── Watchmen config ───────────────────────────────────────────────────────
   const enableWatchmen = typeof raw.enableWatchmen === 'boolean'
@@ -502,6 +571,11 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const wikiLintFrequency = raw.wikiLintFrequency === 'weekly' ? 'weekly' as const : 'off' as const;
   const wikiContextLimit = typeof raw.wikiContextLimit === 'number' ? raw.wikiContextLimit : defaults.wikiContextLimit;
   const wikiContextThreshold = typeof raw.wikiContextThreshold === 'number' ? raw.wikiContextThreshold : defaults.wikiContextThreshold;
+  const wikiContradictionMode = raw.wikiContradictionMode === 'jev' ? 'jev' as const : 'heuristic' as const;
+  const wikiContradictionConfidenceThreshold = typeof raw.wikiContradictionConfidenceThreshold === 'number'
+    && raw.wikiContradictionConfidenceThreshold >= 0 && raw.wikiContradictionConfidenceThreshold <= 1
+    ? raw.wikiContradictionConfidenceThreshold
+    : defaults.wikiContradictionConfidenceThreshold;
 
   // ── Docs config ───────────────────────────────────────────────────────────
   const enableDocs = typeof raw.enableDocs === 'boolean'
@@ -581,6 +655,12 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     }
     securityEnrichMaxAgeDays = defaults.securityEnrichMaxAgeDays;
   }
+
+  const securityAuthDetectionMode = raw.securityAuthDetectionMode === 'jev' ? 'jev' as const : 'heuristic' as const;
+  const securityAuthConfidenceThreshold = typeof raw.securityAuthConfidenceThreshold === 'number'
+    && raw.securityAuthConfidenceThreshold >= 0 && raw.securityAuthConfidenceThreshold <= 1
+    ? raw.securityAuthConfidenceThreshold
+    : defaults.securityAuthConfidenceThreshold;
 
   const SUPPORTED_SECURITY_DATABASES = new Set(['OSV']);
   let securityDatabases: string[];
@@ -683,6 +763,11 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     finalEnableArchitecture = true;
   }
 
+  // ── jev config ─────────────────────────────────────────────────────────────
+  const jevApiKey = typeof raw.jevApiKey === 'string' && raw.jevApiKey.length > 0 ? raw.jevApiKey : undefined;
+  const jevBaseUrl = typeof raw.jevBaseUrl === 'string' && raw.jevBaseUrl.length > 0 ? raw.jevBaseUrl : undefined;
+  const jevModel = typeof raw.jevModel === 'string' && raw.jevModel.length > 0 ? raw.jevModel : defaults.jevModel;
+
   // ── Context budget config ─────────────────────────────────────────────────
   let contextBudget: KiroGraphConfig['contextBudget'] | undefined;
   if (raw.contextBudget && typeof raw.contextBudget === 'object' && !Array.isArray(raw.contextBudget)) {
@@ -736,6 +821,8 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     memoryContextThreshold,
     memoryExcludePatterns,
     memoryStrictWrites,
+    memoryRelationMode,
+    memoryRelationConfidenceThreshold,
     enableWatchmen: enableWatchmen && enableMemory,
     watchmenThreshold,
     watchmenSynthesisMode,
@@ -748,6 +835,8 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     wikiLintFrequency,
     wikiContextLimit,
     wikiContextThreshold,
+    wikiContradictionMode,
+    wikiContradictionConfidenceThreshold,
     enableDocs,
     docsInclude,
     docsExclude,
@@ -769,6 +858,8 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     securityDatabases,
     securityAutoEnrich,
     securityEnrichMaxAgeDays,
+    securityAuthDetectionMode,
+    securityAuthConfidenceThreshold,
     securityLicensePolicy,
     enablePatterns,
     patternLibraryPath,
@@ -782,8 +873,11 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     enableAgentUtils,
     enableGeneralCompression,
     enableShellExec: shellCompressionLevel !== 'off',
+    jevModel,
     ...(architectureLayers !== undefined ? { architectureLayers } : {}),
     ...(contextBudget !== undefined ? { contextBudget } : {}),
+    ...(jevApiKey !== undefined ? { jevApiKey } : {}),
+    ...(jevBaseUrl !== undefined ? { jevBaseUrl } : {}),
   };
 }
 

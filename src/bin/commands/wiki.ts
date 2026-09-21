@@ -42,6 +42,11 @@ async function getWiki(cwd: string) {
   const kirographDir = `${cwd}/.kirograph`;
   const wiki = new KiroGraphWiki(db.getRawDb(), kirographDir, {
     autoResolveConflicts: config.wikiAutoResolveConflicts,
+    wikiContradictionMode: config.wikiContradictionMode,
+    wikiContradictionConfidenceThreshold: config.wikiContradictionConfidenceThreshold,
+    jevApiKey: config.jevApiKey,
+    jevBaseUrl: config.jevBaseUrl,
+    jevModel: config.jevModel,
   });
   wiki.initialize();
   return wiki;
@@ -246,7 +251,13 @@ export function register(program: Command): void {
     .action(async () => {
       const cwd = process.cwd();
       const w = await getWiki(cwd);
-      const issues = w.lint();
+      let issues;
+      try {
+        issues = await w.lint();
+      } catch (err) {
+        console.error(`  ✖ ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
 
       if (issues.length === 0) {
         console.log(`\n  ${green}✓${reset}  Wiki lint passed — no issues found.\n`);

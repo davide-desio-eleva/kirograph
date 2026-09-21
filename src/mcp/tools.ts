@@ -871,19 +871,19 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: 'kirograph_mem_compare',
-    description: 'Establish a typed relation between two observations (supersedes, conflicts_with, compatible, scoped, related, not_conflict). Accepts observation IDs or topic_key values.',
+    description: 'Establish a typed relation between two observations (supersedes, conflicts_with, compatible, scoped, related, not_conflict). Accepts observation IDs or topic_key values. When memoryRelationMode is "jev", omit `relation` to have it classified automatically instead of reasoning it out yourself.',
     inputSchema: {
       type: 'object',
       properties: {
         observationA: { type: 'string', description: 'First observation ID or topic_key' },
         observationB: { type: 'string', description: 'Second observation ID or topic_key' },
-        relation: { type: 'string', enum: ['supersedes', 'conflicts_with', 'compatible', 'scoped', 'related', 'not_conflict'], description: 'Relation type' },
-        confidence: { type: 'number', description: 'Confidence 0.0–1.0 (default: 1.0)' },
+        relation: { type: 'string', enum: ['supersedes', 'conflicts_with', 'compatible', 'scoped', 'related', 'not_conflict'], description: 'Relation type. Required unless memoryRelationMode is "jev", in which case omitting it classifies the relation automatically.' },
+        confidence: { type: 'number', description: 'Confidence 0.0–1.0 (default: 1.0). Ignored when relation is omitted in jev mode — jev supplies its own calibrated confidence.' },
         reason: { type: 'string', description: 'Explanation of the relation' },
         evidence: { type: 'string', description: 'Supporting evidence text' },
         projectPath: { type: 'string' },
       },
-      required: ['observationA', 'observationB', 'relation'],
+      required: ['observationA', 'observationB'],
     },
   },
   {

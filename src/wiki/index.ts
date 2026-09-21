@@ -25,15 +25,28 @@ export class KiroGraphWiki {
   private wikiDb: WikiDatabase;
   private wikiDir: string;
   private autoResolveConflicts: boolean;
+  private contradictionMode: 'heuristic' | 'jev';
+  private contradictionConfidenceThreshold: number;
+  private jevConfig: { jevApiKey?: string; jevBaseUrl?: string; jevModel?: string };
 
   constructor(
     db: any,
     kirographDir: string,
-    opts: { autoResolveConflicts?: boolean } = {}
+    opts: {
+      autoResolveConflicts?: boolean;
+      wikiContradictionMode?: 'heuristic' | 'jev';
+      wikiContradictionConfidenceThreshold?: number;
+      jevApiKey?: string;
+      jevBaseUrl?: string;
+      jevModel?: string;
+    } = {}
   ) {
     this.wikiDb = new WikiDatabase(db);
     this.wikiDir = path.join(kirographDir, 'wiki');
     this.autoResolveConflicts = opts.autoResolveConflicts ?? false;
+    this.contradictionMode = opts.wikiContradictionMode ?? 'heuristic';
+    this.contradictionConfidenceThreshold = opts.wikiContradictionConfidenceThreshold ?? 0.7;
+    this.jevConfig = { jevApiKey: opts.jevApiKey, jevBaseUrl: opts.jevBaseUrl, jevModel: opts.jevModel };
   }
 
   initialize(): void {
@@ -124,9 +137,18 @@ export class KiroGraphWiki {
 
   // ── Lint ───────────────────────────────────────────────────────────────────
 
-  lint(): WikiLintIssue[] {
+  async lint(): Promise<WikiLintIssue[]> {
     this.initialize();
-    return lintWiki(this.wikiDb);
+    let jevClient: import('../jev/client').JevClient | undefined;
+    if (this.contradictionMode === 'jev') {
+      const { createJevClientFromConfig } = await import('../jev/client');
+      jevClient = createJevClientFromConfig(this.jevConfig);
+    }
+    return lintWiki(this.wikiDb, {
+      contradictionMode: this.contradictionMode,
+      contradictionConfidenceThreshold: this.contradictionConfidenceThreshold,
+      jevClient,
+    });
   }
 
   // ── Links ──────────────────────────────────────────────────────────────────

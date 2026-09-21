@@ -121,10 +121,21 @@ export async function handleWiki(toolName: string, args: Record<string, unknown>
       const { KiroGraphWiki } = await import('../../wiki/index');
       const db = cg.getDatabase();
       db.applyWikiSchema();
-      const wiki = new KiroGraphWiki(db.getRawDb(), projectRoot + '/.kirograph');
+      const wiki = new KiroGraphWiki(db.getRawDb(), projectRoot + '/.kirograph', {
+        wikiContradictionMode: config.wikiContradictionMode,
+        wikiContradictionConfidenceThreshold: config.wikiContradictionConfidenceThreshold,
+        jevApiKey: config.jevApiKey,
+        jevBaseUrl: config.jevBaseUrl,
+        jevModel: config.jevModel,
+      });
       wiki.initialize();
 
-      const issues = wiki.lint();
+      let issues;
+      try {
+        issues = await wiki.lint();
+      } catch (err) {
+        return `Error: ${err instanceof Error ? err.message : String(err)}`;
+      }
       if (issues.length === 0) return '✓ Wiki lint passed — no issues found.';
 
       const lines = [`Wiki Lint — ${issues.length} issue(s)`, ''];

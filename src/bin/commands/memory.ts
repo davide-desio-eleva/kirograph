@@ -747,12 +747,12 @@ export function register(program: Command): void {
 
   conflicts
     .command('compare <observationA> <observationB>')
-    .description('Establish a typed relation between two observations (IDs or topic_keys)')
-    .requiredOption('--relation <type>', 'Relation: supersedes, conflicts_with, compatible, scoped, related, not_conflict')
+    .description('Establish a typed relation between two observations (IDs or topic_keys). With memoryRelationMode: "jev", omit --relation to classify it automatically.')
+    .option('--relation <type>', 'Relation: supersedes, conflicts_with, compatible, scoped, related, not_conflict')
     .option('--confidence <n>', 'Confidence 0.0–1.0', '1.0')
     .option('--reason <text>', 'Explanation')
     .option('--evidence <text>', 'Supporting evidence')
-    .action(async (observationA: string, observationB: string, opts: { relation: string; confidence: string; reason?: string; evidence?: string }) => {
+    .action(async (observationA: string, observationB: string, opts: { relation?: string; confidence: string; reason?: string; evidence?: string }) => {
       const { MemoryManager } = await import('../../memory/index');
       const { loadConfig } = await import('../../config');
       const KiroGraph = (await import('../../index')).default;
@@ -763,6 +763,25 @@ export function register(program: Command): void {
       const cg = await KiroGraph.open(cwd);
       const db = cg.getDatabase(); db.applyMemorySchema();
       const mem = new MemoryManager(config, db.getRawDb()); mem.initialize();
+
+      if (!opts.relation) {
+        if (config.memoryRelationMode !== 'jev') {
+          console.error('  ✖ --relation is required (set memoryRelationMode: "jev" in config to classify it automatically instead).');
+          cg.close(); process.exit(1);
+        }
+        try {
+          const result = await mem.autoCompareObservations(observationA, observationB);
+          const status = result.autoJudged ? `${dim}auto-judged${reset}` : `${dim}pending review${reset}`;
+          console.log(`  ✓ Relation ${dim}${result.relationId}${reset} classified by jev: ${violet}${result.relation}${reset} (confidence: ${result.confidence.toFixed(2)}, ${status})`);
+          if (!result.autoJudged) console.log(`  ${dim}Use \`kirograph mem judge ${result.relationId}\` to finalize.${reset}`);
+        } catch (err) {
+          console.error(`  ✖ ${err instanceof Error ? err.message : String(err)}`);
+          cg.close(); process.exit(1);
+        }
+        cg.close();
+        return;
+      }
+
       const id = mem.compareObservations({
         observationA,
         observationB,

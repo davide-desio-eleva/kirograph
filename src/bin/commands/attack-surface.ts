@@ -51,8 +51,20 @@ export function register(program: Command): void {
       db.applySecuritySchema();
 
       const { AttackSurfaceAnalyzer } = await import('../../security/attack-surface');
-      const analyzer = new AttackSurfaceAnalyzer(db);
-      const result = await analyzer.analyze();
+      const analyzer = new AttackSurfaceAnalyzer(db, {
+        authDetectionMode: config.securityAuthDetectionMode,
+        authConfidenceThreshold: config.securityAuthConfidenceThreshold,
+        jevApiKey: config.jevApiKey,
+        jevBaseUrl: config.jevBaseUrl,
+        jevModel: config.jevModel,
+      });
+      let result;
+      try {
+        result = await analyzer.analyze();
+      } catch (err) {
+        console.error(`  ✖ ${err instanceof Error ? err.message : String(err)}`);
+        cg.close(); process.exit(1);
+      }
 
       cg.close();
 
