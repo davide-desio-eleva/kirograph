@@ -44,19 +44,25 @@ export async function handleMemory(toolName: string, args: Record<string, unknow
       const config = await loadConfig(projectRoot);
       if (!config.enableMemory) return 'Memory is not enabled. Set enableMemory: true in .kirograph/config.json';
 
-      const { MemoryManager } = await import('../../memory/index');
+      const { MemoryManager, MemorySchemaError } = await import('../../memory/index');
       const db = cg.getDatabase();
       db.applyMemorySchema();
       const mem = new MemoryManager(config, db.getRawDb());
       mem.initialize();
 
-      const id = await mem.store({
-        content: args.content as string,
-        kind: (args.kind as any) ?? 'note',
-        source: 'agent',
-        topicKey: args.topicKey as string | undefined,
-        reviewAfter: args.reviewAfter as number | undefined,
-      });
+      let id;
+      try {
+        id = await mem.store({
+          content: args.content as string,
+          kind: (args.kind as any) ?? 'note',
+          source: 'agent',
+          topicKey: args.topicKey as string | undefined,
+          reviewAfter: args.reviewAfter as number | undefined,
+        });
+      } catch (err) {
+        if (err instanceof MemorySchemaError) return `Rejected: ${err.message}`;
+        throw err;
+      }
 
       if (!id) return 'Observation already exists (duplicate content).';
       return `Stored observation ${id} [${(args.kind as string) ?? 'note'}]`;

@@ -27,11 +27,13 @@ import { detectSymbols } from './symbols';
 import { MemoryVectorManager } from './vectors';
 import { WatchmenChecker } from '../watchmen';
 import { logDebug } from '../errors';
+import { validateObservationInput } from './schema';
 
 export { MemoryDatabase } from './database';
 export { compressObservation, extractIdentifiers, type CavemanMode } from './compress';
 export { detectSymbols } from './symbols';
 export { MemoryVectorManager } from './vectors';
+export { MemorySchemaError, OBSERVATION_KINDS, validateObservationInput } from './schema';
 export * from './types';
 
 // ── MemoryManager ────────────────────────────────────────────────────────────
@@ -87,8 +89,14 @@ export class MemoryManager {
    * 7. Watchmen threshold check (if enabled) — returns WatchmenReadyResult when synthesis should run
    *
    * Returns the observation ID, a WatchmenReadyResult, or null if skipped (duplicate or excluded).
+   * @throws MemorySchemaError if `memoryStrictWrites` is enabled and the input doesn't conform.
    */
   async store(input: MemObservationInput, ide = 'kiro'): Promise<string | WatchmenReadyResult | null> {
+    // 0. Opt-in schema validation — rejects instead of silently corrupting the store.
+    if ((this.config as any).memoryStrictWrites) {
+      validateObservationInput(input);
+    }
+
     let text = input.content;
 
     // 1. Strip <private> blocks

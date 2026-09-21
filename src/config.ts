@@ -73,6 +73,15 @@ export interface KiroGraphConfig {
   memoryContextThreshold: number;
   /** Glob patterns for paths to never capture in memory. Default: []. */
   memoryExcludePatterns: string[];
+  /**
+   * Reject observation writes that don't conform to the memory schema
+   * (unknown `kind`, blank tags) instead of silently accepting them.
+   * Applies to `kirograph mem store`, the `kirograph_mem_store` MCP tool,
+   * and `MemoryManager.store()` directly. Off by default — existing
+   * free-form writes are unaffected until explicitly opted in.
+   * Default: false.
+   */
+  memoryStrictWrites: boolean;
   /** Enable watchmen — auto-synthesize workspace briefs from memory observations. Requires enableMemory. Default: false. */
   enableWatchmen: boolean;
   /** Minimum new observations since last synthesis before watchmenReady fires. Default: 5. */
@@ -201,7 +210,7 @@ const KNOWN_FIELDS = new Set<string>([
   'minLogLevel', 'frameworkHints', 'fuzzyResolutionThreshold',
   'enableArchitecture', 'architectureLayers', 'cavemanMode', 'shellCompressionLevel', 'syncWarningThreshold',
   'enableMemory', 'memorySearchAlpha', 'memoryKeepRaw', 'memoryMaxObservations',
-  'memorySessionTimeout', 'memoryContextLimit', 'memoryContextThreshold', 'memoryExcludePatterns',
+  'memorySessionTimeout', 'memoryContextLimit', 'memoryContextThreshold', 'memoryExcludePatterns', 'memoryStrictWrites',
   'enableWatchmen', 'watchmenThreshold', 'watchmenSynthesisMode', 'watchmenLocalModel',
   'enableWiki', 'wikiSynthesisMode', 'wikiLocalModel', 'wikiSources',
   'wikiAutoResolveConflicts', 'wikiLintFrequency', 'wikiContextLimit', 'wikiContextThreshold',
@@ -283,6 +292,7 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     memoryContextLimit: 3,
     memoryContextThreshold: 0.3,
     memoryExcludePatterns: [],
+    memoryStrictWrites: false,
     enableWatchmen: false,
     watchmenThreshold: 5,
     watchmenSynthesisMode: 'local',
@@ -464,6 +474,9 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     && raw.memoryExcludePatterns.every((p: unknown) => typeof p === 'string')
     ? (raw.memoryExcludePatterns as string[])
     : defaults.memoryExcludePatterns;
+  const memoryStrictWrites = typeof raw.memoryStrictWrites === 'boolean'
+    ? raw.memoryStrictWrites
+    : defaults.memoryStrictWrites;
 
   // ── Watchmen config ───────────────────────────────────────────────────────
   const enableWatchmen = typeof raw.enableWatchmen === 'boolean'
@@ -722,6 +735,7 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     memoryContextLimit,
     memoryContextThreshold,
     memoryExcludePatterns,
+    memoryStrictWrites,
     enableWatchmen: enableWatchmen && enableMemory,
     watchmenThreshold,
     watchmenSynthesisMode,
