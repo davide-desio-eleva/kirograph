@@ -894,7 +894,7 @@ wdb.upsertPage({
 // ── With wikiTypedPages ON ──────────────────────────────────────────────────
 const wikiOn = new KiroGraphWiki(db.getRawDb(), path.join(testDir, '.kirograph'), { typedPages: true });
 wikiOn.initialize();
-const issuesOn = wikiOn.lint();
+const issuesOn = await wikiOn.lint();
 console.log('lint (typedPages:true) issues:', JSON.stringify(issuesOn.filter(i => i.kind === 'schema_error'), null, 2));
 
 const invalidIssues = issuesOn.filter(i => i.kind === 'schema_error' && i.slug === 'typed-invalid-decision');
@@ -925,7 +925,7 @@ console.log('schema_error:ok slug=typed-untyped-page (nessun frontmatter, mai va
 // ── With wikiTypedPages OFF (default) ───────────────────────────────────────
 const wikiOff = new KiroGraphWiki(db.getRawDb(), path.join(testDir, '.kirograph'), {});
 wikiOff.initialize();
-const issuesOff = wikiOff.lint();
+const issuesOff = await wikiOff.lint();
 if (issuesOff.some(i => i.kind === 'schema_error')) {
   throw new Error('wikiTypedPages off (default): no schema_error should ever be reported, got: ' + JSON.stringify(issuesOff.filter(i => i.kind === 'schema_error')));
 }
@@ -1015,7 +1015,7 @@ if (reindexed < 3) throw new Error('expected at least 3 pages reindexed from dis
 console.log('reindex:ok count=' + reindexed);
 
 // Valid typed page: no schema_error before the rename
-const beforeIssues = wiki.lint().filter(i => i.kind === 'schema_error');
+const beforeIssues = (await wiki.lint()).filter(i => i.kind === 'schema_error');
 if (beforeIssues.some(i => i.slug === 'typed-rename-source')) {
   throw new Error('typed-rename-source should be valid before rename, got: ' + JSON.stringify(beforeIssues));
 }
@@ -1049,7 +1049,7 @@ if (!linkerContent.includes('[[typed-rename-source-v2]]') || linkerContent.inclu
 console.log('link-rewrite:ok');
 
 // After rename, the page must still validate correctly under its NEW slug
-const afterIssues = wiki.lint().filter(i => i.kind === 'schema_error');
+const afterIssues = (await wiki.lint()).filter(i => i.kind === 'schema_error');
 if (afterIssues.some(i => i.slug === 'typed-rename-source-v2')) {
   throw new Error('typed-rename-source-v2 should still be valid after rename, got: ' + JSON.stringify(afterIssues));
 }
@@ -1057,7 +1057,7 @@ console.log('lint-after-valid:ok — nessun schema_error sotto il nuovo slug');
 
 // Also rename the already-invalid page — the violation must follow it to the new slug, not disappear
 wiki.rename('typed-rename-invalid', 'typed-rename-invalid-v2');
-const afterIssues2 = wiki.lint().filter(i => i.kind === 'schema_error');
+const afterIssues2 = (await wiki.lint()).filter(i => i.kind === 'schema_error');
 if (!afterIssues2.some(i => i.slug === 'typed-rename-invalid-v2')) {
   throw new Error('typed-rename-invalid-v2 should still be flagged after rename, got: ' + JSON.stringify(afterIssues2));
 }
