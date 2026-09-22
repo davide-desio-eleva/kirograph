@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.2.3] - Unreleased: `security flows` SQL injection detection gaps, found by testing against OWASP Juice Shop
+## [1.2.3] - 2026-09-22: `security flows` SQL injection detection gaps, found by testing against OWASP Juice Shop
 
 ### Fixed
 
