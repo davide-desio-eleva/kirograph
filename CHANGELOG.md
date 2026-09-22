@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.3] - Unreleased: `security flows` SQL injection detection gaps, found by testing against OWASP Juice Shop
+
+### Fixed
+
+- **Security (`security flows` SQL injection heuristic)**: `_detectSqlInjection` required the *caller's own function name* to contain a substring like `handle`/`controller`/`route`/`request`/`req`/`endpoint`/`action`/`handler` before it would report anything, on top of already requiring the callee to be a known raw-query method name (issue #39 follow-up — a reporter noted they got zero findings on real projects and suggested validating against a known-vulnerable app to tell "clean" from "broken"). Validated against OWASP Juice Shop: this caller-name gate silently missed both of its best-known SQL injections — `login()` and `searchProducts()` in `routes/login.ts`/`routes/search.ts` call `sequelize.query()` directly (zero call-graph hops), but neither function name matched the allowlist. The callee name was already the specific signal (a short, deliberate list of raw-query method names); gating on the caller's name on top of that was a leaky proxy for "receives user input" that excluded ordinarily-named repository/service/route-closure functions holding real vulnerable code. The caller-name filter is removed; the existing sanitize/escape/parameterize-call filter still suppresses properly-guarded callers.
+- **Patterns (`sql-injection-template-js`, `sql-injection-concat-js`)**: the AST pattern rules for `$DB.query(...)`/`.execute(...)`/`.run(...)`/`.exec(...)` only matched calls with *exactly* one argument (the SQL template literal or concatenation, with nothing after it). A call with a trailing options argument — e.g. Sequelize's `sequelize.query(sql, { model, plain: true })`, a very common real-world shape — didn't match at all. This is exactly why `enablePatterns` still missed Juice Shop's `login.ts` SQL injection even after it caught the arity-1 `search.ts` one: verified directly with `@ast-grep/napi` that `$DB.query(\`$$$\`)` matches a 1-arg call but not a 2-arg one, while adding a `$DB.query(\`$$$\`, $$$REST)` variant to each rule's `any:` list catches both without any false-positive change to the 1-arg case.
+
 ## [1.2.2] - 2026-09-22: Maven license inheritance through parent POMs
 
 ### Fixed

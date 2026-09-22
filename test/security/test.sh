@@ -687,6 +687,15 @@ echo -e "  ${BOLD}[B14] security flows${RESET}"
 OUT=$($KG security flows 2>&1);           EXIT=$?; [ $EXIT -eq 0 ] && ok "security flows: exit 0"          || fail "security flows: exit $EXIT"
 OUT=$($KG security flows --type all 2>&1); EXIT=$?; [ $EXIT -eq 0 ] && ok "security flows --type all: exit 0" || fail "security flows --type all: exit $EXIT"
 
+# SQL injection caller-name gate removed (issue #39 follow-up, found by
+# testing against OWASP Juice Shop): UserService.authenticate() calls
+# db.query(...) directly but is named neither handle/controller/route/
+# request/req/endpoint/action/handler — must still be flagged.
+SQL_OUT=$($KG security flows --type sql 2>&1)
+echo "$SQL_OUT" | grep -q "authenticate" \
+  && ok "security flows --type sql: rileva 'authenticate' (nome non da controller/handler)" \
+  || fail "security flows --type sql: 'authenticate' non rilevato (caller-name gate regression?)"
+
 # ── B15. security ci-report ───────────────────────────────────────────────────
 sep
 echo -e "  ${BOLD}[B15] security ci-report${RESET}"
