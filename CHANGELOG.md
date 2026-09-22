@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.0] - Unreleased: Opt-in typed schema validation for memory fields and wiki frontmatter
+
+Inspired by [tmd](https://github.com/alfonsograziano/tmd) (Typed Markdown): validating structured fields against a JSON Schema per kind/type, registered by dropping a schema file in a directory — no index to maintain, and a kind/type with no schema registered is simply never validated. Both features are off by default and fully additive: existing memory writes and wiki pages are completely unaffected until explicitly opted in.
+
+### Added
+
+- **Memory (`memorySchemaValidation`)**: observations can now carry a `fields` object — structured data beyond the free-text `content` — passed via `--fields '<json>'` on `kirograph mem store` or the `fields` parameter on the `kirograph_mem_store` MCP tool. When `memorySchemaValidation` is enabled, `fields` is validated against `.kirograph/memory-schemas/<kind>.schema.json` when a schema is registered for that `kind`; a kind with no schema file is never validated. Violations are rejected with every problem named (`MemorySchemaError`), the same rejection pattern as `memoryStrictWrites` — the two flags are independent (one validates `kind`/`tags`, the other validates `fields`). `fields` is stored as a new `fields` column on `mem_observations` (JSON-serialized) regardless of whether validation is on, so it's freely settable even without a schema.
+- **Wiki (`wikiTypedPages`)**: a wiki page may now start with an optional YAML frontmatter block declaring `_type: <type>` plus arbitrary fields. When `wikiTypedPages` is enabled, `wiki lint` (CLI and the `kirograph_wiki_lint` MCP tool) validates a typed page's frontmatter against `.kirograph/wiki-schemas/<type>.schema.json`, reporting violations as a new `schema_error` lint issue kind. Pages without frontmatter, or with a `_type` that has no schema registered, are never validated — untyped prose pages (the existing wiki model) are completely unaffected.
+- `src/shared/json-schema.ts`: new minimal JSON Schema subset validator (`type`, `enum`, `required`, `properties` (recursive), `items`, `additionalProperties`, `pattern`, `minLength`/`maxLength`, `minimum`/`maximum`, `format: "date"`) with no runtime dependency (no ajv), shared by both features. Unknown schema keywords are ignored rather than rejected.
+- `src/shared/yaml.ts`: the minimal YAML parser previously inlined in `src/patterns/loader.ts` extracted into a shared module, reused by wiki frontmatter parsing.
+
 ## [1.1.1] - 2026-09-22: Transitive dependency scanning across all ecosystems, Maven BOM/transitive resolution, reachability persistence + false-negative fixes, `reachability --explain`, tree-sitter Parser/Tree leak fix
 
 ### Added

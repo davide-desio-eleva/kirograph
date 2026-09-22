@@ -48,6 +48,7 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `memoryContextThreshold` | number | `0.3` | Min relevance score to surface in context |
 | `memoryExcludePatterns` | string[] | `[]` | Glob patterns for files to exclude from symbol linking |
 | `memoryStrictWrites` | boolean | `false` | Reject `mem store` writes with an unknown `kind` or blank tags instead of silently accepting them. Applies to the CLI, the `kirograph_mem_store` MCP tool, and `MemoryManager.store()` directly. |
+| `memorySchemaValidation` | boolean | `false` | Validate an observation's `fields` (structured data beyond `content`, set via `--fields '<json>'`) against `.kirograph/memory-schemas/<kind>.schema.json` when a schema is registered for that `kind`. A kind with no schema file is never validated. |
 | **Watchmen** | | | |
 | `enableWatchmen` | boolean | `false` | Enable Watchmen — auto-synthesize workspace briefs from memory observations. Requires `enableMemory: true`. |
 | `watchmenThreshold` | number | `5` | Minimum new observations since last synthesis before `watchmenReady` fires. |

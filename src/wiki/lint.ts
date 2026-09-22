@@ -9,13 +9,36 @@ import * as path from 'path';
 import type { WikiLintIssue } from './types';
 import type { WikiDatabase } from './database';
 import { extractLinks } from './links';
+import { parseFrontmatter, validatePageSchema } from './typed-pages';
 
-export function lintWiki(wikiDb: WikiDatabase): WikiLintIssue[] {
+export interface LintWikiOptions {
+  /**
+   * When set, pages declaring `_type` in their frontmatter are validated
+   * against `.kirograph/wiki-schemas/<type>.schema.json` (wikiTypedPages).
+   */
+  wikiSchemasDir?: string;
+}
+
+export function lintWiki(wikiDb: WikiDatabase, opts: LintWikiOptions = {}): WikiLintIssue[] {
   const issues: WikiLintIssue[] = [];
   const pages = wikiDb.listPages();
   const slugSet = new Set(pages.map(p => p.slug));
 
   for (const page of pages) {
+    // Typed-page schema validation (opt-in via wikiTypedPages)
+    if (opts.wikiSchemasDir) {
+      const { type, fields } = parseFrontmatter(page.content);
+      if (type) {
+        for (const violation of validatePageSchema(fields, type, opts.wikiSchemasDir)) {
+          issues.push({
+            kind: 'schema_error',
+            slug: page.slug,
+            detail: `[${type}] ${violation}`,
+          });
+        }
+      }
+    }
+
     // Broken [[slug]] links
     for (const linked of extractLinks(page.content)) {
       if (!slugSet.has(linked)) {

@@ -27,13 +27,14 @@ import { detectSymbols } from './symbols';
 import { MemoryVectorManager } from './vectors';
 import { WatchmenChecker } from '../watchmen';
 import { logDebug } from '../errors';
-import { validateObservationInput } from './schema';
+import { validateObservationInput, validateObservationFields } from './schema';
+import * as path from 'path';
 
 export { MemoryDatabase } from './database';
 export { compressObservation, extractIdentifiers, type CavemanMode } from './compress';
 export { detectSymbols } from './symbols';
 export { MemoryVectorManager } from './vectors';
-export { MemorySchemaError, OBSERVATION_KINDS, validateObservationInput } from './schema';
+export { MemorySchemaError, OBSERVATION_KINDS, validateObservationInput, validateObservationFields } from './schema';
 export * from './types';
 
 // ── MemoryManager ────────────────────────────────────────────────────────────
@@ -96,6 +97,9 @@ export class MemoryManager {
     if ((this.config as any).memoryStrictWrites) {
       validateObservationInput(input);
     }
+    if ((this.config as any).memorySchemaValidation) {
+      validateObservationFields(input, path.join(this.projectRoot, '.kirograph', 'memory-schemas'));
+    }
 
     let text = input.content;
 
@@ -128,6 +132,7 @@ export class MemoryManager {
       sessionId,
       topicKey: input.topicKey,
       reviewAfter: input.reviewAfter,
+      fields: input.fields,
     });
 
     if (!id) {

@@ -37,6 +37,12 @@ export interface MemObservation {
   factType?: 'observation' | 'decision' | 'procedure' | 'constraint';
   topicKey?: string;
   reviewAfter?: number;
+  /**
+   * Structured extra fields beyond `content`, validated per-`kind` against
+   * `.kirograph/memory-schemas/<kind>.schema.json` when memorySchemaValidation
+   * is enabled. Always freely settable — validation is opt-in.
+   */
+  fields?: Record<string, unknown>;
 }
 
 export interface MemObservationInput {
@@ -46,6 +52,7 @@ export interface MemObservationInput {
   tags?: string[];
   topicKey?: string;
   reviewAfter?: number;
+  fields?: Record<string, unknown>;
 }
 
 // ── Links ────────────────────────────────────────────────────────────────────
