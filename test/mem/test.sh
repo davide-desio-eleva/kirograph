@@ -580,6 +580,74 @@ node -e "
 rm -rf .kirograph/memory-schemas
 ok "config.json: memorySchemaValidation rimosso (torna al default false), schema rimossi"
 
+# ── 24d. Compatibilità: memoryStrictWrites + memorySchemaValidation insieme ────
+sep
+echo -e "  ${BOLD}[22d] Compatibilità — memoryStrictWrites + memorySchemaValidation attivi insieme${RESET}"
+
+mkdir -p .kirograph/memory-schemas
+cat > .kirograph/memory-schemas/decision.schema.json << 'EOF'
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rationale"],
+  "properties": {
+    "rationale": { "type": "string", "minLength": 1 }
+  }
+}
+EOF
+
+info "Abilito memoryStrictWrites + memorySchemaValidation insieme nel config..."
+node -e "
+  const fs = require('fs');
+  const cfg = JSON.parse(fs.readFileSync('.kirograph/config.json', 'utf8'));
+  cfg.memoryStrictWrites = true;
+  cfg.memorySchemaValidation = true;
+  fs.writeFileSync('.kirograph/config.json', JSON.stringify(cfg, null, 2));
+"
+ok "config.json: memoryStrictWrites=true, memorySchemaValidation=true"
+
+cmd "mem store --kind bogus --fields '{\"rationale\":\"x\"}' (kind invalido — atteso rifiuto da memoryStrictWrites, prima di validare fields)"
+set +e
+BOTH_BAD_KIND_OUT=$($KG mem store "[$RUN_ID] kind non valido, con entrambi i flag on." --kind totally-bogus-kind --fields '{"rationale":"x"}' 2>&1)
+BOTH_BAD_KIND_EXIT=$?
+set -e
+echo "$BOTH_BAD_KIND_OUT" | sed 's/^/     /'
+if [ "$BOTH_BAD_KIND_EXIT" -ne 0 ] && echo "$BOTH_BAD_KIND_OUT" | grep -qi "Invalid observation kind"; then
+  ok "entrambi on: kind invalido rifiutato da memoryStrictWrites (exit=$BOTH_BAD_KIND_EXIT)"
+else
+  fail "entrambi on: rifiuto per kind invalido atteso non avvenuto (exit=$BOTH_BAD_KIND_EXIT)"
+fi
+
+cmd "mem store --kind decision --fields '{\"bogus\":true}' (kind valido, fields invalidi — atteso rifiuto da memorySchemaValidation)"
+set +e
+BOTH_BAD_FIELDS_OUT=$($KG mem store "[$RUN_ID] kind valido ma fields invalidi, con entrambi i flag on." --kind decision --fields '{"bogus":true}' 2>&1)
+BOTH_BAD_FIELDS_EXIT=$?
+set -e
+echo "$BOTH_BAD_FIELDS_OUT" | sed 's/^/     /'
+if [ "$BOTH_BAD_FIELDS_EXIT" -ne 0 ] && echo "$BOTH_BAD_FIELDS_OUT" | grep -qi "missing required field"; then
+  ok "entrambi on: fields invalidi rifiutati da memorySchemaValidation (exit=$BOTH_BAD_FIELDS_EXIT)"
+else
+  fail "entrambi on: rifiuto per fields invalidi atteso non avvenuto (exit=$BOTH_BAD_FIELDS_EXIT)"
+fi
+
+cmd "mem store --kind decision --fields '{\"rationale\":\"...\"}' (kind e fields validi — atteso successo)"
+BOTH_VALID_OUT=$($KG mem store "[$RUN_ID] kind e fields validi, con entrambi i flag on." --kind decision --fields '{"rationale":"Entrambe le validazioni passano."}' --topic-key "test/both-flags-$RUN_ID" 2>&1)
+echo "$BOTH_VALID_OUT" | sed 's/^/     /'
+echo "$BOTH_VALID_OUT" | grep -qi "Stored observation" \
+  && ok "entrambi on: kind e fields validi, scrittura accettata normalmente" \
+  || fail "entrambi on: scrittura valida inattesa rifiutata"
+
+info "Disabilito entrambi i flag e rimuovo lo schema (ripristino default per il resto della suite)..."
+node -e "
+  const fs = require('fs');
+  const cfg = JSON.parse(fs.readFileSync('.kirograph/config.json', 'utf8'));
+  delete cfg.memoryStrictWrites;
+  delete cfg.memorySchemaValidation;
+  fs.writeFileSync('.kirograph/config.json', JSON.stringify(cfg, null, 2));
+"
+rm -rf .kirograph/memory-schemas
+ok "config.json: entrambi i flag rimossi (tornano al default false), schema rimossi"
+
 # ── 25. mem prune ─────────────────────────────────────────────────────────────
 sep
 echo -e "  ${BOLD}[23] kirograph mem prune${RESET}"
