@@ -102,25 +102,35 @@ export async function extractNotebook(
     return { filePath: relPath, language: 'jupyter', contentHash, fileSize, nodes: [], edges: [], unresolvedRefs: [] };
   }
 
-  const tree = parser.parse(concatenated);
+  // web-tree-sitter allocates Parser/Tree state in WASM linear memory, which JS GC
+  // does not reclaim — both must be explicitly .delete()'d once we're done with them
+  // (issue #49), otherwise long `sync` runs across many notebooks leak memory and hang.
+  try {
+    const tree = parser.parse(concatenated);
+    try {
+      const nodes: Node[] = [];
+      const edges: Edge[] = [];
+      const unresolvedRefs: UnresolvedRef[] = [];
+      const now = Date.now();
 
-  const nodes: Node[] = [];
-  const edges: Edge[] = [];
-  const unresolvedRefs: UnresolvedRef[] = [];
-  const now = Date.now();
+      // We reuse the same AST walking logic from extractor.ts but with 'python' language.
+      // Import walkTree-equivalent logic inline to avoid circular imports by using the
+      // exported makeNodeId and reimporting the walk from extractor indirectly.
+      // Instead, we call extractFile on the concatenated source as a virtual Python file
+      // and then remap file paths and languages back.
+      //
+      // To avoid code duplication we use a direct re-export path: import the internal
+      // walkTree equivalent by parsing via a private helper below.
 
-  // We reuse the same AST walking logic from extractor.ts but with 'python' language.
-  // Import walkTree-equivalent logic inline to avoid circular imports by using the
-  // exported makeNodeId and reimporting the walk from extractor indirectly.
-  // Instead, we call extractFile on the concatenated source as a virtual Python file
-  // and then remap file paths and languages back.
-  //
-  // To avoid code duplication we use a direct re-export path: import the internal
-  // walkTree equivalent by parsing via a private helper below.
+      walkPythonTree(tree.rootNode, concatenated, relPath, nodes, edges, unresolvedRefs, now, cellOffsets, codeChunks);
 
-  walkPythonTree(tree.rootNode, concatenated, relPath, nodes, edges, unresolvedRefs, now, cellOffsets, codeChunks);
-
-  return { filePath: relPath, language: 'jupyter', contentHash, fileSize, nodes, edges, unresolvedRefs };
+      return { filePath: relPath, language: 'jupyter', contentHash, fileSize, nodes, edges, unresolvedRefs };
+    } finally {
+      tree.delete();
+    }
+  } finally {
+    parser.delete();
+  }
 }
 
 // ── Transparent node types (same as extractor.ts) ────────────────────────────
