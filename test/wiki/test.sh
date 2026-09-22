@@ -816,6 +816,270 @@ else
   fail "lint test fallito"
 fi
 
+# ── 15b. wikiTypedPages (opt-in frontmatter schema validation) ────────────────
+sep
+echo -e "  ${BOLD}[13b] wikiTypedPages — validazione opt-in dello schema del frontmatter${RESET}\n"
+
+mkdir -p "$TEST_DIR/.kirograph/wiki-schemas"
+cat > "$TEST_DIR/.kirograph/wiki-schemas/decision.schema.json" << 'EOF'
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status"],
+  "properties": {
+    "status": { "type": "string", "enum": ["proposed", "accepted", "rejected"] },
+    "date": { "type": "string", "format": "date" }
+  }
+}
+EOF
+ok "registrato .kirograph/wiki-schemas/decision.schema.json (solo per _type 'decision')"
+
+ROOT_DIR="$ROOT" TEST_DIR="$TEST_DIR" node --input-type=module << 'NODEEOF'
+import path from 'path';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
+const rootDir = process.env.ROOT_DIR;
+const testDir = process.env.TEST_DIR;
+
+const KiroGraph = require(path.join(rootDir, 'dist/index.js')).default;
+const cg = await KiroGraph.open(testDir);
+const db = cg.getDatabase();
+db.applyWikiSchema();
+
+const { KiroGraphWiki } = require(path.join(rootDir, 'dist/wiki/index.js'));
+const { WikiDatabase } = require(path.join(rootDir, 'dist/wiki/database.js'));
+const wdb = new WikiDatabase(db.getRawDb());
+
+// Valid: _type declared, frontmatter conforms to decision.schema.json
+wdb.upsertPage({
+  slug: 'typed-valid-decision',
+  title: 'Use in-memory rate limiter',
+  content: '---\n_type: decision\nstatus: accepted\ndate: 2026-01-12\n---\n# Use in-memory rate limiter\n\nSimpler for now.',
+  filePath: null,
+  updatedAt: Date.now(),
+  sourceCount: 1,
+});
+
+// Invalid: unknown field (bogus) + status not in enum
+wdb.upsertPage({
+  slug: 'typed-invalid-decision',
+  title: 'Bad decision page',
+  content: '---\n_type: decision\nstatus: maybe\nbogus: true\n---\n# Bad decision page\n\nShould fail validation.',
+  filePath: null,
+  updatedAt: Date.now(),
+  sourceCount: 1,
+});
+
+// _type declared but no schema registered for it — opt-in per type, never validated
+wdb.upsertPage({
+  slug: 'typed-unregistered-type',
+  title: 'Runbook with no schema',
+  content: '---\n_type: runbook\nowner: anything\n---\n# Runbook with no schema\n\nNo runbook.schema.json exists.',
+  filePath: null,
+  updatedAt: Date.now(),
+  sourceCount: 1,
+});
+
+// No frontmatter at all — untouched, prose-only page
+wdb.upsertPage({
+  slug: 'typed-untyped-page',
+  title: 'Plain prose page',
+  content: '# Plain prose page\n\nNo frontmatter here at all.',
+  filePath: null,
+  updatedAt: Date.now(),
+  sourceCount: 1,
+});
+
+// ── With wikiTypedPages ON ──────────────────────────────────────────────────
+const wikiOn = new KiroGraphWiki(db.getRawDb(), path.join(testDir, '.kirograph'), { typedPages: true });
+wikiOn.initialize();
+const issuesOn = wikiOn.lint();
+console.log('lint (typedPages:true) issues:', JSON.stringify(issuesOn.filter(i => i.kind === 'schema_error'), null, 2));
+
+const invalidIssues = issuesOn.filter(i => i.kind === 'schema_error' && i.slug === 'typed-invalid-decision');
+if (invalidIssues.length === 0) throw new Error('expected schema_error for typed-invalid-decision, found none');
+if (!invalidIssues.some(i => i.detail.includes('unknown field'))) {
+  throw new Error('expected an "unknown field" violation for bogus, got: ' + JSON.stringify(invalidIssues));
+}
+if (!invalidIssues.some(i => i.detail.includes('expected one of'))) {
+  throw new Error('expected an enum violation for status, got: ' + JSON.stringify(invalidIssues));
+}
+console.log('schema_error:ok slug=typed-invalid-decision violations=' + invalidIssues.length);
+
+if (issuesOn.some(i => i.kind === 'schema_error' && i.slug === 'typed-valid-decision')) {
+  throw new Error('typed-valid-decision should not have any schema_error');
+}
+console.log('schema_error:ok slug=typed-valid-decision (nessun errore, conforme allo schema)');
+
+if (issuesOn.some(i => i.kind === 'schema_error' && i.slug === 'typed-unregistered-type')) {
+  throw new Error('typed-unregistered-type should not be validated (no schema registered for "runbook")');
+}
+console.log('schema_error:ok slug=typed-unregistered-type (nessuno schema per il tipo, mai validato)');
+
+if (issuesOn.some(i => i.kind === 'schema_error' && i.slug === 'typed-untyped-page')) {
+  throw new Error('typed-untyped-page has no frontmatter and must never produce a schema_error');
+}
+console.log('schema_error:ok slug=typed-untyped-page (nessun frontmatter, mai validato)');
+
+// ── With wikiTypedPages OFF (default) ───────────────────────────────────────
+const wikiOff = new KiroGraphWiki(db.getRawDb(), path.join(testDir, '.kirograph'), {});
+wikiOff.initialize();
+const issuesOff = wikiOff.lint();
+if (issuesOff.some(i => i.kind === 'schema_error')) {
+  throw new Error('wikiTypedPages off (default): no schema_error should ever be reported, got: ' + JSON.stringify(issuesOff.filter(i => i.kind === 'schema_error')));
+}
+console.log('typedPages:off:ok — nessun schema_error anche con la pagina non conforme presente');
+
+// Cleanup: remove the seeded pages so they don't pollute later sections (orphan/link counts)
+for (const slug of ['typed-valid-decision', 'typed-invalid-decision', 'typed-unregistered-type', 'typed-untyped-page']) {
+  wdb.deletePage(slug);
+}
+
+console.log('ALL_TYPED_PAGES_OK');
+NODEEOF
+
+if [ $? -eq 0 ]; then
+  ok "wikiTypedPages on: pagina non conforme rileva schema_error (unknown field + enum)"
+  ok "wikiTypedPages on: pagina conforme non produce schema_error"
+  ok "wikiTypedPages on: _type senza schema registrato non viene mai validato"
+  ok "wikiTypedPages on: pagina senza frontmatter non viene mai validata"
+  ok "wikiTypedPages off (default): nessun schema_error, anche con pagine non conformi presenti"
+else
+  fail "wikiTypedPages test fallito"
+fi
+
+rm -rf "$TEST_DIR/.kirograph/wiki-schemas"
+
+# ── 15c. Compatibilità: wikiTypedPages + wiki rename (feature 1.1.0) insieme ──
+sep
+echo -e "  ${BOLD}[13c] Compatibilità — wikiTypedPages + wiki rename (link-graph 1.1.0) insieme${RESET}\n"
+
+mkdir -p "$TEST_DIR/.kirograph/wiki-schemas"
+cat > "$TEST_DIR/.kirograph/wiki-schemas/decision.schema.json" << 'EOF'
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status"],
+  "properties": {
+    "status": { "type": "string", "enum": ["proposed", "accepted", "rejected"] }
+  }
+}
+EOF
+
+mkdir -p "$TEST_DIR/.kirograph/wiki"
+cat > "$TEST_DIR/.kirograph/wiki/typed-rename-source.md" << 'EOF'
+---
+_type: decision
+status: accepted
+---
+# Typed Rename Source
+
+The page being renamed while typed.
+EOF
+cat > "$TEST_DIR/.kirograph/wiki/typed-rename-invalid.md" << 'EOF'
+---
+_type: decision
+status: not-a-real-status
+---
+# Typed Rename Invalid
+
+Already non-conformant before the rename.
+EOF
+cat > "$TEST_DIR/.kirograph/wiki/typed-rename-linker.md" << 'EOF'
+# Typed Rename Linker
+
+Points at [[typed-rename-source]] for details.
+EOF
+
+ROOT_DIR="$ROOT" TEST_DIR="$TEST_DIR" node --input-type=module << 'NODEEOF'
+import path from 'path';
+import fs from 'fs';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
+const rootDir = process.env.ROOT_DIR;
+const testDir = process.env.TEST_DIR;
+
+const KiroGraph = require(path.join(rootDir, 'dist/index.js')).default;
+const cg = await KiroGraph.open(testDir);
+const db = cg.getDatabase();
+db.applyWikiSchema();
+
+const { KiroGraphWiki } = require(path.join(rootDir, 'dist/wiki/index.js'));
+const wiki = new KiroGraphWiki(db.getRawDb(), path.join(testDir, '.kirograph'), { typedPages: true });
+wiki.initialize();
+
+const reindexed = wiki.reindex();
+if (reindexed < 3) throw new Error('expected at least 3 pages reindexed from disk, got ' + reindexed);
+console.log('reindex:ok count=' + reindexed);
+
+// Valid typed page: no schema_error before the rename
+const beforeIssues = wiki.lint().filter(i => i.kind === 'schema_error');
+if (beforeIssues.some(i => i.slug === 'typed-rename-source')) {
+  throw new Error('typed-rename-source should be valid before rename, got: ' + JSON.stringify(beforeIssues));
+}
+if (!beforeIssues.some(i => i.slug === 'typed-rename-invalid')) {
+  throw new Error('typed-rename-invalid should already be flagged before rename');
+}
+console.log('lint-before:ok — source valido, invalid già segnalata');
+
+// Rename the valid typed page — must preserve frontmatter and rewrite the linker's [[slug]]
+const renameResult = wiki.rename('typed-rename-source', 'typed-rename-source-v2');
+if (!renameResult.linksUpdated.includes('typed-rename-linker')) {
+  throw new Error('expected typed-rename-linker in linksUpdated, got: ' + JSON.stringify(renameResult.linksUpdated));
+}
+console.log('rename:ok linksUpdated=' + JSON.stringify(renameResult.linksUpdated));
+
+const newFilePath = path.join(testDir, '.kirograph', 'wiki', 'typed-rename-source-v2.md');
+const oldFilePath = path.join(testDir, '.kirograph', 'wiki', 'typed-rename-source.md');
+if (fs.existsSync(oldFilePath)) throw new Error('old file should no longer exist on disk');
+if (!fs.existsSync(newFilePath)) throw new Error('new file should exist on disk');
+
+const newContent = fs.readFileSync(newFilePath, 'utf8');
+if (!newContent.includes('_type: decision') || !newContent.includes('status: accepted')) {
+  throw new Error('frontmatter not preserved through rename: ' + newContent);
+}
+console.log('frontmatter-preserved:ok');
+
+const linkerContent = fs.readFileSync(path.join(testDir, '.kirograph', 'wiki', 'typed-rename-linker.md'), 'utf8');
+if (!linkerContent.includes('[[typed-rename-source-v2]]') || linkerContent.includes('[[typed-rename-source]]')) {
+  throw new Error('linker page was not rewritten to the new slug: ' + linkerContent);
+}
+console.log('link-rewrite:ok');
+
+// After rename, the page must still validate correctly under its NEW slug
+const afterIssues = wiki.lint().filter(i => i.kind === 'schema_error');
+if (afterIssues.some(i => i.slug === 'typed-rename-source-v2')) {
+  throw new Error('typed-rename-source-v2 should still be valid after rename, got: ' + JSON.stringify(afterIssues));
+}
+console.log('lint-after-valid:ok — nessun schema_error sotto il nuovo slug');
+
+// Also rename the already-invalid page — the violation must follow it to the new slug, not disappear
+wiki.rename('typed-rename-invalid', 'typed-rename-invalid-v2');
+const afterIssues2 = wiki.lint().filter(i => i.kind === 'schema_error');
+if (!afterIssues2.some(i => i.slug === 'typed-rename-invalid-v2')) {
+  throw new Error('typed-rename-invalid-v2 should still be flagged after rename, got: ' + JSON.stringify(afterIssues2));
+}
+console.log('lint-after-invalid:ok — la violazione segue la pagina sotto il nuovo slug');
+
+console.log('ALL_RENAME_COMPAT_OK');
+NODEEOF
+
+if [ $? -eq 0 ]; then
+  ok "reindex carica correttamente le pagine tipizzate da disco"
+  ok "wikiTypedPages + rename: frontmatter preservato byte per byte nel file spostato"
+  ok "wikiTypedPages + rename: [[slug]] riscritto nelle pagine che linkano quella rinominata"
+  ok "wikiTypedPages + rename: pagina valida resta valida sotto il nuovo slug"
+  ok "wikiTypedPages + rename: violazione già presente segue la pagina sotto il nuovo slug"
+else
+  fail "compatibilità wikiTypedPages + rename fallita"
+fi
+
+rm -f "$TEST_DIR/.kirograph/wiki/typed-rename-source-v2.md" "$TEST_DIR/.kirograph/wiki/typed-rename-invalid-v2.md" "$TEST_DIR/.kirograph/wiki/typed-rename-linker.md"
+rm -rf "$TEST_DIR/.kirograph/wiki-schemas"
+$KG wiki reindex > /dev/null 2>&1
+
 # ── 16. reindex ───────────────────────────────────────────────────────────────
 sep
 echo -e "  ${BOLD}[14] reindex — ricostruisce DB dai file su disco${RESET}\n"
@@ -1061,6 +1325,66 @@ echo "$LINT_OUT" | sed 's/^/     /'
 echo "$LINT_OUT" | grep -qiE "issue|passed|lint|broken|orphan|✓" \
   && ok "kirograph wiki lint: output ricevuto" \
   || fail "kirograph wiki lint: output inatteso o vuoto"
+
+# ── 24b. CLI: wikiTypedPages config wiring end-to-end ─────────────────────────
+sep
+echo -e "  ${BOLD}[22b] CLI: kirograph wiki lint — wikiTypedPages via config.json${RESET}\n"
+
+mkdir -p "$TEST_DIR/.kirograph/wiki-schemas"
+cat > "$TEST_DIR/.kirograph/wiki-schemas/decision.schema.json" << 'EOF'
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status"],
+  "properties": {
+    "status": { "type": "string", "enum": ["proposed", "accepted", "rejected"] }
+  }
+}
+EOF
+
+mkdir -p "$TEST_DIR/.kirograph/wiki"
+cat > "$TEST_DIR/.kirograph/wiki/typed-cli-test.md" << 'EOF'
+---
+_type: decision
+status: not-a-valid-status
+---
+# Typed CLI Test
+
+Invalid status — should surface as a schema_error once wikiTypedPages is on.
+EOF
+$KG wiki reindex > /dev/null 2>&1
+
+LINT_TYPED_OFF=$($KG wiki lint 2>/dev/null)
+echo "$LINT_TYPED_OFF" | grep -q "schema_error" \
+  && fail "wikiTypedPages off (default): schema_error inatteso in 'kirograph wiki lint'" \
+  || ok "wikiTypedPages off (default): 'kirograph wiki lint' non valida il frontmatter"
+
+info "Abilito wikiTypedPages nel config..."
+node -e "
+  const fs = require('fs');
+  const cfg = JSON.parse(fs.readFileSync('.kirograph/config.json', 'utf8'));
+  cfg.wikiTypedPages = true;
+  fs.writeFileSync('.kirograph/config.json', JSON.stringify(cfg, null, 2));
+"
+ok "config.json: wikiTypedPages=true"
+
+LINT_TYPED_ON=$($KG wiki lint 2>/dev/null)
+echo "$LINT_TYPED_ON" | sed 's/^/     /'
+echo "$LINT_TYPED_ON" | grep -q "schema_error" \
+  && ok "wikiTypedPages on: 'kirograph wiki lint' rileva lo status non valido come schema_error" \
+  || fail "wikiTypedPages on: schema_error atteso non trovato in 'kirograph wiki lint'"
+
+info "Disabilito wikiTypedPages e rimuovo la pagina/schema di test (ripristino per il resto della suite)..."
+node -e "
+  const fs = require('fs');
+  const cfg = JSON.parse(fs.readFileSync('.kirograph/config.json', 'utf8'));
+  delete cfg.wikiTypedPages;
+  fs.writeFileSync('.kirograph/config.json', JSON.stringify(cfg, null, 2));
+"
+rm -f "$TEST_DIR/.kirograph/wiki/typed-cli-test.md"
+rm -rf "$TEST_DIR/.kirograph/wiki-schemas"
+$KG wiki reindex > /dev/null 2>&1
+ok "config.json: wikiTypedPages rimosso (torna al default false), fixture di test rimossa"
 
 # ── 25. CLI: wiki reindex ─────────────────────────────────────────────────────
 sep

@@ -127,6 +127,7 @@ export async function handleWiki(toolName: string, args: Record<string, unknown>
         jevApiKey: config.jevApiKey,
         jevBaseUrl: config.jevBaseUrl,
         jevModel: config.jevModel,
+        typedPages: config.wikiTypedPages,
       });
       wiki.initialize();
 
@@ -140,7 +141,7 @@ export async function handleWiki(toolName: string, args: Record<string, unknown>
 
       const lines = [`Wiki Lint — ${issues.length} issue(s)`, ''];
       for (const issue of issues) {
-        const icon = issue.kind === 'contradiction' ? '⚡' : issue.kind === 'orphan' ? '○' : issue.kind === 'broken_link' ? '🔗' : '⚠';
+        const icon = issue.kind === 'contradiction' ? '⚡' : issue.kind === 'orphan' ? '○' : issue.kind === 'broken_link' ? '🔗' : issue.kind === 'schema_error' ? '✖' : '⚠';
         lines.push(`${icon} [${issue.kind}] ${issue.slug}`);
         lines.push(`  ${issue.detail}`);
         lines.push('');

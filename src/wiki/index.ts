@@ -24,10 +24,12 @@ export type { WikiPage, ScoredWikiPage, WikiDiff, WikiLintIssue, WikiStats, Wiki
 export class KiroGraphWiki {
   private wikiDb: WikiDatabase;
   private wikiDir: string;
+  private wikiSchemasDir: string;
   private autoResolveConflicts: boolean;
   private contradictionMode: 'heuristic' | 'jev';
   private contradictionConfidenceThreshold: number;
   private jevConfig: { jevApiKey?: string; jevBaseUrl?: string; jevModel?: string };
+  private typedPages: boolean;
 
   constructor(
     db: any,
@@ -39,14 +41,17 @@ export class KiroGraphWiki {
       jevApiKey?: string;
       jevBaseUrl?: string;
       jevModel?: string;
+      typedPages?: boolean;
     } = {}
   ) {
     this.wikiDb = new WikiDatabase(db);
     this.wikiDir = path.join(kirographDir, 'wiki');
+    this.wikiSchemasDir = path.join(kirographDir, 'wiki-schemas');
     this.autoResolveConflicts = opts.autoResolveConflicts ?? false;
     this.contradictionMode = opts.wikiContradictionMode ?? 'heuristic';
     this.contradictionConfidenceThreshold = opts.wikiContradictionConfidenceThreshold ?? 0.7;
     this.jevConfig = { jevApiKey: opts.jevApiKey, jevBaseUrl: opts.jevBaseUrl, jevModel: opts.jevModel };
+    this.typedPages = opts.typedPages ?? false;
   }
 
   initialize(): void {
@@ -148,6 +153,7 @@ export class KiroGraphWiki {
       contradictionMode: this.contradictionMode,
       contradictionConfidenceThreshold: this.contradictionConfidenceThreshold,
       jevClient,
+      ...(this.typedPages ? { wikiSchemasDir: this.wikiSchemasDir } : {}),
     });
   }
 

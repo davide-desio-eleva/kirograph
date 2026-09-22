@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS mem_observations (
   superseded_by TEXT,
   fact_type TEXT DEFAULT 'observation',
   topic_key TEXT,
-  review_after INTEGER
+  review_after INTEGER,
+  fields TEXT
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mem_obs_hash ON mem_observations(content_hash);

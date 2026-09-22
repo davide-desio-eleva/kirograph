@@ -10,22 +10,42 @@ import type { WikiLintIssue } from './types';
 import type { WikiDatabase } from './database';
 import type { JevClient } from '../jev/client';
 import { extractLinks } from './links';
+import { parseFrontmatter, validatePageSchema } from './typed-pages';
 
-export interface LintOptions {
+export interface LintWikiOptions {
   /** 'heuristic' (default): keyword co-occurrence. 'jev': ask jev to judge each FTS-similar pair. */
   contradictionMode?: 'heuristic' | 'jev';
   /** Confidence (0.0–1.0) above which a jev contradiction judgment is reported. Default: 0.7. */
   contradictionConfidenceThreshold?: number;
   /** Required when contradictionMode is 'jev'. */
   jevClient?: JevClient;
+  /**
+   * When set, pages declaring `_type` in their frontmatter are validated
+   * against `.kirograph/wiki-schemas/<type>.schema.json` (wikiTypedPages).
+   */
+  wikiSchemasDir?: string;
 }
 
-export async function lintWiki(wikiDb: WikiDatabase, opts: LintOptions = {}): Promise<WikiLintIssue[]> {
+export async function lintWiki(wikiDb: WikiDatabase, opts: LintWikiOptions = {}): Promise<WikiLintIssue[]> {
   const issues: WikiLintIssue[] = [];
   const pages = wikiDb.listPages();
   const slugSet = new Set(pages.map(p => p.slug));
 
   for (const page of pages) {
+    // Typed-page schema validation (opt-in via wikiTypedPages)
+    if (opts.wikiSchemasDir) {
+      const { type, fields } = parseFrontmatter(page.content);
+      if (type) {
+        for (const violation of validatePageSchema(fields, type, opts.wikiSchemasDir)) {
+          issues.push({
+            kind: 'schema_error',
+            slug: page.slug,
+            detail: `[${type}] ${violation}`,
+          });
+        }
+      }
+    }
+
     // Broken [[slug]] links
     for (const linked of extractLinks(page.content)) {
       if (!slugSet.has(linked)) {

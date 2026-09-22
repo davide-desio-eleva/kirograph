@@ -47,6 +47,7 @@ async function getWiki(cwd: string) {
     jevApiKey: config.jevApiKey,
     jevBaseUrl: config.jevBaseUrl,
     jevModel: config.jevModel,
+    typedPages: config.wikiTypedPages,
   });
   wiki.initialize();
   return wiki;
@@ -266,7 +267,7 @@ export function register(program: Command): void {
 
       console.log(`\n  ${section('Wiki Lint')} ${yellow}${issues.length} issue(s)${reset}\n`);
       for (const issue of issues) {
-        const icon = issue.kind === 'contradiction' ? '⚡' : issue.kind === 'orphan' ? '○' : issue.kind === 'broken_link' ? '🔗' : '⚠';
+        const icon = issue.kind === 'contradiction' ? '⚡' : issue.kind === 'orphan' ? '○' : issue.kind === 'broken_link' ? '🔗' : issue.kind === 'schema_error' ? '✖' : '⚠';
         console.log(`  ${icon} ${dim}[${issue.kind}]${reset} ${violet}${issue.slug}${reset}`);
         console.log(`    ${issue.detail}`);
         console.log();

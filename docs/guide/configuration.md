@@ -35,7 +35,7 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `enableSecurity` | boolean | `false` | Enable dependency vulnerability detection and reachability analysis. Requires `enableArchitecture` (auto-enabled if missing). |
 | `securityDatabases` | string[] | `["OSV"]` | Vulnerability databases to query. Supported: `OSV`. |
 | `securityAutoEnrich` | boolean | `true` | Auto-run vulnerability enrichment after manifest parsing. Set to `false` for on-demand only (via `kirograph vulns --refresh` or `kirograph_vulns` with `refresh: true`). |
-| `securityAuthDetectionMode` | string | `'heuristic'` | `'heuristic'` — substring match against a fixed name list for `attack-surface`'s `isAuthenticated` detection (misses custom-named auth wrappers); `'jev'` — when the heuristic finds nothing, [jev](#jev) confirms/overrides using the route + call-path names. Requires `jevApiKey`. |
+| `securityAuthDetectionMode` | string | `'heuristic'` | ⚠️ *experimental.* `'heuristic'` — substring match against a fixed name list for `attack-surface`'s `isAuthenticated` detection (misses custom-named auth wrappers); `'jev'` — when the heuristic finds nothing, [jev](#jev) confirms/overrides using the route + call-path names. Requires `jevApiKey`. |
 | `securityAuthConfidenceThreshold` | number | `0.6` | Confidence (0.0–1.0) above which a jev auth judgment overrides the heuristic's "not authenticated" default. |
 | `enablePatterns` | boolean | `false` | Enable AST pattern matching SAST via `@ast-grep/napi`. Requires `npm install @ast-grep/napi`. |
 | `patternLibraryPath` | string | — | Path to custom YAML pattern rules directory (merged with bundled rules) |
@@ -50,8 +50,9 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `memoryContextThreshold` | number | `0.3` | Min relevance score to surface in context |
 | `memoryExcludePatterns` | string[] | `[]` | Glob patterns for files to exclude from symbol linking |
 | `memoryStrictWrites` | boolean | `false` | Reject `mem store` writes with an unknown `kind` or blank tags instead of silently accepting them. Applies to the CLI, the `kirograph_mem_store` MCP tool, and `MemoryManager.store()` directly. |
-| `memoryRelationMode` | string | `'agent'` | `'agent'` — the calling agent supplies `relation`+`confidence` to `mem conflicts compare` itself; `'jev'` — `relation` becomes optional and is classified via [jev](#jev) instead. Requires `jevApiKey`. |
+| `memoryRelationMode` | string | `'agent'` | ⚠️ *experimental.* `'agent'` — the calling agent supplies `relation`+`confidence` to `mem conflicts compare` itself; `'jev'` — `relation` becomes optional and is classified via [jev](#jev) instead. Requires `jevApiKey`. |
 | `memoryRelationConfidenceThreshold` | number | `0.8` | Confidence (0.0–1.0) above which a jev-classified relation is auto-judged instead of left pending for review. |
+| `memorySchemaValidation` | boolean | `false` | Validate an observation's `fields` (structured data beyond `content`, set via `--fields '<json>'`) against `.kirograph/memory-schemas/<kind>.schema.json` when a schema is registered for that `kind`. A kind with no schema file is never validated. |
 | **Watchmen** | | | |
 | `enableWatchmen` | boolean | `false` | Enable Watchmen — auto-synthesize workspace briefs from memory observations. Requires `enableMemory: true`. |
 | `watchmenThreshold` | number | `5` | Minimum new observations since last synthesis before `watchmenReady` fires. |
@@ -86,6 +87,8 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `jevApiKey` | string | — | API key for [jev](https://docs.typesafe.ai) (TypeSafe System One) — powers the opt-in `memoryRelationMode`, `wikiContradictionMode`, and `securityAuthDetectionMode: 'jev'` toggles. Resolution order: this config field, then `JEV_API_KEY` in `.kirograph/.env`, then `JEV_API_KEY` in the real environment (which is never overridden by the `.env` file). Prefer `.kirograph/.env` (gitignored) for a real key over this config field, which is usually committed. |
 | `jevBaseUrl` | string | `https://api.typesafe.ai` | Override the jev API base URL — for a local mock server in tests, or a self-hosted deployment. |
 | `jevModel` | string | `'jev-latest'` | jev model ID. |
+
+> ⚠️ **Experimental.** jev is a new opt-in dependency on a paid third-party API — the only KiroGraph feature requiring one. Classification quality and API stability haven't been exercised in production yet. Off by default; each `*Mode: 'jev'` toggle falls back to its existing non-jev behavior.
 
 **Setting a real key:** create `.kirograph/.env` (add it to `.gitignore`) with:
 ```

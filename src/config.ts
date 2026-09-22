@@ -94,6 +94,15 @@ export interface KiroGraphConfig {
   memoryRelationMode: 'agent' | 'jev';
   /** Confidence (0.0–1.0) above which a jev-classified relation is auto-judged instead of left pending. Default: 0.8. */
   memoryRelationConfidenceThreshold: number;
+  /**
+   * Validate an observation's `fields` (structured data beyond `content`)
+   * against a JSON Schema registered per kind at
+   * `.kirograph/memory-schemas/<kind>.schema.json`. A kind with no schema
+   * file registered is never validated — schemas are opt-in per kind.
+   * Off by default; independent of memoryStrictWrites (that one validates
+   * `kind`/`tags`, this one validates `fields`). Default: false.
+   */
+  memorySchemaValidation: boolean;
   /** Enable watchmen — auto-synthesize workspace briefs from memory observations. Requires enableMemory. Default: false. */
   enableWatchmen: boolean;
   /** Minimum new observations since last synthesis before watchmenReady fires. Default: 5. */
@@ -131,6 +140,14 @@ export interface KiroGraphConfig {
   wikiLocalModel: string;
   /** Glob patterns for auto-ingest wiki sources. Default: ['docs/']. */
   wikiSources: string[];
+  /**
+   * Validate a page's optional YAML frontmatter against a JSON Schema
+   * registered per `_type` at `.kirograph/wiki-schemas/<type>.schema.json`.
+   * Pages without frontmatter, or with a `_type` that has no schema
+   * registered, are never validated — untyped prose pages are unaffected.
+   * Checked by `wiki lint`, reported as `schema_error` issues. Default: false.
+   */
+  wikiTypedPages: boolean;
   /** Auto-resolve wiki conflicts by source date. Default: false. */
   wikiAutoResolveConflicts: boolean;
   /**
@@ -259,9 +276,9 @@ const KNOWN_FIELDS = new Set<string>([
   'enableArchitecture', 'architectureLayers', 'cavemanMode', 'shellCompressionLevel', 'syncWarningThreshold',
   'enableMemory', 'memorySearchAlpha', 'memoryKeepRaw', 'memoryMaxObservations',
   'memorySessionTimeout', 'memoryContextLimit', 'memoryContextThreshold', 'memoryExcludePatterns', 'memoryStrictWrites',
-  'memoryRelationMode', 'memoryRelationConfidenceThreshold',
+  'memoryRelationMode', 'memoryRelationConfidenceThreshold', 'memorySchemaValidation',
   'enableWatchmen', 'watchmenThreshold', 'watchmenSynthesisMode', 'watchmenLocalModel',
-  'enableWiki', 'wikiSynthesisMode', 'wikiLocalModel', 'wikiSources',
+  'enableWiki', 'wikiSynthesisMode', 'wikiLocalModel', 'wikiSources', 'wikiTypedPages',
   'wikiAutoResolveConflicts', 'wikiLintFrequency', 'wikiContextLimit', 'wikiContextThreshold',
   'wikiContradictionMode', 'wikiContradictionConfidenceThreshold',
   'enableDocs', 'docsInclude', 'docsExclude', 'docsLinkCode',
@@ -347,6 +364,7 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     memoryStrictWrites: false,
     memoryRelationMode: 'agent' as const,
     memoryRelationConfidenceThreshold: 0.8,
+    memorySchemaValidation: false,
     enableWatchmen: false,
     watchmenThreshold: 5,
     watchmenSynthesisMode: 'local',
@@ -355,6 +373,7 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     wikiSynthesisMode: 'agent' as const,
     wikiLocalModel: 'onnx-community/gemma-4-E4B-it-ONNX',
     wikiSources: ['docs/'],
+    wikiTypedPages: false,
     wikiAutoResolveConflicts: false,
     wikiLintFrequency: 'off' as const,
     wikiContextLimit: 3,
@@ -546,6 +565,9 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     && raw.memoryRelationConfidenceThreshold >= 0 && raw.memoryRelationConfidenceThreshold <= 1
     ? raw.memoryRelationConfidenceThreshold
     : defaults.memoryRelationConfidenceThreshold;
+  const memorySchemaValidation = typeof raw.memorySchemaValidation === 'boolean'
+    ? raw.memorySchemaValidation
+    : defaults.memorySchemaValidation;
 
   // ── Watchmen config ───────────────────────────────────────────────────────
   const enableWatchmen = typeof raw.enableWatchmen === 'boolean'
@@ -567,6 +589,7 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const wikiSynthesisMode = raw.wikiSynthesisMode === 'local' ? 'local' as const : 'agent' as const;
   const wikiLocalModel = typeof raw.wikiLocalModel === 'string' ? raw.wikiLocalModel : defaults.wikiLocalModel;
   const wikiSources = Array.isArray(raw.wikiSources) ? raw.wikiSources : defaults.wikiSources;
+  const wikiTypedPages = typeof raw.wikiTypedPages === 'boolean' ? raw.wikiTypedPages : defaults.wikiTypedPages;
   const wikiAutoResolveConflicts = typeof raw.wikiAutoResolveConflicts === 'boolean' ? raw.wikiAutoResolveConflicts : defaults.wikiAutoResolveConflicts;
   const wikiLintFrequency = raw.wikiLintFrequency === 'weekly' ? 'weekly' as const : 'off' as const;
   const wikiContextLimit = typeof raw.wikiContextLimit === 'number' ? raw.wikiContextLimit : defaults.wikiContextLimit;
@@ -823,6 +846,7 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     memoryStrictWrites,
     memoryRelationMode,
     memoryRelationConfidenceThreshold,
+    memorySchemaValidation,
     enableWatchmen: enableWatchmen && enableMemory,
     watchmenThreshold,
     watchmenSynthesisMode,
@@ -831,6 +855,7 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     wikiSynthesisMode,
     wikiLocalModel,
     wikiSources,
+    wikiTypedPages,
     wikiAutoResolveConflicts,
     wikiLintFrequency,
     wikiContextLimit,
