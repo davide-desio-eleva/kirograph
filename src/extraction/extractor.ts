@@ -117,35 +117,15 @@ export async function extractFile(filePath: string, projectRoot: string, content
     throw new Error(`Parser unavailable for ${language} (WASM grammar exists but failed to load)`);
   }
 
-  // Skip Go template files disguised as YAML (e.g. Helm templates).
-  // tree-sitter-yaml crashes with "memory access out of bounds" on {{ }} syntax.
-  // These files produce valid YAML only after Helm renders them — raw they're not parseable.
-  if (language === 'yaml' && source.includes('{{')) {
-    return {
-      filePath: relPath,
-      language,
-      contentHash,
-      fileSize,
-      nodes: [],
-      edges: [],
-      unresolvedRefs: [],
-    };
-  }
-
-  // Wrap parser.parse() to catch WASM runtime crashes (e.g. memory access out of bounds
-  // on malformed files like Helm Go templates in .yaml). Skip the file gracefully instead
-  // of letting the crash propagate and poison the entire language.
+  // web-tree-sitter allocates Parser/Tree state in WASM linear memory, which JS GC
+  // does not reclaim — both must be explicitly .delete()'d once we're done with them
+  // (issue #49), otherwise long `sync` runs across many files leak memory and hang.
   let tree: any;
   try {
-    tree = parser.parse(source);
-  } catch (parseErr: any) {
-    const parseMsg = parseErr?.message ?? String(parseErr);
-    const isWasmCrash = parseErr?.constructor?.name === 'RuntimeError'
-      || parseMsg.includes('memory access out of bounds')
-      || parseMsg.includes('Aborted(');
-    if (isWasmCrash) {
-      // Individual file crashed the WASM parser — skip this file, return empty nodes.
-      // The next file in this language may parse fine.
+    // Skip Go template files disguised as YAML (e.g. Helm templates).
+    // tree-sitter-yaml crashes with "memory access out of bounds" on {{ }} syntax.
+    // These files produce valid YAML only after Helm renders them — raw they're not parseable.
+    if (language === 'yaml' && source.includes('{{')) {
       return {
         filePath: relPath,
         language,
@@ -156,39 +136,67 @@ export async function extractFile(filePath: string, projectRoot: string, content
         unresolvedRefs: [],
       };
     }
-    throw parseErr; // Re-throw non-WASM errors
-  }
 
-  const nodes: Node[] = [];
-  const edges: Edge[] = [];
-  const unresolvedRefs: UnresolvedRef[] = [];
-  const now = Date.now();
-
-  walkTree(tree.rootNode, source, relPath, language, nodes, edges, unresolvedRefs, now);
-
-  // Complexity post-processing: compute metrics for function/method nodes when enabled.
-  if (opts?.enableComplexity) {
-    const sourceLines = source.split('\n');
-    for (const n of nodes) {
-      if (n.kind !== 'function' && n.kind !== 'method') continue;
-      const fnSource = sourceLines.slice(n.startLine - 1, n.endLine).join('\n');
-      const cc = computeTextCyclomaticComplexity(fnSource);
-      const depth = computeTextNestingDepth(fnSource);
-      const loc = n.endLine - n.startLine + 1;
-      const tokens = fnSource.match(/\b\w+\b|[+\-*/=<>!&|^~%]+|[(){}[\],;.]/g) ?? [];
-      const volume = tokens.length > 0 && tokens.length > 1
-        ? tokens.length * Math.log2(new Set(tokens).size || 1)
-        : 0;
-      const mi = Math.max(0, Math.min(100,
-        171 - 5.2 * Math.log(Math.max(1, volume)) - 0.23 * cc - 16.2 * Math.log(Math.max(1, loc))
-      ));
-      n.complexityCyclomatic = cc;
-      n.nestingDepth = depth;
-      n.maintainabilityIndex = Math.round(mi * 10) / 10;
+    // Wrap parser.parse() to catch WASM runtime crashes (e.g. memory access out of bounds
+    // on malformed files like Helm Go templates in .yaml). Skip the file gracefully instead
+    // of letting the crash propagate and poison the entire language.
+    try {
+      tree = parser.parse(source);
+    } catch (parseErr: any) {
+      const parseMsg = parseErr?.message ?? String(parseErr);
+      const isWasmCrash = parseErr?.constructor?.name === 'RuntimeError'
+        || parseMsg.includes('memory access out of bounds')
+        || parseMsg.includes('Aborted(');
+      if (isWasmCrash) {
+        // Individual file crashed the WASM parser — skip this file, return empty nodes.
+        // The next file in this language may parse fine.
+        return {
+          filePath: relPath,
+          language,
+          contentHash,
+          fileSize,
+          nodes: [],
+          edges: [],
+          unresolvedRefs: [],
+        };
+      }
+      throw parseErr; // Re-throw non-WASM errors
     }
-  }
 
-  return { filePath: relPath, language, contentHash, fileSize, nodes, edges, unresolvedRefs };
+    const nodes: Node[] = [];
+    const edges: Edge[] = [];
+    const unresolvedRefs: UnresolvedRef[] = [];
+    const now = Date.now();
+
+    walkTree(tree.rootNode, source, relPath, language, nodes, edges, unresolvedRefs, now);
+
+    // Complexity post-processing: compute metrics for function/method nodes when enabled.
+    if (opts?.enableComplexity) {
+      const sourceLines = source.split('\n');
+      for (const n of nodes) {
+        if (n.kind !== 'function' && n.kind !== 'method') continue;
+        const fnSource = sourceLines.slice(n.startLine - 1, n.endLine).join('\n');
+        const cc = computeTextCyclomaticComplexity(fnSource);
+        const depth = computeTextNestingDepth(fnSource);
+        const loc = n.endLine - n.startLine + 1;
+        const tokens = fnSource.match(/\b\w+\b|[+\-*/=<>!&|^~%]+|[(){}[\],;.]/g) ?? [];
+        const volume = tokens.length > 0 && tokens.length > 1
+          ? tokens.length * Math.log2(new Set(tokens).size || 1)
+          : 0;
+        const mi = Math.max(0, Math.min(100,
+          171 - 5.2 * Math.log(Math.max(1, volume)) - 0.23 * cc - 16.2 * Math.log(Math.max(1, loc))
+        ));
+        n.complexityCyclomatic = cc;
+        n.nestingDepth = depth;
+        n.maintainabilityIndex = Math.round(mi * 10) / 10;
+      }
+    }
+
+    return { filePath: relPath, language, contentHash, fileSize, nodes, edges, unresolvedRefs };
+  } finally {
+    tree?.delete();
+    parser.delete();
+  }
 }
 
 // ── Elixir helpers ────────────────────────────────────────────────────────────

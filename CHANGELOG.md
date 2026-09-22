@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.1] - Unreleased
+
+### Fixed
+
+- **Extraction**: `kirograph sync`/`index` could hang or balloon in memory on large repos with many changed files (issue #49). `getParser()` creates a fresh `web-tree-sitter` `Parser` per file, and `extractFile()`/`extractNotebook()` call `parser.parse()` to get a `Tree` — both are WASM-backed objects whose linear memory isn't reclaimed by JS garbage collection, only by their explicit `.delete()` lifecycle methods, which the extraction path never called. Every parsed file (and every parsed notebook) permanently leaked its `Parser` and `Tree`, so `sync` runs touching thousands of files accumulated unbounded WASM memory until the process stalled or was killed. Both `extractFile()` and `extractNotebook()` now wrap parsing in `try/finally` blocks that call `tree.delete()` and `parser.delete()` on every exit path, including early returns (unparseable YAML templates, WASM parse crashes) and thrown errors. Verified with a synthetic 300-iteration `extractFile()` harness: `external` memory (where WASM/native allocations are tracked) grew unboundedly before the fix (33.7 MiB → 57 MiB) and stayed flat after it (33.7 MiB constant).
+
 ## [1.1.0] - 2026-09-21: Opt-in memory write validation + wiki link-graph navigation
 
 Both features are ports of ideas from [IWE](https://github.com/iwe-org/iwe) (a markdown knowledge-graph tool with an LSP and schema-validated agent writes), scaled down to fit KiroGraph's existing memory and wiki modules rather than adopting IWE's document model or LSP server wholesale.
