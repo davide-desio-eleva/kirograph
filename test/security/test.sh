@@ -96,6 +96,7 @@ db_pkg()            { sqlite3 "$DB" "SELECT COUNT(*) FROM sec_dependencies WHERE
 db_resolved()       { sqlite3 "$DB" "SELECT resolved_version FROM sec_dependencies WHERE package_name='$1' LIMIT 1;" 2>/dev/null || echo ''; }
 db_scope()          { sqlite3 "$DB" "SELECT scope FROM sec_dependencies WHERE package_name='$1' LIMIT 1;" 2>/dev/null || echo ''; }
 db_transitive()     { sqlite3 "$DB" "SELECT transitive_status FROM sec_dependencies WHERE package_name='$1' LIMIT 1;" 2>/dev/null || echo ''; }
+db_license()        { sqlite3 "$DB" "SELECT license FROM sec_dependencies WHERE package_name='$1' LIMIT 1;" 2>/dev/null || echo ''; }
 
 check_pkg() {
   local pkg="$1" exp_version="$2" exp_scope="$3"
@@ -160,6 +161,27 @@ EDGE_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM edges WHERE kind='depends_on' A
   && ok "edge depends_on: express → body-parser (transitivo npm)" \
   || fail "edge depends_on express→body-parser non trovato"
 
+# License detection (issue #39 follow-up): each dependency's own license, read
+# from package-lock.json's per-package "license" field — not the project's own
+# package.json "license" ("Apache-2.0" in the mock), which must never bleed
+# onto a dependency.
+LODASH_LIC=$(db_license "lodash")
+[ "$LODASH_LIC" = "MIT" ] \
+  && ok "lodash license='MIT' (da package-lock.json, dipendenza diretta)" \
+  || fail "lodash license atteso 'MIT', trovato '${LODASH_LIC:-null}'"
+BODYPARSER_LIC=$(db_license "body-parser")
+[ "$BODYPARSER_LIC" = "MIT" ] \
+  && ok "body-parser license='MIT' (da package-lock.json, dipendenza transitiva)" \
+  || fail "body-parser license atteso 'MIT', trovato '${BODYPARSER_LIC:-null}'"
+JEST_LIC=$(db_license "jest")
+if [ -z "$JEST_LIC" ]; then
+  ok "jest license=unknown (nessun campo license nel lock — non deve ereditare quello del progetto)"
+elif [ "$JEST_LIC" = "Apache-2.0" ]; then
+  fail "jest license inquinato dal package.json del progetto ('Apache-2.0')"
+else
+  fail "jest license inatteso '${JEST_LIC}'"
+fi
+
 # ── A3. Go ────────────────────────────────────────────────────────────────────
 sep
 echo -e "  ${BOLD}[A3] Go  (go.mod + go.sum)${RESET}"
@@ -220,6 +242,101 @@ check_pkg "org.springframework:spring-context"                "6.1.1"   "product
 # dependency-tree.txt knows about them as transitive dependencies.
 [ "$(db_pkg 'org.springframework:spring-aop')" -ge 1 ] && ok "spring-aop  ${DIM}(transitive, dependency-tree.txt)${RESET}" || fail "spring-aop non trovato"
 [ "$(db_pkg 'com.fasterxml.jackson.core:jackson-core')" -ge 1 ] && ok "jackson-core  ${DIM}(transitive, dependency-tree.txt)${RESET}" || fail "jackson-core non trovato"
+
+# License detection (issue #39 follow-up): each dependency's own license,
+# read from its own POM cached locally under ~/.m2/repository — never the
+# project's own pom.xml <licenses> ("Proprietary" in the mock), which must
+# not bleed onto any dependency.
+SPRING_CORE_LIC_BEFORE=$(db_license "org.springframework:spring-core")
+[ "$SPRING_CORE_LIC_BEFORE" != "Proprietary" ] \
+  && ok "spring-core license non inquinato dal pom.xml del progetto (era '${SPRING_CORE_LIC_BEFORE:-unknown}')" \
+  || fail "spring-core license inquinato dal pom.xml del progetto ('Proprietary')"
+
+# Positive case: a throwaway fake $HOME with just one dependency's own POM
+# cached at the standard local-repository layout — no real Maven install
+# needed, no network call.
+FAKE_HOME=$(mktemp -d)
+POM_DIR="$FAKE_HOME/.m2/repository/org/springframework/spring-core/6.1.1"
+mkdir -p "$POM_DIR"
+cat > "$POM_DIR/spring-core-6.1.1.pom" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <licenses>
+    <license>
+      <name>Apache-2.0</name>
+    </license>
+  </licenses>
+</project>
+EOF
+
+HOME="$FAKE_HOME" $KG index > /dev/null 2>&1
+SPRING_CORE_LIC_AFTER=$(db_license "org.springframework:spring-core")
+[ "$SPRING_CORE_LIC_AFTER" = "Apache-2.0" ] \
+  && ok "spring-core license='Apache-2.0' (letto dal POM locale in \$HOME/.m2/repository)" \
+  || fail "spring-core license atteso 'Apache-2.0' da ~/.m2 locale, trovato '${SPRING_CORE_LIC_AFTER:-null}'"
+
+# Parent-POM inheritance (issue #39 follow-up, round 2): most real-world POMs
+# (Netty, Jackson modules, commons-*, ...) declare no <licenses> of their own
+# and inherit it from a <parent> POM instead — sometimes several levels up.
+# junit:junit's own POM here has no <licenses>; only its parent does.
+JUNIT_POM_DIR="$FAKE_HOME/.m2/repository/junit/junit/4.13.2"
+mkdir -p "$JUNIT_POM_DIR"
+cat > "$JUNIT_POM_DIR/junit-4.13.2.pom" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <parent>
+    <groupId>junit</groupId>
+    <artifactId>junit-parent</artifactId>
+    <version>1.0</version>
+  </parent>
+</project>
+EOF
+JUNIT_PARENT_DIR="$FAKE_HOME/.m2/repository/junit/junit-parent/1.0"
+mkdir -p "$JUNIT_PARENT_DIR"
+cat > "$JUNIT_PARENT_DIR/junit-parent-1.0.pom" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <licenses>
+    <license>
+      <name>EPL-1.0</name>
+    </license>
+  </licenses>
+</project>
+EOF
+
+# Multi-license POM: jackson-databind's own POM declares two <license>
+# entries directly (dual-licensed package) — both must be captured, not
+# just the first.
+JACKSON_POM_DIR="$FAKE_HOME/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.16.0"
+mkdir -p "$JACKSON_POM_DIR"
+cat > "$JACKSON_POM_DIR/jackson-databind-2.16.0.pom" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <licenses>
+    <license>
+      <name>Apache-2.0</name>
+    </license>
+    <license>
+      <name>MIT</name>
+    </license>
+  </licenses>
+</project>
+EOF
+
+HOME="$FAKE_HOME" $KG index > /dev/null 2>&1
+JUNIT_LIC=$(db_license "junit:junit")
+[ "$JUNIT_LIC" = "EPL-1.0" ] \
+  && ok "junit license='EPL-1.0' (ereditata dal <parent> junit-parent, non nel POM proprio)" \
+  || fail "junit license atteso 'EPL-1.0' ereditato dal parent, trovato '${JUNIT_LIC:-null}'"
+JACKSON_LIC=$(db_license "com.fasterxml.jackson.core:jackson-databind")
+[ "$JACKSON_LIC" = "Apache-2.0 OR MIT" ] \
+  && ok "jackson-databind license='Apache-2.0 OR MIT' (dual-license, entrambe catturate)" \
+  || fail "jackson-databind license atteso 'Apache-2.0 OR MIT', trovato '${JACKSON_LIC:-null}'"
+
+rm -rf "$FAKE_HOME"
+
+# Restore normal state (real $HOME) for the rest of the suite
+$KG index > /dev/null 2>&1
 
 # ── A7. NuGet ─────────────────────────────────────────────────────────────────
 sep
@@ -569,6 +686,15 @@ sep
 echo -e "  ${BOLD}[B14] security flows${RESET}"
 OUT=$($KG security flows 2>&1);           EXIT=$?; [ $EXIT -eq 0 ] && ok "security flows: exit 0"          || fail "security flows: exit $EXIT"
 OUT=$($KG security flows --type all 2>&1); EXIT=$?; [ $EXIT -eq 0 ] && ok "security flows --type all: exit 0" || fail "security flows --type all: exit $EXIT"
+
+# SQL injection caller-name gate removed (issue #39 follow-up, found by
+# testing against OWASP Juice Shop): UserService.authenticate() calls
+# db.query(...) directly but is named neither handle/controller/route/
+# request/req/endpoint/action/handler — must still be flagged.
+SQL_OUT=$($KG security flows --type sql 2>&1)
+echo "$SQL_OUT" | grep -q "authenticate" \
+  && ok "security flows --type sql: rileva 'authenticate' (nome non da controller/handler)" \
+  || fail "security flows --type sql: 'authenticate' non rilevato (caller-name gate regression?)"
 
 # ── B15. security ci-report ───────────────────────────────────────────────────
 sep

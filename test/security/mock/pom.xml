@@ -6,6 +6,14 @@
   <groupId>com.example</groupId>
   <artifactId>mock-app</artifactId>
   <version>1.0.0</version>
+  <!-- Project's own license — regression check for issue #39 follow-up: this
+       must NOT be applied to any dependency below. Each dependency's license
+       comes from its own POM in the local Maven repository, if present. -->
+  <licenses>
+    <license>
+      <name>Proprietary</name>
+    </license>
+  </licenses>
   <dependencies>
     <dependency>
       <groupId>org.springframework</groupId>
