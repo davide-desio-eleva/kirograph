@@ -8,5 +8,8 @@ fix: "/* TODO: use parameterized query */ $DB.query('?', [$B])"
 rule:
   any:
     - pattern: $DB.query($A + $B)
+    - pattern: $DB.query($A + $B, $$$REST)
     - pattern: $DB.execute($A + $B)
+    - pattern: $DB.execute($A + $B, $$$REST)
     - pattern: $DB.run($A + $B)
+    - pattern: $DB.run($A + $B, $$$REST)

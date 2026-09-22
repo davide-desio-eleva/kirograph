@@ -230,9 +230,18 @@ export class DataFlowAnalyzer {
   // ── Detection: SQL injection ──────────────────────────────────────────────────
 
   private _detectSqlInjection(rawDb: any): DataFlowFinding[] {
-    // Find functions that:
-    //  (a) call a known DB query function
-    //  (b) AND whose name suggests user-input handling (controller/route/request context)
+    // Find every function that calls a known raw-DB-query function. Used to
+    // require the caller's own name to look like a controller/route/handler
+    // (issue #39 follow-up: verified against OWASP Juice Shop that this
+    // missed both of its best-known SQL injections — `login()` and
+    // `searchProducts()` call `sequelize.query()` directly, zero hops away,
+    // but neither name matched the old allowlist). The callee name is
+    // already the specific signal here (a handful of literal raw-query
+    // method names); gating on the caller's name on top of that was a leaky
+    // proxy for "receives user input" that excluded real vulnerable code
+    // sitting in repository/service/route-closure functions with ordinary
+    // names, so it's dropped — the sanitize/escape filter below still keeps
+    // properly-parameterized callers out of the results.
     const rows: CallEdgeRow[] = rawDb.all(`
       SELECT n.name as caller, n.file_path, n.start_line, n2.name as callee
       FROM edges e
@@ -240,16 +249,6 @@ export class DataFlowAnalyzer {
       JOIN nodes n2 ON n2.id = e.target
       WHERE e.kind = 'calls'
         AND n2.name IN ('query', 'execute', 'exec', 'raw', 'runQuery', 'executeQuery', 'runSql', 'executeSql')
-        AND (
-          n.name LIKE '%handle%'
-          OR n.name LIKE '%controller%'
-          OR n.name LIKE '%route%'
-          OR n.name LIKE '%request%'
-          OR n.name LIKE '%req%'
-          OR n.name LIKE '%endpoint%'
-          OR n.name LIKE '%action%'
-          OR n.name LIKE '%handler%'
-        )
         AND n.file_path != ''
     `);
 

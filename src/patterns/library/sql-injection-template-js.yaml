@@ -8,6 +8,10 @@ fix: "/* TODO: replace with parameterized query */"
 rule:
   any:
     - pattern: $DB.query(`$$$`)
+    - pattern: $DB.query(`$$$`, $$$REST)
     - pattern: $DB.execute(`$$$`)
+    - pattern: $DB.execute(`$$$`, $$$REST)
     - pattern: $DB.run(`$$$`)
+    - pattern: $DB.run(`$$$`, $$$REST)
     - pattern: $DB.exec(`$$$`)
+    - pattern: $DB.exec(`$$$`, $$$REST)
