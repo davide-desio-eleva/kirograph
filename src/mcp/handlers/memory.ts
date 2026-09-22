@@ -1,5 +1,6 @@
 import KiroGraph from '../../index';
 import { clampLimit, formatAge } from './utils';
+import { describeMemRelation } from '../../memory/relation-display';
 
 export async function handleMemory(toolName: string, args: Record<string, unknown>, cg: KiroGraph): Promise<string> {
   switch (toolName) {
@@ -29,9 +30,8 @@ export async function handleMemory(toolName: string, args: Record<string, unknow
         const lines = [`${i + 1}. [${r.observation.kind}] ${r.observation.content} (${age})`];
         if (r.relations && r.relations.length > 0) {
           for (const rel of r.relations) {
-            const other = rel.observationA === r.observation.id ? rel.observationB : rel.observationA;
-            const icon = rel.relation === 'conflicts_with' ? '⚡' : rel.relation === 'supersedes' ? '↩' : '~';
-            lines.push(`  ${icon} ${rel.relation} ${other} (confidence: ${rel.confidence})${rel.judgmentStatus === 'judged' ? ' (judged)' : ''}`);
+            const { icon, label, otherId } = describeMemRelation(rel, r.observation.id);
+            lines.push(`  ${icon} ${label} ${otherId} (confidence: ${rel.confidence})${rel.judgmentStatus === 'judged' ? ' (judged)' : ''}`);
           }
         }
         return lines.join('\n');

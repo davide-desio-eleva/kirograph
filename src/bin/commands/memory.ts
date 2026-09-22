@@ -14,6 +14,7 @@
 
 import { Command } from 'commander';
 import { dim, reset, violet, bold, section } from '../ui';
+import { describeMemRelation } from '../../memory/relation-display';
 
 export function register(program: Command): void {
   const mem = program
@@ -79,8 +80,8 @@ export function register(program: Command): void {
               const annotations = r.relations
                 .filter(rel => rel.judgmentStatus !== 'ignored')
                 .map(rel => {
-                  const icon = rel.relation === 'conflicts_with' ? '⚡' : rel.relation === 'supersedes' ? '↩' : '~';
-                  return `${icon} ${rel.relation}`;
+                  const { icon, label } = describeMemRelation(rel, r.observation.id);
+                  return `${icon} ${label}`;
                 })
                 .join('  ');
               if (annotations) console.log(`  ${dim}${annotations}${reset}`);
