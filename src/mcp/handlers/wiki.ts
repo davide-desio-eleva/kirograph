@@ -121,7 +121,9 @@ export async function handleWiki(toolName: string, args: Record<string, unknown>
       const { KiroGraphWiki } = await import('../../wiki/index');
       const db = cg.getDatabase();
       db.applyWikiSchema();
-      const wiki = new KiroGraphWiki(db.getRawDb(), projectRoot + '/.kirograph');
+      const wiki = new KiroGraphWiki(db.getRawDb(), projectRoot + '/.kirograph', {
+        typedPages: config.wikiTypedPages,
+      });
       wiki.initialize();
 
       const issues = wiki.lint();
@@ -129,7 +131,7 @@ export async function handleWiki(toolName: string, args: Record<string, unknown>
 
       const lines = [`Wiki Lint — ${issues.length} issue(s)`, ''];
       for (const issue of issues) {
-        const icon = issue.kind === 'contradiction' ? '⚡' : issue.kind === 'orphan' ? '○' : issue.kind === 'broken_link' ? '🔗' : '⚠';
+        const icon = issue.kind === 'contradiction' ? '⚡' : issue.kind === 'orphan' ? '○' : issue.kind === 'broken_link' ? '🔗' : issue.kind === 'schema_error' ? '✖' : '⚠';
         lines.push(`${icon} [${issue.kind}] ${issue.slug}`);
         lines.push(`  ${issue.detail}`);
         lines.push('');

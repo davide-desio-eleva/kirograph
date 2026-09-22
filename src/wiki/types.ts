@@ -46,7 +46,7 @@ export interface WikiDiff {
 
 // ── Lint ─────────────────────────────────────────────────────────────────────
 
-export type LintIssueKind = 'contradiction' | 'orphan' | 'stale' | 'broken_link';
+export type LintIssueKind = 'contradiction' | 'orphan' | 'stale' | 'broken_link' | 'schema_error';
 
 export interface WikiLintIssue {
   kind: LintIssueKind;

@@ -103,7 +103,8 @@ export function register(program: Command): void {
     .option('--kind <kind>', 'Observation kind', 'note')
     .option('--topic-key <key>', 'Stable semantic key (e.g. architecture/auth-model)')
     .option('--review-after <ms>', 'Epoch ms: schedule re-evaluation after this timestamp')
-    .action(async (content: string | undefined, opts: { kind: string; topicKey?: string; reviewAfter?: string }) => {
+    .option('--fields <json>', 'Structured extra fields as a JSON object, validated against .kirograph/memory-schemas/<kind>.schema.json when memorySchemaValidation is enabled')
+    .action(async (content: string | undefined, opts: { kind: string; topicKey?: string; reviewAfter?: string; fields?: string }) => {
       const { MemoryManager, MemorySchemaError } = await import('../../memory/index');
       const { loadConfig } = await import('../../config');
       const KiroGraph = (await import('../../index')).default;
@@ -134,6 +135,16 @@ export function register(program: Command): void {
         process.exit(1);
       }
 
+      let fields: Record<string, unknown> | undefined;
+      if (opts.fields) {
+        try {
+          fields = JSON.parse(opts.fields);
+        } catch {
+          console.error('  ✖ --fields must be valid JSON (e.g. \'{"key":"value"}\')');
+          process.exit(1);
+        }
+      }
+
       const cg = await KiroGraph.open(cwd);
       const db = cg.getDatabase();
       db.applyMemorySchema();
@@ -148,6 +159,7 @@ export function register(program: Command): void {
           source: 'manual',
           topicKey: opts.topicKey,
           reviewAfter: opts.reviewAfter ? parseInt(opts.reviewAfter) : undefined,
+          fields,
         });
       } catch (err) {
         if (err instanceof MemorySchemaError) {

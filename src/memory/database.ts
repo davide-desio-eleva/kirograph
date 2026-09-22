@@ -55,6 +55,7 @@ export class MemoryDatabase {
     // Migration: add temporal columns if they don't exist (for existing databases)
     this.migrateTemporalColumns();
     this.migrateRelationsAndPrompts();
+    this.migrateFieldsColumn();
 
     this.initialized = true;
   }
@@ -79,6 +80,18 @@ export class MemoryDatabase {
       } catch {
         // Column already exists — ignore
       }
+    }
+  }
+
+  /**
+   * Add the `fields` column (structured extra fields, JSON-serialized) to
+   * mem_observations if missing. Backs memorySchemaValidation.
+   */
+  private migrateFieldsColumn(): void {
+    try {
+      this.db.exec(`ALTER TABLE mem_observations ADD COLUMN fields TEXT`);
+    } catch {
+      // Column already exists — ignore
     }
   }
 
@@ -223,6 +236,7 @@ export class MemoryDatabase {
       sessionId?: string;
       topicKey?: string;
       reviewAfter?: number;
+      fields?: Record<string, unknown>;
     } = {}
   ): string | null {
     const id = generateId();
@@ -230,13 +244,14 @@ export class MemoryDatabase {
     const kind = opts.kind ?? 'note';
     const source = opts.source ?? 'manual';
     const tags = opts.tags ? JSON.stringify(opts.tags) : null;
+    const fields = opts.fields ? JSON.stringify(opts.fields) : null;
     const now = Date.now();
 
     try {
       this.db.run(
-        `INSERT INTO mem_observations (id, session_id, content, content_raw, content_hash, kind, source, tags, created_at, topic_key, review_after)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, opts.sessionId ?? null, content, opts.contentRaw ?? null, contentHash, kind, source, tags, now, opts.topicKey ?? null, opts.reviewAfter ?? null]
+        `INSERT INTO mem_observations (id, session_id, content, content_raw, content_hash, kind, source, tags, created_at, topic_key, review_after, fields)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, opts.sessionId ?? null, content, opts.contentRaw ?? null, contentHash, kind, source, tags, now, opts.topicKey ?? null, opts.reviewAfter ?? null, fields]
       );
     } catch (err: any) {
       // Unique constraint on content_hash — duplicate, skip silently
@@ -667,6 +682,7 @@ export class MemoryDatabase {
       factType: row.fact_type ?? undefined,
       topicKey: row.topic_key ?? undefined,
       reviewAfter: row.review_after ?? undefined,
+      fields: row.fields ? JSON.parse(row.fields) : undefined,
     };
   }
 }

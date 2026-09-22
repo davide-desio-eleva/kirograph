@@ -819,6 +819,7 @@ export const tools: ToolDefinition[] = [
         projectPath: { type: 'string' },
         topicKey: { type: 'string', description: "Stable semantic key for this observation (e.g. 'architecture/auth-model'). Enables addressing by concept." },
         reviewAfter: { type: 'number', description: 'ISO date to flag for review' },
+        fields: { type: 'object', description: 'Structured extra fields beyond content, validated against .kirograph/memory-schemas/<kind>.schema.json when memorySchemaValidation is enabled' },
       },
       required: ['content'],
     },

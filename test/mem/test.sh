@@ -498,6 +498,88 @@ node -e "
 "
 ok "config.json: memoryStrictWrites rimosso (torna al default false)"
 
+# ── 24c. memorySchemaValidation (opt-in per-kind field schema) ────────────────
+sep
+echo -e "  ${BOLD}[22c] memorySchemaValidation — validazione opt-in dei campi strutturati${RESET}"
+
+mkdir -p .kirograph/memory-schemas
+cat > .kirograph/memory-schemas/decision.schema.json << 'EOF'
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rationale"],
+  "properties": {
+    "rationale": { "type": "string", "minLength": 1 },
+    "confidence": { "type": "string", "enum": ["low", "medium", "high"] }
+  }
+}
+EOF
+ok "registrato .kirograph/memory-schemas/decision.schema.json (solo per kind 'decision')"
+
+cmd "mem store --kind decision --fields '{\"bogus\":true}' (memorySchemaValidation: false — atteso successo invariato)"
+LOOSE_FIELDS_OUT=$($KG mem store "[$RUN_ID] decision con campi non validi, ma memorySchemaValidation è off." --kind decision --fields '{"bogus":true}' 2>&1)
+echo "$LOOSE_FIELDS_OUT" | sed 's/^/     /'
+echo "$LOOSE_FIELDS_OUT" | grep -qi "Stored observation" \
+  && ok "memorySchemaValidation off (default): fields non validati, scrittura accettata" \
+  || fail "memorySchemaValidation off: scrittura inattesa rifiutata"
+
+info "Abilito memorySchemaValidation nel config..."
+node -e "
+  const fs = require('fs');
+  const cfg = JSON.parse(fs.readFileSync('.kirograph/config.json', 'utf8'));
+  cfg.memorySchemaValidation = true;
+  fs.writeFileSync('.kirograph/config.json', JSON.stringify(cfg, null, 2));
+"
+ok "config.json: memorySchemaValidation=true"
+
+cmd "mem store --kind decision --fields '{\"bogus\":true}' (memorySchemaValidation: true — atteso rifiuto)"
+set +e
+STRICT_FIELDS_OUT=$($KG mem store "[$RUN_ID] decision con campi non validi, con memorySchemaValidation on." --kind decision --fields '{"bogus":true}' 2>&1)
+STRICT_FIELDS_EXIT=$?
+set -e
+echo "$STRICT_FIELDS_OUT" | sed 's/^/     /'
+if [ "$STRICT_FIELDS_EXIT" -ne 0 ] \
+  && echo "$STRICT_FIELDS_OUT" | grep -qi "missing required field" \
+  && echo "$STRICT_FIELDS_OUT" | grep -qi "unknown field"; then
+  ok "memorySchemaValidation on: rationale mancante + campo bogus rifiutati insieme (exit=$STRICT_FIELDS_EXIT)"
+else
+  fail "memorySchemaValidation on: rifiuto atteso non avvenuto o messaggio incompleto (exit=$STRICT_FIELDS_EXIT)"
+fi
+
+cmd "mem store --kind decision --fields '{\"rationale\":\"...\",\"confidence\":\"high\"}' (memorySchemaValidation: true — atteso successo)"
+VALID_FIELDS_OUT=$($KG mem store "[$RUN_ID] decision con campi validi, con memorySchemaValidation on." --kind decision --fields '{"rationale":"Redis aggiunge un punto di fallimento esterno che non serve ancora.","confidence":"high"}' --topic-key "test/schema-validation-$RUN_ID" 2>&1)
+echo "$VALID_FIELDS_OUT" | sed 's/^/     /'
+echo "$VALID_FIELDS_OUT" | grep -qi "Stored observation" \
+  && ok "memorySchemaValidation on: fields conformi allo schema, scrittura accettata" \
+  || fail "memorySchemaValidation on: scrittura valida inattesa rifiutata"
+
+cmd "mem store --kind note --fields '{\"anything\":true}' (nessuno schema per 'note' — atteso successo, opt-in per kind)"
+NO_SCHEMA_OUT=$($KG mem store "[$RUN_ID] note con campi arbitrari — nessuno schema registrato per il kind 'note'." --kind note --fields '{"anything":true}' 2>&1)
+echo "$NO_SCHEMA_OUT" | sed 's/^/     /'
+echo "$NO_SCHEMA_OUT" | grep -qi "Stored observation" \
+  && ok "kind senza schema registrato: mai validato, anche con memorySchemaValidation on" \
+  || fail "kind senza schema: scrittura inattesa rifiutata"
+
+cmd "mem store --fields non-JSON (atteso errore CLI pulito, non un crash)"
+set +e
+BAD_JSON_OUT=$($KG mem store "[$RUN_ID] fields non è JSON valido." --kind note --fields 'not-json' 2>&1)
+BAD_JSON_EXIT=$?
+set -e
+echo "$BAD_JSON_OUT" | sed 's/^/     /'
+[ "$BAD_JSON_EXIT" -ne 0 ] && echo "$BAD_JSON_OUT" | grep -qi "valid JSON" \
+  && ok "--fields non-JSON: errore pulito, exit=$BAD_JSON_EXIT" \
+  || fail "--fields non-JSON: errore pulito atteso non avvenuto"
+
+info "Disabilito memorySchemaValidation e rimuovo lo schema (ripristino default per il resto della suite)..."
+node -e "
+  const fs = require('fs');
+  const cfg = JSON.parse(fs.readFileSync('.kirograph/config.json', 'utf8'));
+  delete cfg.memorySchemaValidation;
+  fs.writeFileSync('.kirograph/config.json', JSON.stringify(cfg, null, 2));
+"
+rm -rf .kirograph/memory-schemas
+ok "config.json: memorySchemaValidation rimosso (torna al default false), schema rimossi"
+
 # ── 25. mem prune ─────────────────────────────────────────────────────────────
 sep
 echo -e "  ${BOLD}[23] kirograph mem prune${RESET}"

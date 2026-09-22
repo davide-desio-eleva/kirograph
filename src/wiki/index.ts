@@ -24,16 +24,20 @@ export type { WikiPage, ScoredWikiPage, WikiDiff, WikiLintIssue, WikiStats, Wiki
 export class KiroGraphWiki {
   private wikiDb: WikiDatabase;
   private wikiDir: string;
+  private wikiSchemasDir: string;
   private autoResolveConflicts: boolean;
+  private typedPages: boolean;
 
   constructor(
     db: any,
     kirographDir: string,
-    opts: { autoResolveConflicts?: boolean } = {}
+    opts: { autoResolveConflicts?: boolean; typedPages?: boolean } = {}
   ) {
     this.wikiDb = new WikiDatabase(db);
     this.wikiDir = path.join(kirographDir, 'wiki');
+    this.wikiSchemasDir = path.join(kirographDir, 'wiki-schemas');
     this.autoResolveConflicts = opts.autoResolveConflicts ?? false;
+    this.typedPages = opts.typedPages ?? false;
   }
 
   initialize(): void {
@@ -126,7 +130,7 @@ export class KiroGraphWiki {
 
   lint(): WikiLintIssue[] {
     this.initialize();
-    return lintWiki(this.wikiDb);
+    return lintWiki(this.wikiDb, this.typedPages ? { wikiSchemasDir: this.wikiSchemasDir } : {});
   }
 
   // ── Links ──────────────────────────────────────────────────────────────────

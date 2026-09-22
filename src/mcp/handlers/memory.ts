@@ -58,6 +58,7 @@ export async function handleMemory(toolName: string, args: Record<string, unknow
           source: 'agent',
           topicKey: args.topicKey as string | undefined,
           reviewAfter: args.reviewAfter as number | undefined,
+          fields: args.fields as Record<string, unknown> | undefined,
         });
       } catch (err) {
         if (err instanceof MemorySchemaError) return `Rejected: ${err.message}`;
