@@ -311,9 +311,12 @@ kirograph vulns --add CVE-2024-1234 --package lodash --version 4.17.20  # Regist
 kirograph reachability <target> [path]     # Check reachability for a CVE or dependency
 kirograph reachability CVE-2023-12345      # By CVE ID
 kirograph reachability lodash              # By package name
+kirograph reachability CVE-2023-12345 --explain  # + plain-English reason for the verdict
 ```
 
 Shows: verdict (`affected` / `not affected` / `under investigation`), reaching entry point count, call paths (up to 5), unresolved symbols, and impact summary (affected layers, entry points, distinct paths) when verdict is `affected`.
+
+`--explain` prints a plain-English sentence explaining *why* that verdict was reached — e.g. "no call/import/reference path was found... a high-confidence result" for `not_affected`, or "nothing in the indexed code explicitly imports, calls, or references this dependency... common for dependencies a framework wires in via classpath scanning or reflection" for a container/runtime dependency like an embedded servlet container that resolves to `under_investigation`. The `kirograph_reachability` MCP tool always includes this explanation (no flag needed).
 
 ### License Compliance
 

@@ -157,10 +157,27 @@ export class SecurityManifestAdapter {
       const relManifest = path.relative(this.projectRoot, manifestPath).replace(/\\/g, '/');
       const plugin = this.plugins.get(archParser.name);
 
+      const standalonePlugin = (!plugin || !plugin.canExtract(manifestPath))
+        ? [...this.standalonePlugins.values()].find(p => p.canExtract(manifestPath))
+        : undefined;
+
       if (plugin && plugin.canExtract(manifestPath)) {
         // Use the version extraction plugin for detailed parsing
         try {
           const deps = await plugin.extract(manifestPath, this.projectRoot);
+          allDeps.push(...deps);
+          manifestsParsed++;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          errors.push({ file: relManifest, message });
+        }
+      } else if (standalonePlugin) {
+        // A wrapped plugin exists for this arch parser's ecosystem but
+        // doesn't claim this specific file — e.g. pip's plugin only claims
+        // requirements.txt, not pyproject.toml, which the Python arch parser
+        // also matches. Use the standalone plugin registered for it instead.
+        try {
+          const deps = await standalonePlugin.extract(manifestPath, this.projectRoot);
           allDeps.push(...deps);
           manifestsParsed++;
         } catch (err) {
@@ -218,6 +235,17 @@ export class SecurityManifestAdapter {
 
     if (plugin && plugin.canExtract(manifestPath)) {
       return plugin.extract(manifestPath, this.projectRoot);
+    }
+
+    // A wrapped plugin can be registered under the same key as the arch
+    // parser without claiming this specific file — e.g. pip's plugin only
+    // claims requirements.txt, but the Python arch parser also matches
+    // pyproject.toml. Check standalone plugins before giving up on version
+    // info entirely.
+    const standalonePlugin = [...this.standalonePlugins.values()]
+      .find(p => p.canExtract(manifestPath));
+    if (standalonePlugin) {
+      return standalonePlugin.extract(manifestPath, this.projectRoot);
     }
 
     // Fallback: architecture parser output (names only)
