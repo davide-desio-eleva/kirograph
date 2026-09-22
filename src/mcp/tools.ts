@@ -1429,7 +1429,7 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: 'kirograph_reachability',
-    description: 'Check reachability for a dependency or CVE.',
+    description: 'Check reachability for a dependency or CVE — verdict, call paths (or why none was found), and impact summary.',
     inputSchema: {
       type: 'object',
       properties: {

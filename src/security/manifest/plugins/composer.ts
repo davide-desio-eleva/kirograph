@@ -98,6 +98,24 @@ export async function parseComposerManifest(
     }
   }
 
+  // Transitive-only packages (present in composer.lock but never declared in
+  // composer.json) would otherwise never become a Dependency_Node and would
+  // silently skip vulnerability scanning. resolvedVersions already has every
+  // package composer.lock resolved, direct or transitive (lower-cased —
+  // production/dev origin isn't tracked separately, default to production).
+  const directNames = new Set(dependencies.map(d => d.name.toLowerCase()));
+  for (const [name, version] of resolvedVersions) {
+    if (directNames.has(name)) continue;
+    dependencies.push({
+      name,
+      declaredConstraint: version,
+      resolvedVersion: version,
+      scope: 'production',
+      ecosystem: 'composer',
+      sourceManifest: relativeManifest,
+    });
+  }
+
   return dependencies;
 }
 

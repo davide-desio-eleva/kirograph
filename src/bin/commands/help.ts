@@ -310,7 +310,7 @@ const GROUPS: Group[] = [
           '--add <cveId>  Manually register a CVE (requires --package and --version)',
         ],
       },
-      { name: 'reachability', args: '<target>', desc: 'Check reachability for a CVE or dependency: verdict, call paths, impact' },
+      { name: 'reachability', args: '<target>', desc: 'Check reachability for a CVE or dependency: verdict, call paths, impact', opts: ['--explain  Plain-English reason for the verdict'] },
       { name: 'vuln suppress',   args: '<cveId>', desc: 'Mark a CVE as suppressed (false positive or accepted risk)',
         opts: [
           '--reason <text>   Reason for suppression',

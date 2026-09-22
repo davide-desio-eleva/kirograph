@@ -79,7 +79,45 @@ export async function parseCargoManifest(
     }
   }
 
+  // Transitive-only crates (present in Cargo.lock but never declared in
+  // Cargo.toml) would otherwise never become a Dependency_Node and would
+  // silently skip vulnerability scanning. resolvedVersions already has every
+  // crate Cargo.lock resolved, direct or transitive — add whichever aren't
+  // already covered by a direct dependency. Exclude the workspace's own
+  // crate, which Cargo.lock also lists as a [[package]] entry.
+  const rootCrateName = extractCargoPackageName(content);
+  const directNames = new Set(dependencies.map(d => d.name));
+  for (const [name, version] of resolvedVersions) {
+    if (directNames.has(name) || name === rootCrateName) continue;
+    dependencies.push({
+      name,
+      declaredConstraint: version,
+      resolvedVersion: version,
+      scope: 'production',
+      ecosystem: 'cargo',
+      sourceManifest: relativeManifest,
+    });
+  }
+
   return dependencies;
+}
+
+/**
+ * Extract the crate's own name from the [package] section of Cargo.toml, so
+ * it can be excluded when adding transitive dependencies from Cargo.lock
+ * (which also lists the workspace's own crate as a [[package]] entry).
+ */
+function extractCargoPackageName(content: string): string | undefined {
+  const packageSectionMatch = /^\[package\]\s*$/m.exec(content);
+  if (!packageSectionMatch) return undefined;
+
+  const startIdx = packageSectionMatch.index + packageSectionMatch[0].length;
+  const remaining = content.slice(startIdx);
+  const nextSection = remaining.match(/^\[/m);
+  const sectionContent = nextSection ? remaining.slice(0, nextSection.index) : remaining;
+
+  const nameMatch = sectionContent.match(/^name\s*=\s*"([^"]+)"/m);
+  return nameMatch ? nameMatch[1].trim() : undefined;
 }
 
 /**

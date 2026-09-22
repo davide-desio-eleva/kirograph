@@ -1,0 +1,7 @@
+com.example:mock-app:jar:1.0.0
++- org.springframework:spring-core:jar:6.1.1:compile
++- org.springframework:spring-context:jar:6.1.1:compile
+|  \- org.springframework:spring-aop:jar:6.1.1:compile
++- com.fasterxml.jackson.core:jackson-databind:jar:2.16.0:compile
+|  \- com.fasterxml.jackson.core:jackson-core:jar:2.16.0:compile
+\- junit:junit:jar:4.13.2:test

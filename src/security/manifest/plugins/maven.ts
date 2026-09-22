@@ -85,8 +85,13 @@ export async function parseMavenManifest(
   // Extract all <dependency> blocks from the <dependencies> sections
   const dependencies: ParsedDependency[] = [];
 
+  // <dependencyManagement> entries (BOM imports, version overrides for child
+  // modules) are not themselves project dependencies — strip that block before
+  // scanning so they don't get misread as declared dependencies.
+  const dependenciesOnlyContent = content.replace(/<dependencyManagement>[\s\S]*?<\/dependencyManagement>/g, '');
+
   // Match all <dependency>...</dependency> blocks
-  const dependencyBlocks = content.matchAll(/<dependency>([\s\S]*?)<\/dependency>/g);
+  const dependencyBlocks = dependenciesOnlyContent.matchAll(/<dependency>([\s\S]*?)<\/dependency>/g);
 
   for (const block of dependencyBlocks) {
     const depXml = block[1];
@@ -138,7 +143,113 @@ export async function parseMavenManifest(
     });
   }
 
+  // Maven has no lock file, so a <dependency> with no explicit <version> (the
+  // common case under a BOM parent like spring-boot-starter-parent) never gets
+  // a resolvedVersion above, and packages pulled in only transitively (e.g.
+  // tomcat-embed-core via spring-boot-starter-web) never appear in pom.xml at
+  // all. If the project has a pre-generated `mvn dependency:tree` text file
+  // (the closest Maven equivalent of a lock file), use it to fill in resolved
+  // versions and capture transitive-only packages, mirroring how the npm
+  // plugin layers package-lock.json on top of package.json.
+  const manifestDir = path.dirname(manifestPath);
+  const treeFile = findMavenDependencyTreeFile(manifestDir);
+
+  if (treeFile) {
+    const treeRelativePath = path.relative(projectRoot, treeFile.path).replace(/\\/g, '/');
+    let treeContent: string;
+    try {
+      treeContent = fs.readFileSync(treeFile.path, 'utf8');
+    } catch (err) {
+      logWarn(`[sec:maven] Failed to read ${treeRelativePath}: ${err instanceof Error ? err.message : String(err)}`);
+      return dependencies;
+    }
+
+    const treeEntries = parseMavenDependencyTree(treeContent);
+
+    for (const dep of dependencies) {
+      if (dep.resolvedVersion) continue;
+      const treeEntry = treeEntries.get(dep.name);
+      if (treeEntry) {
+        dep.resolvedVersion = treeEntry.version;
+      }
+    }
+
+    const directNames = new Set(dependencies.map(d => d.name));
+    for (const [name, entry] of treeEntries) {
+      if (directNames.has(name)) continue;
+      dependencies.push({
+        name,
+        // No declared range exists at the project level for a transitive
+        // package — the resolved version from the tree is the only constraint we have.
+        declaredConstraint: entry.version,
+        resolvedVersion: entry.version,
+        scope: mapMavenScope(entry.scope),
+        ecosystem: 'maven',
+        sourceManifest: treeRelativePath,
+      });
+    }
+  }
+
   return dependencies;
+}
+
+/**
+ * Look for a pre-generated Maven dependency-tree text file next to pom.xml,
+ * e.g. produced with:
+ *   mvn dependency:tree -DoutputFile=dependency-tree.txt
+ * Checked locations, in order: `dependency-tree.txt` next to pom.xml, then
+ * `target/dependency-tree.txt` (Maven's default build output directory).
+ */
+function findMavenDependencyTreeFile(manifestDir: string): { path: string } | undefined {
+  const candidates = ['dependency-tree.txt', path.join('target', 'dependency-tree.txt')];
+  for (const candidate of candidates) {
+    const candidatePath = path.join(manifestDir, candidate);
+    if (fs.existsSync(candidatePath)) {
+      return { path: candidatePath };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Parse `mvn dependency:tree` text output into a map of `groupId:artifactId`
+ * to its resolved version and scope.
+ *
+ * Handles both:
+ *   groupId:artifactId:type:version:scope
+ *   groupId:artifactId:type:classifier:version:scope
+ *
+ * Skips the root project line (no scope segment) and parenthesized entries
+ * like `(commons-logging:commons-logging:jar:1.1.1:compile - omitted for conflict with 1.2)`
+ * — Maven's conflict resolution means only the winning version ends up on the
+ * classpath, so omitted entries aren't actually present in the build.
+ */
+export function parseMavenDependencyTree(content: string): Map<string, { version: string; scope: string }> {
+  const result = new Map<string, { version: string; scope: string }>();
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    if (!rawLine.trim()) continue;
+
+    // Strip Maven's ASCII tree-drawing prefix (e.g. "|  +- ", "   \- ")
+    const stripped = rawLine.replace(/^[\s|+\\-]+/, '').trim();
+    if (!stripped || stripped.startsWith('(')) continue;
+
+    const parts = stripped.split(':');
+    if (parts.length < 5) continue; // root project line ("groupId:artifactId:version") or malformed
+
+    const groupId = parts[0];
+    const artifactId = parts[1];
+    const version = parts[parts.length - 2];
+    const scope = parts[parts.length - 1];
+    if (!groupId || !artifactId || !version) continue;
+
+    const name = `${groupId}:${artifactId}`;
+    if (!result.has(name)) {
+      result.set(name, { version, scope });
+    }
+  }
+
+  return result;
 }
 
 /**

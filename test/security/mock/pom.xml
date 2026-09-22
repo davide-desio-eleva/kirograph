@@ -23,5 +23,12 @@
       <version>4.13.2</version>
       <scope>test</scope>
     </dependency>
+    <!-- No explicit <version> — simulates a dependency managed by a BOM parent
+         (e.g. spring-boot-starter-parent). Its resolved version only comes from
+         dependency-tree.txt, the same way a Spring Boot project's would. -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-context</artifactId>
+    </dependency>
   </dependencies>
 </project>
