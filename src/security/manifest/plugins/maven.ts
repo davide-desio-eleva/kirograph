@@ -8,6 +8,7 @@
  * basic parsing, then layers on version/scope extraction from pom.xml.
  */
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import type { ParsedDependency } from '../../types';
 import { logWarn } from '../../../errors';
@@ -79,9 +80,6 @@ export async function parseMavenManifest(
     return [];
   }
 
-  // Extract the project-level license
-  const license = extractMavenLicense(content);
-
   // Extract all <dependency> blocks from the <dependencies> sections
   const dependencies: ParsedDependency[] = [];
 
@@ -139,7 +137,6 @@ export async function parseMavenManifest(
       scope: mappedScope,
       ecosystem: 'maven',
       sourceManifest: relativeManifest,
-      ...(license !== undefined ? { license } : {}),
     });
   }
 
@@ -161,6 +158,7 @@ export async function parseMavenManifest(
       treeContent = fs.readFileSync(treeFile.path, 'utf8');
     } catch (err) {
       logWarn(`[sec:maven] Failed to read ${treeRelativePath}: ${err instanceof Error ? err.message : String(err)}`);
+      applyLocalMavenLicenses(dependencies);
       return dependencies;
     }
 
@@ -190,6 +188,7 @@ export async function parseMavenManifest(
     }
   }
 
+  applyLocalMavenLicenses(dependencies);
   return dependencies;
 }
 
@@ -253,8 +252,10 @@ export function parseMavenDependencyTree(content: string): Map<string, { version
 }
 
 /**
- * Extract the first license name from a pom.xml <licenses> block.
+ * Extract the first license name from a pom.xml `<licenses>` block.
  * Looks for: <licenses><license><name>...</name></license></licenses>
+ * Works on any pom.xml content — the project's own, or a dependency's own
+ * POM read from the local Maven repository.
  */
 function extractMavenLicense(content: string): string | undefined {
   const licensesMatch = content.match(/<licenses\b[^>]*>([\s\S]*?)<\/licenses>/i);
@@ -265,4 +266,57 @@ function extractMavenLicense(content: string): string | undefined {
     return nameMatch[1].trim();
   }
   return undefined;
+}
+
+/**
+ * Resolve the local Maven repository root: `~/.m2/settings.xml`'s
+ * `<localRepository>` override if set, else the conventional `~/.m2/repository`.
+ */
+function resolveMavenLocalRepoRoot(): string {
+  const settingsPath = path.join(os.homedir(), '.m2', 'settings.xml');
+  try {
+    const settings = fs.readFileSync(settingsPath, 'utf8');
+    const match = settings.match(/<localRepository>([^<]+)<\/localRepository>/i);
+    if (match && match[1].trim() !== '') return match[1].trim();
+  } catch {
+    // No settings.xml, or unreadable — fall through to the default.
+  }
+  return path.join(os.homedir(), '.m2', 'repository');
+}
+
+/**
+ * Each dependency's own license lives in its own POM, not the consuming
+ * project's — Maven has no lock file to carry that data, but a dependency
+ * that has ever been built or downloaded locally has its POM cached at the
+ * standard local-repository layout:
+ *   <repoRoot>/<groupId with . -> />/<artifactId>/<version>/<artifactId>-<version>.pom
+ * Local file only, no network call. Returns undefined when the dependency
+ * has never been resolved locally (e.g. CI running from a clean cache), same
+ * as before this fix — this fills in real data on top of an "unknown" default,
+ * it never invents one.
+ */
+function findLocalMavenPomLicense(repoRoot: string, groupId: string, artifactId: string, version: string): string | undefined {
+  const pomPath = path.join(repoRoot, ...groupId.split('.'), artifactId, version, `${artifactId}-${version}.pom`);
+  try {
+    const content = fs.readFileSync(pomPath, 'utf8');
+    return extractMavenLicense(content);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Fill in `license` for every dependency that has a resolved version, by
+ * reading that exact groupId:artifactId:version's own POM from the local
+ * Maven repository. Mutates `dependencies` in place.
+ */
+function applyLocalMavenLicenses(dependencies: ParsedDependency[]): void {
+  const repoRoot = resolveMavenLocalRepoRoot();
+  for (const dep of dependencies) {
+    if (!dep.resolvedVersion) continue;
+    const [groupId, artifactId] = dep.name.split(':');
+    if (!groupId || !artifactId) continue;
+    const license = findLocalMavenPomLicense(repoRoot, groupId, artifactId, dep.resolvedVersion);
+    if (license !== undefined) dep.license = license;
+  }
 }

@@ -96,6 +96,7 @@ db_pkg()            { sqlite3 "$DB" "SELECT COUNT(*) FROM sec_dependencies WHERE
 db_resolved()       { sqlite3 "$DB" "SELECT resolved_version FROM sec_dependencies WHERE package_name='$1' LIMIT 1;" 2>/dev/null || echo ''; }
 db_scope()          { sqlite3 "$DB" "SELECT scope FROM sec_dependencies WHERE package_name='$1' LIMIT 1;" 2>/dev/null || echo ''; }
 db_transitive()     { sqlite3 "$DB" "SELECT transitive_status FROM sec_dependencies WHERE package_name='$1' LIMIT 1;" 2>/dev/null || echo ''; }
+db_license()        { sqlite3 "$DB" "SELECT license FROM sec_dependencies WHERE package_name='$1' LIMIT 1;" 2>/dev/null || echo ''; }
 
 check_pkg() {
   local pkg="$1" exp_version="$2" exp_scope="$3"
@@ -160,6 +161,27 @@ EDGE_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM edges WHERE kind='depends_on' A
   && ok "edge depends_on: express → body-parser (transitivo npm)" \
   || fail "edge depends_on express→body-parser non trovato"
 
+# License detection (issue #39 follow-up): each dependency's own license, read
+# from package-lock.json's per-package "license" field — not the project's own
+# package.json "license" ("Apache-2.0" in the mock), which must never bleed
+# onto a dependency.
+LODASH_LIC=$(db_license "lodash")
+[ "$LODASH_LIC" = "MIT" ] \
+  && ok "lodash license='MIT' (da package-lock.json, dipendenza diretta)" \
+  || fail "lodash license atteso 'MIT', trovato '${LODASH_LIC:-null}'"
+BODYPARSER_LIC=$(db_license "body-parser")
+[ "$BODYPARSER_LIC" = "MIT" ] \
+  && ok "body-parser license='MIT' (da package-lock.json, dipendenza transitiva)" \
+  || fail "body-parser license atteso 'MIT', trovato '${BODYPARSER_LIC:-null}'"
+JEST_LIC=$(db_license "jest")
+if [ -z "$JEST_LIC" ]; then
+  ok "jest license=unknown (nessun campo license nel lock — non deve ereditare quello del progetto)"
+elif [ "$JEST_LIC" = "Apache-2.0" ]; then
+  fail "jest license inquinato dal package.json del progetto ('Apache-2.0')"
+else
+  fail "jest license inatteso '${JEST_LIC}'"
+fi
+
 # ── A3. Go ────────────────────────────────────────────────────────────────────
 sep
 echo -e "  ${BOLD}[A3] Go  (go.mod + go.sum)${RESET}"
@@ -220,6 +242,42 @@ check_pkg "org.springframework:spring-context"                "6.1.1"   "product
 # dependency-tree.txt knows about them as transitive dependencies.
 [ "$(db_pkg 'org.springframework:spring-aop')" -ge 1 ] && ok "spring-aop  ${DIM}(transitive, dependency-tree.txt)${RESET}" || fail "spring-aop non trovato"
 [ "$(db_pkg 'com.fasterxml.jackson.core:jackson-core')" -ge 1 ] && ok "jackson-core  ${DIM}(transitive, dependency-tree.txt)${RESET}" || fail "jackson-core non trovato"
+
+# License detection (issue #39 follow-up): each dependency's own license,
+# read from its own POM cached locally under ~/.m2/repository — never the
+# project's own pom.xml <licenses> ("Proprietary" in the mock), which must
+# not bleed onto any dependency.
+SPRING_CORE_LIC_BEFORE=$(db_license "org.springframework:spring-core")
+[ "$SPRING_CORE_LIC_BEFORE" != "Proprietary" ] \
+  && ok "spring-core license non inquinato dal pom.xml del progetto (era '${SPRING_CORE_LIC_BEFORE:-unknown}')" \
+  || fail "spring-core license inquinato dal pom.xml del progetto ('Proprietary')"
+
+# Positive case: a throwaway fake $HOME with just one dependency's own POM
+# cached at the standard local-repository layout — no real Maven install
+# needed, no network call.
+FAKE_HOME=$(mktemp -d)
+POM_DIR="$FAKE_HOME/.m2/repository/org/springframework/spring-core/6.1.1"
+mkdir -p "$POM_DIR"
+cat > "$POM_DIR/spring-core-6.1.1.pom" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <licenses>
+    <license>
+      <name>Apache-2.0</name>
+    </license>
+  </licenses>
+</project>
+EOF
+
+HOME="$FAKE_HOME" $KG index > /dev/null 2>&1
+SPRING_CORE_LIC_AFTER=$(db_license "org.springframework:spring-core")
+[ "$SPRING_CORE_LIC_AFTER" = "Apache-2.0" ] \
+  && ok "spring-core license='Apache-2.0' (letto dal POM locale in \$HOME/.m2/repository)" \
+  || fail "spring-core license atteso 'Apache-2.0' da ~/.m2 locale, trovato '${SPRING_CORE_LIC_AFTER:-null}'"
+rm -rf "$FAKE_HOME"
+
+# Restore normal state (real $HOME) for the rest of the suite
+$KG index > /dev/null 2>&1
 
 # ── A7. NuGet ─────────────────────────────────────────────────────────────────
 sep
