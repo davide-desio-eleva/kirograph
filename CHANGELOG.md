@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.2.2] - Unreleased: Maven license inheritance through parent POMs
+## [1.2.2] - 2026-09-22: Maven license inheritance through parent POMs
 
 ### Fixed
 
@@ -16,7 +16,7 @@
   - **Maven**: now reads each dependency's own POM from the local Maven repository (`~/.m2/repository/<groupId>/<artifactId>/<version>/<artifactId>-<version>.pom`, respecting `~/.m2/settings.xml`'s `<localRepository>` override), the same local-file-only philosophy already used for `dependency-tree.txt`. Only covers dependencies that have actually been resolved locally (i.e. the project has been built at least once) — a clean-checkout CI run with an empty local repo still reports `unknown`, same as before this fix, rather than guessing.
   - Neither ecosystem ever applies the *project's own* declared license to a dependency anymore.
 
-## [1.2.0] - Unreleased: Opt-in typed schema validation for memory fields and wiki frontmatter
+## [1.2.0] - 2026-09-22: Opt-in typed schema validation for memory fields and wiki frontmatter
 
 Inspired by [tmd](https://github.com/alfonsograziano/tmd) (Typed Markdown): validating structured fields against a JSON Schema per kind/type, registered by dropping a schema file in a directory — no index to maintain, and a kind/type with no schema registered is simply never validated. Both features are off by default and fully additive: existing memory writes and wiki pages are completely unaffected until explicitly opted in.
 
