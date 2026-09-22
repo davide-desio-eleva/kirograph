@@ -20,6 +20,7 @@ import { ask, askToggle, arrowSelect } from './prompts';
 import { promptConfigOptions } from './config-prompt';
 import { openTypesenseDashboard } from './dashboard';
 import { ensureQdrantUI, openQdrantDashboard } from './qdrant-dashboard';
+import { ensureJevEnvFile } from './common';
 import type { InstallTarget, LateInstallOptions } from './common';
 import { getTargetInstaller } from './targets';
 import type { CavemanMode } from './caveman';
@@ -170,6 +171,8 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
     let typesenseDashboard = false;
     let qdrantDashboard = false;
     let hooksToImport: string[] | null = null;
+    let jevEnabled = false;
+    let jevTargets: string[] = [];
 
     try {
       if (alreadyInitialized) {
@@ -196,6 +199,10 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
         enableAgentUtils = config.enableAgentUtils ?? true;
         enableGeneralCompression = config.enableGeneralCompression ?? false;
         trackCallSites = config.trackCallSites ?? false;
+        if (config.memoryRelationMode === 'jev') jevTargets.push('memory relation judging');
+        if (config.wikiContradictionMode === 'jev') jevTargets.push('wiki contradiction detection');
+        if (config.securityAuthDetectionMode === 'jev') jevTargets.push('attack-surface auth detection');
+        jevEnabled = jevTargets.length > 0;
         console.log(`  ✓ Reusing existing KiroGraph data in ${cwd}/.kirograph/`);
         console.log(`  • semanticEngine: ${config.semanticEngine}`);
         console.log(`  • enableEmbeddings: ${config.enableEmbeddings}`);
@@ -257,6 +264,10 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
         trackCallSites = patch.trackCallSites ?? false;
         typesenseDashboard = patch.typesenseDashboard;
         qdrantDashboard = patch.qdrantDashboard;
+        if (patch.memoryRelationMode === 'jev') jevTargets.push('memory relation judging');
+        if (patch.wikiContradictionMode === 'jev') jevTargets.push('wiki contradiction detection');
+        if (patch.securityAuthDetectionMode === 'jev') jevTargets.push('attack-surface auth detection');
+        jevEnabled = jevTargets.length > 0;
 
         console.log(`\n  Configuration saved to ${cwd}/.kirograph/config.json`);
         console.log(`  • enableEmbeddings: ${patch.enableEmbeddings}`);
@@ -343,6 +354,9 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
         console.log(`  • enableData: ${enableData}`);
         console.log(`  • enableSecurity: ${enableSecurity}`);
         console.log(`  • enablePatterns: ${enablePatterns}`);
+        if (jevEnabled) {
+          console.log(`  • jev classification: enabled (${jevTargets.join(', ')})`);
+        }
 
         // Install optional data format deps if enableData is on
         if (enableData) {
@@ -527,6 +541,15 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
     }
 
     installer.printNextSteps(cwd);
+
+    if (jevEnabled) {
+      const envCreated = ensureJevEnvFile(cwd);
+      console.log(`\n  🧪 jev classification is enabled (${jevTargets.join(', ')}) — add your API key to finish setup:`);
+      console.log(`     ${dim}${envCreated ? 'Created' : 'Found existing'} ${cwd}/.kirograph/.env${reset}`);
+      console.log(`     Open it and set: ${dim}JEV_API_KEY=<your key>${reset}`);
+      console.log(`     Get a key at ${dim}https://docs.typesafe.ai${reset}`);
+      console.log(`     ${dim}Without a key, these features fall back to their existing non-jev behavior.${reset}`);
+    }
   } finally {
     rl.close();
   }

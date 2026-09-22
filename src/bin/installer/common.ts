@@ -67,6 +67,43 @@ export function ensureDir(p: string): void {
   fs.mkdirSync(p, { recursive: true });
 }
 
+/**
+ * Create `.kirograph/.env` with a JEV_API_KEY placeholder when jev-powered
+ * classification was enabled during install — `loadConfig()` reads it into
+ * process.env on every command (see `loadDotEnv()` in src/config.ts). Never
+ * overwrites an existing `.env` (a re-run of the installer, or a key the
+ * user already set, is left alone). Best-effort: also appends the file to
+ * an existing project `.gitignore` so the key is never committed, but never
+ * creates a `.gitignore` from scratch — that's outside what installing
+ * KiroGraph should do to a project that doesn't already have one.
+ * Returns true when a new `.env` file was written.
+ */
+export function ensureJevEnvFile(projectRoot: string): boolean {
+  const kirographDir = path.join(projectRoot, '.kirograph');
+  const envPath = path.join(kirographDir, '.env');
+  if (fs.existsSync(envPath)) return false;
+
+  ensureDir(kirographDir);
+  fs.writeFileSync(envPath, [
+    '# KiroGraph — jev (TypeSafe System One) API key',
+    "# Used by memoryRelationMode / wikiContradictionMode / securityAuthDetectionMode: 'jev'",
+    '# Get a key at https://docs.typesafe.ai — this file should never be committed to git.',
+    'JEV_API_KEY=',
+    '',
+  ].join('\n'));
+
+  const gitignorePath = path.join(projectRoot, '.gitignore');
+  if (fs.existsSync(gitignorePath)) {
+    const content = fs.readFileSync(gitignorePath, 'utf8');
+    if (!content.includes('.kirograph/.env')) {
+      const sep = content.length === 0 || content.endsWith('\n') ? '' : '\n';
+      fs.appendFileSync(gitignorePath, `${sep}.kirograph/.env\n`);
+    }
+  }
+
+  return true;
+}
+
 export function readJson(p: string): any {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return {}; }
 }

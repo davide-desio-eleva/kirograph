@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.2.4] - Unreleased: jev-powered classification *(experimental)*
+## [1.3.0] - Unreleased: jev-powered classification *(experimental)*
 
 Three `*Mode: 'jev'` toggles, opt-in and off by default. ⚠️ **Experimental.** [jev](https://docs.typesafe.ai) (TypeSafe's System One) is a fast typed-classification model — it returns a calibrated Choice/Score/Noul answer for one narrow question, instead of a full agent turn spent reasoning out the same kind of decision. Each toggle replaces a place where KiroGraph either delegated a narrow classification to the calling agent, or used a fragile keyword/substring heuristic, with an actual judgment call. Unlike KiroGraph's other opt-in modules, jev is a new dependency on a paid third-party API — the only KiroGraph feature requiring one — and its classification quality and API stability haven't been exercised in production yet. Each toggle falls back to its existing non-jev behavior when unset.
 
@@ -13,6 +13,7 @@ Three `*Mode: 'jev'` toggles, opt-in and off by default. ⚠️ **Experimental.*
 - **`.kirograph/.env`**: `loadConfig()` now loads `KEY=VALUE` pairs from `.kirograph/.env` into `process.env` on every command (a variable already set in the real environment is never overridden) — the way to give a project a real `JEV_API_KEY` without committing it to `config.json`. Minimal built-in parser, no new dependency.
 - `src/jev/client.ts`: thin `JevClient` HTTP client for `POST /v1/systemone`, plus `createJevClientFromConfig()`.
 - `test/jev/`: a local mock jev HTTP server (`mock-server.js`) and a `test.sh` covering all three integrations end-to-end. Auto-detects mode from `JEV_API_KEY`: unset → mock server, exact-value assertions (no real API key or network access needed, e.g. in CI); set → the real API, with the key routed through `.kirograph/.env` to exercise that loading path too, and exact-value assertions relaxed to warnings for whatever depends on the live model's own judgment (wiring-level assertions — valid relation type, confidence in range, DB persistence consistent with what was returned, clean error handling — stay hard failures in both modes).
+- **Installer**: `kirograph install` now asks whether to enable jev-powered classification once at least one of the three modules it attaches to (Memory, Wiki, Security) is enabled — skipped entirely otherwise, since there's nothing for it to classify. Offered in `full`, `profiles`, and `custom` install modes (not `core`, which never turns on those modules). Available for `Full` and any `profiles` preset that enables Memory/Wiki/Security, not just `Custom`. Accepting it sets the relevant `*Mode: 'jev'` flags only for the modules actually enabled by that install. When accepted, the installer creates `.kirograph/.env` with a `JEV_API_KEY=` placeholder (never overwriting an existing one), appends it to the project's `.gitignore` if one exists, and prints a final setup step after installing: where the file is, what to set, and where to get a key. `ensureJevEnvFile()` in `src/bin/installer/common.ts`.
 
 ## [1.2.3] - 2026-09-22: `security flows` SQL injection detection gaps, found by testing against OWASP Juice Shop
 

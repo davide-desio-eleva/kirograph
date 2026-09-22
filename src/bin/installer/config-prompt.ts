@@ -25,7 +25,8 @@ export type ConfigPatch = Pick<KiroGraphConfig,
   'enableWiki' | 'wikiSynthesisMode' | 'wikiLocalModel' |
   'enableCodeHealth' | 'enableNavigation' | 'enableComplexity' |
   'enableGitContext' | 'enableEditPrimitives' | 'enableBranch' |
-  'enableAgentUtils' | 'enableGeneralCompression'
+  'enableAgentUtils' | 'enableGeneralCompression' |
+  'memoryRelationMode' | 'wikiContradictionMode' | 'securityAuthDetectionMode'
 > & { embeddingModel?: string; embeddingDim?: number };
 export type SemanticEngine = KiroGraphConfig['semanticEngine'];
 
@@ -218,6 +219,35 @@ async function promptEmbeddings(rl: readline.Interface): Promise<EmbeddingPatch>
   return patch;
 }
 
+/**
+ * jev (TypeSafe System One, https://docs.typesafe.ai) is an opt-in typed-
+ * classification backend for three otherwise-independent features. It only
+ * makes sense to ask about it once the modules it attaches to are known, and
+ * only when at least one of them is actually enabled — there's nothing for
+ * it to classify otherwise. Mutates `patch` in place.
+ */
+async function promptJevClassification(rl: readline.Interface, patch: ConfigPatch): Promise<void> {
+  const targets: string[] = [];
+  if (patch.enableMemory) targets.push('memory relation judging');
+  if (patch.enableWiki) targets.push('wiki contradiction detection');
+  if (patch.enableSecurity) targets.push('attack-surface auth detection');
+  if (targets.length === 0) return;
+
+  printSection('🧪', 'jev Classification (experimental)');
+
+  const enableJev = await askToggle(
+    rl,
+    `jev-powered classification for: ${targets.join(', ')}?`,
+    '⚠ Experimental. jev (TypeSafe System One, https://docs.typesafe.ai) is a fast typed-classification model that replaces a heuristic or agent-reasoning step with a real judgment call for each of the modules above. Requires a paid third-party API key — a .kirograph/.env file will be created for you to add JEV_API_KEY after install. Falls back to each module\'s existing non-jev behavior whenever the key is unset.',
+    false,
+  );
+  if (!enableJev) return;
+
+  if (patch.enableMemory) patch.memoryRelationMode = 'jev';
+  if (patch.enableWiki) patch.wikiContradictionMode = 'jev';
+  if (patch.enableSecurity) patch.securityAuthDetectionMode = 'jev';
+}
+
 export async function promptConfigOptions(
   rl: readline.Interface,
   opts: PromptConfigOptions = {},
@@ -245,6 +275,7 @@ export async function promptConfigOptions(
     enableCodeHealth: false, enableNavigation: false, enableComplexity: false,
     enableGitContext: false, enableEditPrimitives: false, enableBranch: false,
     enableAgentUtils: false, enableGeneralCompression: false,
+    memoryRelationMode: 'agent', wikiContradictionMode: 'heuristic', securityAuthDetectionMode: 'heuristic',
   };
 
   if (installMode === 'core') {
@@ -267,6 +298,7 @@ export async function promptConfigOptions(
       enableMemory: true, enableWatchmen: true,
       enableWiki: true, wikiSynthesisMode: 'agent',
     };
+    await promptJevClassification(rl, fullPatch);
     return { patch: fullPatch, hooksToImport: null };
   }
 
@@ -279,6 +311,7 @@ export async function promptConfigOptions(
     const profile = PROFILES[profileKey];
     const embeddingPatch = await promptEmbeddings(rl);
     const patch: ConfigPatch = { ...basePatch, ...profile.patch, ...embeddingPatch };
+    await promptJevClassification(rl, patch);
     return { patch, hooksToImport: null };
   }
 
@@ -607,6 +640,8 @@ export async function promptConfigOptions(
       }
     }
   }
+
+  await promptJevClassification(rl, patch);
 
   return { patch, hooksToImport };
 }
