@@ -628,7 +628,7 @@ Generate a CycloneDX 1.5 VEX JSON document with reachability-derived analysis st
 
 ### `kirograph_reachability`
 
-Analyze reachability for a specific CVE or dependency. Returns the verdict, shortest paths from each reaching entry point, unresolved symbols (if any), and impact summary (affected layers, entry points, distinct path count).
+Analyze reachability for a specific CVE or dependency. Returns the verdict, a plain-English "Why" explanation of the specific reason behind it (path found; no call-graph signal at all for the dependency; unresolved imports; no entry points in the project; or a clean no-path-found), shortest paths from each reaching entry point, unresolved symbols (if any), and impact summary (affected layers, entry points, distinct path count).
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|

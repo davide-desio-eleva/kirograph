@@ -13,6 +13,7 @@ import type { GraphDatabase } from '../db/database';
 import type { KiroGraphConfig } from '../config';
 import type {
   ReachabilityVerdict,
+  ReachabilityReason,
   ReachabilityPath,
   ReachabilityResult,
   ImpactSummary,
@@ -64,6 +65,7 @@ export class ReachabilityAnalyzer {
       // No dependency linked — cannot determine reachability
       const result: ReachabilityResult = {
         verdict: 'under_investigation',
+        reason: 'no_dependency_link',
         paths: [],
         unresolvedSymbols: [],
         reachingEntryPointCount: 0,
@@ -92,6 +94,7 @@ export class ReachabilityAnalyzer {
     if (incomingEdgeCount.c === 0) {
       const result: ReachabilityResult = {
         verdict: 'under_investigation',
+        reason: 'no_call_graph_signal',
         paths: [],
         unresolvedSymbols: [],
         reachingEntryPointCount: 0,
@@ -112,6 +115,7 @@ export class ReachabilityAnalyzer {
       // No entry points — cannot determine reachability
       const result: ReachabilityResult = {
         verdict: 'not_affected',
+        reason: 'no_entry_points',
         paths: [],
         unresolvedSymbols: [],
         reachingEntryPointCount: 0,
@@ -146,16 +150,21 @@ export class ReachabilityAnalyzer {
     //  - not_affected: no path found and no unresolved imports — strong signal.
     const cappedUnresolved = unresolvedSymbols.slice(0, MAX_UNRESOLVED_SYMBOLS);
     let verdict: ReachabilityVerdict;
+    let reason: ReachabilityReason;
     if (reachingPaths.length > 0) {
       verdict = 'affected';
+      reason = 'path_found';
     } else if (cappedUnresolved.length > 0) {
       verdict = 'under_investigation';
+      reason = 'unresolved_imports';
     } else {
       verdict = 'not_affected';
+      reason = 'no_path_found';
     }
 
     const result: ReachabilityResult = {
       verdict,
+      reason,
       paths: reachingPaths,
       unresolvedSymbols: verdict === 'under_investigation' ? cappedUnresolved : [],
       reachingEntryPointCount: reachingPaths.length,
@@ -417,5 +426,32 @@ export class ReachabilityAnalyzer {
         Date.now(),
       ],
     );
+  }
+}
+
+/**
+ * Plain-English explanation of a reachability result, for `--explain` on
+ * `kirograph reachability` and the `kirograph_reachability` MCP tool.
+ * Pure function of the result — no DB access, safe to call on a result
+ * that was just computed or re-derived from one already in hand.
+ */
+export function explainReachability(result: ReachabilityResult): string {
+  switch (result.reason) {
+    case 'path_found':
+      return `Reachable: ${result.reachingEntryPointCount} entry point${result.reachingEntryPointCount === 1 ? '' : 's'} have a call/import/reference path to this dependency (see paths below).`;
+    case 'no_dependency_link':
+      return `This vulnerability isn't linked to any dependency node in the graph, so reachability can't be evaluated at all. This usually means the vulnerability was registered manually (e.g. via "kirograph vulns --add") against a package that isn't currently indexed.`;
+    case 'no_call_graph_signal':
+      return `Nothing in the indexed code explicitly imports, calls, or references this dependency — it has zero incoming edges in the call graph. This is common for dependencies a framework wires in via classpath scanning or reflection rather than an explicit reference (e.g. an embedded servlet container like Tomcat, Netty, or Jetty). The call graph has no signal about it either way, so "not reachable" can't be concluded.`;
+    case 'unresolved_imports':
+      return `No call/import/reference path was found from any entry point, but the backward traversal hit ${result.unresolvedSymbols.length} unresolved import${result.unresolvedSymbols.length === 1 ? '' : 's'} along the way (dynamic dispatch, reflection, or unindexed code — see below). The graph is incomplete near this dependency, so "not reachable" can't be concluded with confidence.`;
+    case 'no_entry_points':
+      return `No entry points (HTTP routes or exported functions) were found anywhere in the indexed project, so there's nowhere to start a reachability search from. This can mean the project genuinely has none (a library, not a server), or that entry-point detection missed them for this codebase.`;
+    case 'no_path_found':
+      return `No call/import/reference path was found from any entry point to this dependency, and the traversal completed without hitting any unresolved imports — a high-confidence result.`;
+    default: {
+      const _exhaustive: never = result.reason;
+      return _exhaustive;
+    }
   }
 }

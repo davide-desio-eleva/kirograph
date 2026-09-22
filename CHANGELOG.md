@@ -1,6 +1,10 @@
 # Changelog
 
-## [1.1.1] - 2026-09-22: Transitive dependency scanning across all ecosystems, Maven BOM/transitive resolution, reachability persistence + false-negative fixes
+## [1.1.1] - 2026-09-22: Transitive dependency scanning across all ecosystems, Maven BOM/transitive resolution, reachability persistence + false-negative fixes, `reachability --explain`
+
+### Added
+
+- **`kirograph reachability <target> --explain`** (issue #39 follow-up): prints a plain-English sentence explaining *why* the verdict was reached — which of five distinct code paths in `ReachabilityAnalyzer.analyze()` produced it (a real path found; the vulnerability isn't linked to any dependency; the dependency has zero call-graph signal at all; the traversal hit unresolved imports; the project has no entry points; or a clean no-path-found). Previously the reason had to be inferred from the verdict plus whatever paths/unresolved-symbols happened to be non-empty — for the new `under_investigation`/no-call-graph-signal case below, that list is empty, so there was no way to tell *why* short of reading the source. `explainReachability()` is exported from `src/security/reachability.ts` for reuse. The `kirograph_reachability` MCP tool now always includes the explanation (no flag needed there).
 
 ### Fixed
 

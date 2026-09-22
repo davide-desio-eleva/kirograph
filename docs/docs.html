@@ -1651,7 +1651,7 @@ kirograph docs reembed                      # re-embed with current model</code>
         <tbody>
           <tr><td><code>kirograph security [path]</code></td><td>Overview: dep count, vulnerability count, verdict breakdown, stale warnings (<code>--refresh-staleness</code>)</td></tr>
           <tr><td><code>kirograph vulns [path]</code></td><td>List vulnerabilities — <code>--severity</code>, <code>--verdict</code>, <code>--epss &lt;n&gt;</code>, <code>--stale</code>, <code>--refresh</code>, <code>--add</code></td></tr>
-          <tr><td><code>kirograph reachability &lt;target&gt;</code></td><td>Check reachability for a CVE ID or package name — verdict, call paths, impact summary</td></tr>
+          <tr><td><code>kirograph reachability &lt;target&gt;</code></td><td>Check reachability for a CVE ID or package name — verdict, call paths, impact summary. <code>--explain</code> adds a plain-English reason for the verdict (why a path was/wasn't found).</td></tr>
           <tr><td><code>kirograph licenses [path]</code></td><td>List dependency licenses, check policy (<code>--policy</code>, <code>--deny</code>, <code>--warn</code>)</td></tr>
           <tr><td><code>kirograph staleness [path]</code></td><td>Check dependency freshness against registries (<code>--threshold</code>, <code>--refresh</code>)</td></tr>
           <tr><td><code>kirograph vex [--output file]</code></td><td>Export CycloneDX 1.5 VEX document</td></tr>

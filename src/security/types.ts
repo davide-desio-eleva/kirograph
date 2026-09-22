@@ -68,6 +68,18 @@ export interface EnrichmentResult {
 
 export type ReachabilityVerdict = 'affected' | 'not_affected' | 'under_investigation';
 
+/**
+ * Which specific code path in ReachabilityAnalyzer.analyze() produced the
+ * verdict — the machine-readable form of `--explain`'s plain-English text.
+ */
+export type ReachabilityReason =
+  | 'path_found'            // affected: at least one entry point reaches the dependency
+  | 'no_dependency_link'    // under_investigation: the vulnerability isn't linked to any dependency node
+  | 'no_call_graph_signal'  // under_investigation: the dependency has zero incoming calls/imports/references edges anywhere
+  | 'unresolved_imports'    // under_investigation: the backward traversal hit dead-end import nodes
+  | 'no_entry_points'       // not_affected: the project has no routes or exported functions at all
+  | 'no_path_found';        // not_affected: traversal completed, no path to any entry point, no unresolved imports
+
 export interface ReachabilityPath {
   entryPoint: string; // node ID of the entry point
   path: string[]; // ordered list of node IDs from entry to dependency
@@ -75,6 +87,7 @@ export interface ReachabilityPath {
 
 export interface ReachabilityResult {
   verdict: ReachabilityVerdict;
+  reason: ReachabilityReason;
   paths: ReachabilityPath[];
   unresolvedSymbols: string[]; // up to 50, for under_investigation
   reachingEntryPointCount: number;

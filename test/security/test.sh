@@ -418,13 +418,26 @@ try {
   const r2 = await analyzer.analyze('reach-test:vuln:unreachable');
   const r3 = await analyzer.analyze('reach-test:vuln:reachable');
 
-  console.log('container (zero incoming edges):', r1.verdict);
-  console.log('unreachable (has edges, no path):', r2.verdict);
-  console.log('reachable (real path exists):   ', r3.verdict);
+  console.log('container (zero incoming edges):', r1.verdict, r1.reason);
+  console.log('unreachable (has edges, no path):', r2.verdict, r2.reason);
+  console.log('reachable (real path exists):   ', r3.verdict, r3.reason);
 
   if (r1.verdict !== 'under_investigation') throw new Error(`container: expected under_investigation, got ${r1.verdict}`);
+  if (r1.reason !== 'no_call_graph_signal') throw new Error(`container: expected reason no_call_graph_signal, got ${r1.reason}`);
   if (r2.verdict !== 'not_affected') throw new Error(`unreachable: expected not_affected, got ${r2.verdict}`);
+  if (r2.reason !== 'no_path_found') throw new Error(`unreachable: expected reason no_path_found, got ${r2.reason}`);
   if (r3.verdict !== 'affected') throw new Error(`reachable: expected affected, got ${r3.verdict}`);
+  if (r3.reason !== 'path_found') throw new Error(`reachable: expected reason path_found, got ${r3.reason}`);
+
+  // --explain: a plain-English explanation exists for every reason and
+  // actually differs per case (not a generic fallback string).
+  const { explainReachability } = require(path.join(rootDir, 'dist/security/reachability.js'));
+  const e1 = explainReachability(r1);
+  const e2 = explainReachability(r2);
+  const e3 = explainReachability(r3);
+  if (!e1 || !e2 || !e3) throw new Error('explainReachability returned an empty string for one of the cases');
+  if (new Set([e1, e2, e3]).size !== 3) throw new Error('explainReachability returned the same text for different reasons');
+  if (!/classpath scanning|reflection/i.test(e1)) throw new Error(`container explanation missing expected content: ${e1}`);
 
   console.log('ALL_REACHABILITY_EDGE_CASES_OK');
 } finally {
@@ -433,9 +446,10 @@ try {
 NODEEOF
 
 if [ $? -eq 0 ]; then
-  ok "dipendenza senza edge in ingresso (tipo tomcat-embed-core): under_investigation"
-  ok "dipendenza referenziata ma irraggiungibile: resta not_affected (nessuna regressione)"
-  ok "dipendenza realmente raggiungibile: resta affected (nessuna regressione)"
+  ok "dipendenza senza edge in ingresso (tipo tomcat-embed-core): under_investigation / no_call_graph_signal"
+  ok "dipendenza referenziata ma irraggiungibile: resta not_affected / no_path_found (nessuna regressione)"
+  ok "dipendenza realmente raggiungibile: resta affected / path_found (nessuna regressione)"
+  ok "explainReachability: testo diverso e non vuoto per ciascun reason"
 else
   fail "reachability edge-case test fallito"
 fi
@@ -464,6 +478,16 @@ echo -e "  ${BOLD}[B3] reachability${RESET}"
 OUT=$($KG reachability express 2>&1); EXIT=$?
 [ $EXIT -eq 0 ] && ok "reachability express: exit 0" || fail "reachability express: exit $EXIT"
 [ -n "$OUT"   ] && ok "reachability: output non vuoto" || warn "reachability: output vuoto"
+
+EXPLAIN_OUT=$($KG reachability express --explain 2>&1); EXPLAIN_EXIT=$?
+[ $EXPLAIN_EXIT -eq 0 ] && ok "reachability express --explain: exit 0" || fail "reachability express --explain: exit $EXPLAIN_EXIT"
+if echo "$EXPLAIN_OUT" | grep -qi "No vulnerabilities found"; then
+  ok "reachability --explain: nessuna vulnerabilità per 'express' in questo mock (atteso)"
+else
+  echo "$EXPLAIN_OUT" | grep -qi "Explanation" \
+    && ok "reachability --explain: sezione Explanation presente" \
+    || fail "reachability --explain: sezione Explanation mancante"
+fi
 
 # ── B4. staleness ─────────────────────────────────────────────────────────────
 sep
