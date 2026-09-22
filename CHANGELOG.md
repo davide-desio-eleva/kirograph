@@ -1,6 +1,13 @@
 # Changelog
 
-## [1.2.1] - Unreleased: Correct per-dependency license detection (npm + Maven)
+## [1.2.2] - Unreleased: Maven license inheritance through parent POMs
+
+### Fixed
+
+- **Security (Maven license detection)**: `kirograph licenses` still reported the large majority of Maven dependencies as `unknown` even after the 1.2.1 per-dependency-POM fix below (issue #39 follow-up, found by diffing `kirograph licenses` against Trivy on a real Spring Boot project: 51 packages `unknown` in KiroGraph but resolved by Trivy — Netty, Jackson datatype/module, `commons-codec`/`commons-io`/`commons-logging`, `byte-buddy`, `slf4j-api`, the Azure SDK, etc.). Root cause: Maven POMs very commonly omit `<licenses>` entirely and inherit it from a `<parent>` POM instead — sometimes several levels up (e.g. `commons-codec` -> `commons-parent` -> the ASF parent POM, none of which repeat the license already declared higher up the chain). `findLocalMavenPomLicense` only ever read the dependency's own POM, so any package relying on parent-POM inheritance (the norm, not the exception, in multi-module Maven projects) was reported `unknown` regardless of whether the license was actually knowable from the local Maven repository. It now walks the `<parent>` chain (also from local POMs only, no network calls), trying each ancestor's `<licenses>` block in turn up to 10 levels, and stops as soon as one is found — the same "real local data only, never invents a license" philosophy as before.
+- **Security (Maven multi-license)**: a POM declaring more than one `<license>` entry (dual-licensed packages, e.g. `org.hdrhistogram:HdrHistogram` under Unlicense/CC0/BSD-2-Clause) only had its first license captured; the rest were silently dropped. `extractMavenLicense` now collects every `<license><name>` in the block and joins them with `" OR "`, matching the SPDX-expression style already used for npm/Cargo license strings.
+
+## [1.2.1] - 2026-09-22: Correct per-dependency license detection (npm + Maven)
 
 ### Fixed
 

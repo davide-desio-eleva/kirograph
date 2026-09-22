@@ -274,6 +274,65 @@ SPRING_CORE_LIC_AFTER=$(db_license "org.springframework:spring-core")
 [ "$SPRING_CORE_LIC_AFTER" = "Apache-2.0" ] \
   && ok "spring-core license='Apache-2.0' (letto dal POM locale in \$HOME/.m2/repository)" \
   || fail "spring-core license atteso 'Apache-2.0' da ~/.m2 locale, trovato '${SPRING_CORE_LIC_AFTER:-null}'"
+
+# Parent-POM inheritance (issue #39 follow-up, round 2): most real-world POMs
+# (Netty, Jackson modules, commons-*, ...) declare no <licenses> of their own
+# and inherit it from a <parent> POM instead — sometimes several levels up.
+# junit:junit's own POM here has no <licenses>; only its parent does.
+JUNIT_POM_DIR="$FAKE_HOME/.m2/repository/junit/junit/4.13.2"
+mkdir -p "$JUNIT_POM_DIR"
+cat > "$JUNIT_POM_DIR/junit-4.13.2.pom" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <parent>
+    <groupId>junit</groupId>
+    <artifactId>junit-parent</artifactId>
+    <version>1.0</version>
+  </parent>
+</project>
+EOF
+JUNIT_PARENT_DIR="$FAKE_HOME/.m2/repository/junit/junit-parent/1.0"
+mkdir -p "$JUNIT_PARENT_DIR"
+cat > "$JUNIT_PARENT_DIR/junit-parent-1.0.pom" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <licenses>
+    <license>
+      <name>EPL-1.0</name>
+    </license>
+  </licenses>
+</project>
+EOF
+
+# Multi-license POM: jackson-databind's own POM declares two <license>
+# entries directly (dual-licensed package) — both must be captured, not
+# just the first.
+JACKSON_POM_DIR="$FAKE_HOME/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.16.0"
+mkdir -p "$JACKSON_POM_DIR"
+cat > "$JACKSON_POM_DIR/jackson-databind-2.16.0.pom" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <licenses>
+    <license>
+      <name>Apache-2.0</name>
+    </license>
+    <license>
+      <name>MIT</name>
+    </license>
+  </licenses>
+</project>
+EOF
+
+HOME="$FAKE_HOME" $KG index > /dev/null 2>&1
+JUNIT_LIC=$(db_license "junit:junit")
+[ "$JUNIT_LIC" = "EPL-1.0" ] \
+  && ok "junit license='EPL-1.0' (ereditata dal <parent> junit-parent, non nel POM proprio)" \
+  || fail "junit license atteso 'EPL-1.0' ereditato dal parent, trovato '${JUNIT_LIC:-null}'"
+JACKSON_LIC=$(db_license "com.fasterxml.jackson.core:jackson-databind")
+[ "$JACKSON_LIC" = "Apache-2.0 OR MIT" ] \
+  && ok "jackson-databind license='Apache-2.0 OR MIT' (dual-license, entrambe catturate)" \
+  || fail "jackson-databind license atteso 'Apache-2.0 OR MIT', trovato '${JACKSON_LIC:-null}'"
+
 rm -rf "$FAKE_HOME"
 
 # Restore normal state (real $HOME) for the rest of the suite
