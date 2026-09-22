@@ -785,7 +785,7 @@ export function register(program: Command): void {
           const result = await mem.autoCompareObservations(observationA, observationB);
           const status = result.autoJudged ? `${dim}auto-judged${reset}` : `${dim}pending review${reset}`;
           console.log(`  ✓ Relation ${dim}${result.relationId}${reset} classified by jev: ${violet}${result.relation}${reset} (confidence: ${result.confidence.toFixed(2)}, ${status})`);
-          if (!result.autoJudged) console.log(`  ${dim}Use \`kirograph mem judge ${result.relationId}\` to finalize.${reset}`);
+          if (!result.autoJudged) console.log(`  ${dim}Use \`kirograph mem conflicts judge ${result.relationId} --relation <type> --confidence <n>\` to finalize.${reset}`);
         } catch (err) {
           console.error(`  ✖ ${err instanceof Error ? err.message : String(err)}`);
           cg.close(); process.exit(1);
