@@ -19,6 +19,11 @@
         "requested": "[2.6.2, )",
         "resolved": "2.6.2",
         "contentHash": "mno345pqr678"
+      },
+      "xunit.core": {
+        "type": "Transitive",
+        "resolved": "2.6.2",
+        "contentHash": "stu901vwx234"
       }
     }
   }

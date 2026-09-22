@@ -10,7 +10,8 @@ export function register(program: Command): void {
   program
     .command('reachability <target> [projectPath]')
     .description('Check reachability for a dependency or CVE: verdict, call paths, impact summary')
-    .action(async (target: string, projectPath: string | undefined) => {
+    .option('--explain', 'Print a plain-English explanation of why the verdict was reached')
+    .action(async (target: string, projectPath: string | undefined, opts: { explain?: boolean }) => {
       const projectRoot = path.resolve(projectPath ?? process.cwd());
       const config = await loadConfig(projectRoot);
 
@@ -70,7 +71,7 @@ export function register(program: Command): void {
         }
       }
 
-      const { ReachabilityAnalyzer } = await import('../../security/reachability');
+      const { ReachabilityAnalyzer, explainReachability } = await import('../../security/reachability');
       const analyzer = new ReachabilityAnalyzer(db, config);
       const result = await analyzer.analyze(vulnerabilityNodeId);
 
@@ -88,6 +89,11 @@ export function register(program: Command): void {
       console.log(`\n  ${violet}${bold}Reachability:${reset} ${targetLabel}`);
       console.log(`  ${dim}Verdict:${reset}                ${verdictColor}${bold}${verdictLabel}${reset}`);
       console.log(`  ${dim}Reaching entry points:${reset}  ${bold}${result.reachingEntryPointCount}${reset}`);
+
+      if (opts.explain) {
+        console.log(`\n  ${violet}${bold}Explanation${reset}`);
+        console.log(`  ${dim}${explainReachability(result)}${reset}`);
+      }
 
       // Call paths
       if (result.paths.length > 0) {

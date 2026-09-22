@@ -71,15 +71,18 @@ export class VulnerabilityDatabaseClient {
   private readonly adapters: VulnDatabaseAdapter[];
   private readonly db: GraphDatabase;
   private readonly timeoutMs: number;
+  private readonly projectRoot?: string;
 
   constructor(
     adapters: VulnDatabaseAdapter[],
     db: GraphDatabase,
     timeoutMs: number = 30000,
+    projectRoot?: string,
   ) {
     this.adapters = adapters;
     this.db = db;
     this.timeoutMs = timeoutMs;
+    this.projectRoot = projectRoot;
   }
 
   /**
@@ -123,6 +126,12 @@ export class VulnerabilityDatabaseClient {
       );
     }
     result.dependenciesChecked = queryableDeps.length;
+
+    // A package name can resolve to more than one distinct version in the
+    // same tree (npm's nested node_modules layout); the query above only
+    // checked whichever single version got recorded on the Dependency_Node.
+    // Check the other installed copies too, without changing what's stored.
+    await this.enrichDuplicateVersions(rawDb, queryableDeps, result);
 
     // Enrich stored vulnerabilities with EPSS scores
     await this.enrichEpss(rawDb);
@@ -259,6 +268,57 @@ export class VulnerabilityDatabaseClient {
       for (const cve of uniqueCves) {
         this.upsertVulnerabilityNode(rawDb, cve, dep.node_id);
         result.vulnerabilitiesFound++;
+      }
+    }
+  }
+
+  /**
+   * Check every other distinct resolved version of a package that npm's
+   * nested node_modules layout may have installed alongside the one
+   * recorded on its Dependency_Node — e.g. `qs@6.16.0` at the top level and
+   * a separately-nested `qs@6.15.3` under `body-parser`. Only the recorded
+   * version gets queried by the normal enrichment pass above; a vulnerable
+   * copy at a different version would otherwise go undetected even though
+   * it's genuinely installed.
+   *
+   * Doesn't change what's stored as `resolved_version` — any vulnerability
+   * found against an alternate version is linked to the same
+   * Dependency_Node the same way `enrichAllBatch`/`enrichAllSequential` do.
+   * npm-only for now (see `findNpmDuplicateVersions`); best-effort — a
+   * missing or unparseable lock file just means this pass finds nothing.
+   */
+  private async enrichDuplicateVersions(
+    rawDb: any,
+    deps: DependencyRow[],
+    result: EnrichmentResult,
+  ): Promise<void> {
+    if (!this.projectRoot) return;
+    const npmDeps = deps.filter(d => d.ecosystem === 'npm');
+    if (npmDeps.length === 0) return;
+
+    let duplicates: Map<string, Set<string>>;
+    try {
+      const { findNpmDuplicateVersions } = await import('../manifest/plugins/npm');
+      duplicates = findNpmDuplicateVersions(this.projectRoot);
+    } catch {
+      return;
+    }
+    if (duplicates.size === 0) return;
+
+    for (const dep of npmDeps) {
+      const versions = duplicates.get(dep.package_name);
+      if (!versions) continue;
+
+      const alreadyChecked = dep.resolved_version || dep.declared_constraint;
+      for (const version of versions) {
+        if (version === alreadyChecked) continue;
+
+        const cveRecords = await this.queryAdaptersForDependency(dep, version, result);
+        const uniqueCves = this.deduplicateByCveId(cveRecords);
+        for (const cve of uniqueCves) {
+          this.upsertVulnerabilityNode(rawDb, cve, dep.node_id);
+          result.vulnerabilitiesFound++;
+        }
       }
     }
   }

@@ -160,7 +160,7 @@ export function register(program: Command): void {
           return null;
         }).filter(Boolean) as any[];
 
-        const client = new VulnerabilityDatabaseClient(adapters, db);
+        const client = new VulnerabilityDatabaseClient(adapters, db, undefined, target);
         const result = await client.enrichAll();
 
         console.error(`  ${green}✓${reset} Checked ${bold}${result.dependenciesChecked}${reset} dependencies, found ${bold}${result.vulnerabilitiesFound}${reset} vulnerabilities`);
@@ -284,6 +284,16 @@ export function register(program: Command): void {
       const suppressedRows = dedupedRows.filter(row => suppressions.isSuppressed(row.cve_id));
       const filteredRows = dedupedRows.filter(row => !suppressions.isSuppressed(row.cve_id));
 
+      // Maven has no lock file: a <dependency> with no explicit <version> (the
+      // common case under a BOM parent like spring-boot-starter-parent) never
+      // gets a resolved version, so it's silently skipped during vulnerability
+      // enrichment. Hint at the fix when that's likely hiding results.
+      const unresolvedMavenCount = (rawDb.get(
+        `SELECT COUNT(*) as count FROM sec_dependencies
+         WHERE ecosystem = 'maven' AND (resolved_version IS NULL OR resolved_version = '')
+           AND (declared_constraint IS NULL OR declared_constraint = '')`,
+      ) as { count: number } | undefined)?.count ?? 0;
+
       if (filteredRows.length === 0) {
         const filterNote = (opts.severity || opts.verdict)
           ? ` matching filters`
@@ -291,6 +301,10 @@ export function register(program: Command): void {
         console.log(`\n  ${dim}No vulnerabilities found${filterNote}.${reset}\n`);
         if (suppressedRows.length > 0) {
           console.log(`  ${dim}${suppressedRows.length} CVE(s) suppressed — kirograph vuln suppressions to review${reset}\n`);
+        }
+        if (unresolvedMavenCount > 0) {
+          console.log(`  ${dim}${unresolvedMavenCount} Maven dependenc${unresolvedMavenCount === 1 ? 'y has' : 'ies have'} no resolved version (BOM-managed, e.g. via spring-boot-starter-parent) and were skipped.${reset}`);
+          console.log(`  ${dim}Run${reset} ${violet}${bold}mvn dependency:tree -DoutputFile=dependency-tree.txt${reset}${dim} next to pom.xml, then${reset} ${violet}${bold}kirograph index${dim} again to resolve them.${reset}\n`);
         }
         cg.close();
         return;
@@ -433,6 +447,11 @@ export function register(program: Command): void {
       const pendingCount = filteredRows.filter(r => !r.verdict).length;
       if (pendingCount > 0) {
         console.log(`  ${dim}${pendingCount} vulnerabilit${pendingCount === 1 ? 'y is' : 'ies are'} [pending] reachability analysis — run ${reset}kirograph index${dim} to compute call-graph verdicts.${reset}\n`);
+      }
+
+      if (unresolvedMavenCount > 0) {
+        console.log(`  ${dim}${unresolvedMavenCount} Maven dependenc${unresolvedMavenCount === 1 ? 'y has' : 'ies have'} no resolved version (BOM-managed, e.g. via spring-boot-starter-parent) and were skipped.${reset}`);
+        console.log(`  ${dim}Run${reset} ${violet}${bold}mvn dependency:tree -DoutputFile=dependency-tree.txt${reset}${dim} next to pom.xml, then${reset} ${violet}${bold}kirograph index${dim} again to resolve them.${reset}\n`);
       }
 
       // ── CI exit codes: --fail-on ──────────────────────────────────────────────

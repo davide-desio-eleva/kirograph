@@ -137,7 +137,146 @@ export async function parseNpmManifest(
     }
   }
 
+  // Transitive dependencies (present only in the lock file, never declared
+  // directly in package.json) would otherwise never become a Dependency_Node,
+  // so they'd silently skip vulnerability scanning entirely. Add them here.
+  const directNames = new Set(dependencies.map(d => d.name));
+  const lockRelativePath = relativeManifest.replace(/package\.json$/, 'package-lock.json');
+  const npmLockPath = path.join(manifestDir, 'package-lock.json');
+  if (fs.existsSync(npmLockPath)) {
+    // package-lock.json (v2/v3) carries a per-package "dev" flag — parse it
+    // directly so transitive dev-only dependencies keep the right scope.
+    dependencies.push(...extractTransitiveNpmDependencies(manifestDir, lockRelativePath, directNames));
+  } else {
+    // pnpm-lock.yaml, yarn.lock, or a lockfileVersion 1 package-lock.json:
+    // resolvedVersions already has every package the lock file resolved,
+    // direct or transitive — it just doesn't carry a dev/prod distinction,
+    // so default newly-added transitive entries to 'production'.
+    for (const [name, version] of resolvedVersions) {
+      if (directNames.has(name)) continue;
+      dependencies.push({
+        name,
+        declaredConstraint: version,
+        resolvedVersion: version,
+        scope: 'production',
+        ecosystem: 'npm',
+        sourceManifest: relativeManifest,
+      });
+    }
+  }
+
   return dependencies;
+}
+
+/**
+ * Find every npm package name that resolves to more than one distinct
+ * version somewhere in package-lock.json's dependency tree. npm's nested
+ * node_modules layout can install different versions of the same package
+ * at different paths (e.g. a top-level `qs@6.16.0` alongside a
+ * `body-parser`-nested `qs@6.15.3`) — but a Dependency_Node only records one
+ * `resolved_version`. Used by vulnerability enrichment to also check every
+ * other installed copy, not just whichever version ended up recorded.
+ *
+ * Only the top-level package-lock.json (lockfile v2/v3 "packages" map) is
+ * checked — a monorepo with per-package lock files, or pnpm/yarn projects,
+ * won't get this extra check (they still get the single recorded version).
+ *
+ * Returns a map from package name to the full set of distinct versions
+ * found; names with only one version are omitted.
+ */
+export function findNpmDuplicateVersions(projectRoot: string): Map<string, Set<string>> {
+  const versionsByName = new Map<string, Set<string>>();
+
+  const lockPath = path.join(projectRoot, 'package-lock.json');
+  if (!fs.existsSync(lockPath)) return versionsByName;
+
+  let lockData: unknown;
+  try {
+    lockData = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+  } catch {
+    return versionsByName;
+  }
+
+  if (typeof lockData !== 'object' || lockData === null) return versionsByName;
+  const packages = (lockData as Record<string, unknown>).packages;
+  if (typeof packages !== 'object' || packages === null) return versionsByName;
+
+  for (const [key, value] of Object.entries(packages as Record<string, unknown>)) {
+    if (key === '') continue; // skip the root project entry
+    if (typeof value !== 'object' || value === null) continue;
+    const pkg = value as Record<string, unknown>;
+
+    const version = pkg.version;
+    if (typeof version !== 'string') continue;
+
+    const name = key.replace(/^.*node_modules\//, '');
+    if (!name) continue;
+
+    if (!versionsByName.has(name)) versionsByName.set(name, new Set());
+    versionsByName.get(name)!.add(version);
+  }
+
+  for (const [name, versions] of versionsByName) {
+    if (versions.size <= 1) versionsByName.delete(name);
+  }
+
+  return versionsByName;
+}
+
+/**
+ * Extract every package listed in package-lock.json's "packages" map (lockfile
+ * v2/v3) that isn't already a direct dependency. These are transitive-only
+ * packages — e.g. a sub-dependency three levels deep — that `npm audit` reports
+ * on but that package.json never mentions.
+ */
+function extractTransitiveNpmDependencies(
+  manifestDir: string,
+  lockRelativePath: string,
+  directNames: Set<string>,
+): ParsedDependency[] {
+  const lockPath = path.join(manifestDir, 'package-lock.json');
+  if (!fs.existsSync(lockPath)) return [];
+
+  let lockData: unknown;
+  try {
+    lockData = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+  } catch (err) {
+    logWarn(`[sec:npm] Failed to parse ${lockRelativePath} for transitive dependencies: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+
+  if (typeof lockData !== 'object' || lockData === null) return [];
+  const packages = (lockData as Record<string, unknown>).packages;
+  if (typeof packages !== 'object' || packages === null) return [];
+
+  const transitive: ParsedDependency[] = [];
+  const seen = new Set<string>();
+
+  for (const [key, value] of Object.entries(packages as Record<string, unknown>)) {
+    if (key === '') continue; // skip the root project entry
+    if (typeof value !== 'object' || value === null) continue;
+    const pkg = value as Record<string, unknown>;
+
+    const name = key.replace(/^.*node_modules\//, '');
+    if (!name || directNames.has(name) || seen.has(name)) continue;
+
+    const version = pkg.version;
+    if (typeof version !== 'string') continue;
+
+    seen.add(name);
+    transitive.push({
+      name,
+      // No real semver range exists at the project level for a transitive
+      // package — the resolved version is the only constraint we have.
+      declaredConstraint: version,
+      resolvedVersion: version,
+      scope: pkg.dev === true ? 'development' : 'production',
+      ecosystem: 'npm',
+      sourceManifest: lockRelativePath,
+    });
+  }
+
+  return transitive;
 }
 
 /**

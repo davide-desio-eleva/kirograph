@@ -86,7 +86,7 @@ export class SecurityPipeline {
       onProgress?.('vulnerability-enrichment', 2, 4);
 
       const adapters = this.createVulnAdapters();
-      const vulnClient = new VulnerabilityDatabaseClient(adapters, this.db);
+      const vulnClient = new VulnerabilityDatabaseClient(adapters, this.db, undefined, this.projectRoot);
       const enrichResult = await vulnClient.enrichAll();
 
       result.vulnerabilitiesFound = enrichResult.vulnerabilitiesFound;

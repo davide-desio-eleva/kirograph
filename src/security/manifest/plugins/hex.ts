@@ -66,6 +66,23 @@ export async function parseHexManifest(
     });
   }
 
+  // Transitive-only deps (present in mix.lock but never declared in mix.exs)
+  // would otherwise never become a Dependency_Node and would silently skip
+  // vulnerability scanning. resolvedVersions already has every dep mix.lock
+  // resolved, direct or transitive.
+  const directNames = new Set(dependencies.map(d => d.name));
+  for (const [name, version] of resolvedVersions) {
+    if (directNames.has(name)) continue;
+    dependencies.push({
+      name,
+      declaredConstraint: version,
+      resolvedVersion: version,
+      scope: 'production',
+      ecosystem: 'hex',
+      sourceManifest: relativeManifest,
+    });
+  }
+
   return dependencies;
 }
 

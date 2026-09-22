@@ -78,8 +78,10 @@ interface OsvBatchResponse {
 
 const OSV_API_URL = 'https://api.osv.dev/v1/query';
 const OSV_BATCH_API_URL = 'https://api.osv.dev/v1/querybatch';
+const OSV_VULN_DETAIL_URL = 'https://api.osv.dev/v1/vulns';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const OSV_BATCH_MAX_QUERIES = 1000;
+const OSV_DETAIL_FETCH_CONCURRENCY = 10;
 const MAX_SUMMARY_LENGTH = 500;
 
 // ── CVSS parsing ──────────────────────────────────────────────────────────────
@@ -190,11 +192,13 @@ export class OsvAdapter implements VulnDatabaseAdapter {
 
   private readonly apiUrl: string;
   private readonly batchApiUrl: string;
+  private readonly vulnDetailUrl: string;
   private readonly timeoutMs: number;
 
-  constructor(options?: { apiUrl?: string; batchApiUrl?: string; timeoutMs?: number }) {
+  constructor(options?: { apiUrl?: string; batchApiUrl?: string; vulnDetailUrl?: string; timeoutMs?: number }) {
     this.apiUrl = options?.apiUrl ?? OSV_API_URL;
     this.batchApiUrl = options?.batchApiUrl ?? OSV_BATCH_API_URL;
+    this.vulnDetailUrl = options?.vulnDetailUrl ?? OSV_VULN_DETAIL_URL;
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
@@ -273,14 +277,66 @@ export class OsvAdapter implements VulnDatabaseAdapter {
       clearTimeout(timeoutId);
     }
 
+    // OSV's batch endpoint only ever returns { id, modified } stubs — no
+    // severity, affected ranges, summary, or fixed version. Fetch full
+    // details for every unique vulnerability ID found, deduplicated since
+    // many packages in the same batch often share the same advisory.
+    const uniqueIds = new Set<string>();
+    for (const result of batchResults) {
+      for (const vuln of result.vulns ?? []) {
+        uniqueIds.add(vuln.id);
+      }
+    }
+    const detailsById = await this.fetchVulnDetails([...uniqueIds], combinedSignal);
+
     // Rebuild full results array aligned with input queries
     return queries.map((_, i) => {
       const osvIdx = indexMap[i];
       if (osvIdx === null) return [];
       const resultEntry = batchResults[osvIdx];
       if (!resultEntry) return [];
-      return this.parseResponse({ vulns: resultEntry.vulns });
+      const fullVulns = (resultEntry.vulns ?? []).map(stub => detailsById.get(stub.id) ?? stub);
+      return this.parseResponse({ vulns: fullVulns });
     });
+  }
+
+  /**
+   * Fetch full vulnerability records for a set of IDs via OSV's per-ID detail
+   * endpoint (the batch endpoint doesn't include this data). Runs with
+   * bounded concurrency; a failure on one ID is logged and that ID falls
+   * back to its stub (still usable, just without severity/EPSS-relevant data)
+   * rather than failing the whole batch.
+   */
+  private async fetchVulnDetails(
+    ids: string[],
+    signal: AbortSignal,
+  ): Promise<Map<string, OsvVulnerability>> {
+    const results = new Map<string, OsvVulnerability>();
+    if (ids.length === 0) return results;
+
+    let cursor = 0;
+    const worker = async (): Promise<void> => {
+      while (cursor < ids.length) {
+        const id = ids[cursor++];
+        try {
+          const response = await fetch(`${this.vulnDetailUrl}/${encodeURIComponent(id)}`, { signal });
+          if (!response.ok) {
+            logWarn(`OSV: failed to fetch details for ${id}: HTTP ${response.status}`);
+            continue;
+          }
+          const vuln = (await response.json()) as OsvVulnerability;
+          results.set(id, vuln);
+        } catch (error: unknown) {
+          if (isAbortError(error)) return;
+          const msg = error instanceof Error ? error.message : String(error);
+          logWarn(`OSV: failed to fetch details for ${id}: ${msg}`);
+        }
+      }
+    };
+
+    const workerCount = Math.min(OSV_DETAIL_FETCH_CONCURRENCY, ids.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+    return results;
   }
 
   async query(

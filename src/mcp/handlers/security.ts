@@ -114,7 +114,7 @@ export async function handleSecurity(toolName: string, args: Record<string, unkn
           return null;
         }).filter(Boolean) as any[];
 
-        const client = new VulnerabilityDatabaseClient(adapters, db);
+        const client = new VulnerabilityDatabaseClient(adapters, db, undefined, projectRoot);
         await client.enrichAll();
       }
 
@@ -399,7 +399,7 @@ export async function handleSecurity(toolName: string, args: Record<string, unkn
       }
 
       // Run reachability analysis
-      const { ReachabilityAnalyzer } = await import('../../security/reachability');
+      const { ReachabilityAnalyzer, explainReachability } = await import('../../security/reachability');
       const analyzer = new ReachabilityAnalyzer(db, config);
       const result = await analyzer.analyze(vulnerabilityNodeId);
 
@@ -408,6 +408,8 @@ export async function handleSecurity(toolName: string, args: Record<string, unkn
         '',
         `Verdict: ${result.verdict}`,
         `Reaching entry points: ${result.reachingEntryPointCount}`,
+        '',
+        `Why: ${explainReachability(result)}`,
       ];
 
       if (result.paths.length > 0) {

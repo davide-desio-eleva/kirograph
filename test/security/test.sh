@@ -146,14 +146,19 @@ NPM_COUNT=$(db_dep_count "npm")
 check_pkg "express" "4.18.2"  "production"
 check_pkg "lodash"  "4.17.21" "production"
 check_pkg "jest"    "29.7.0"  "development"
+# body-parser is NOT declared in package.json — it only exists as a transitive
+# dependency of express in package-lock.json. Regression check for issue #39:
+# purely transitive packages (e.g. elliptic, qs in a real audit) must still
+# become their own Dependency_Node, or they silently skip vulnerability scanning.
+check_pkg "body-parser" "1.20.1" "production"
 EXPRESS_TS=$(db_transitive "express")
 [ "$EXPRESS_TS" = "complete" ] \
   && ok "express transitive_status='complete' (lock parser attivo)" \
   || { [ "$EXPRESS_TS" = "incomplete" ] && fail "express transitive_status='incomplete'" || warn "express transitive_status='${EXPRESS_TS:-null}'"; }
-EDGE_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM edges WHERE kind='depends_on' AND source_id=(SELECT id FROM nodes WHERE label='express') AND target_id=(SELECT id FROM nodes WHERE label='body-parser');" 2>/dev/null || echo 0)
+EDGE_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM edges WHERE kind='depends_on' AND source='dep:npm:express' AND target='dep:npm:body-parser';" 2>/dev/null || echo 0)
 [ "$EDGE_COUNT" -ge 1 ] \
   && ok "edge depends_on: express → body-parser (transitivo npm)" \
-  || warn "edge depends_on express→body-parser non trovato"
+  || fail "edge depends_on express→body-parser non trovato"
 
 # ── A3. Go ────────────────────────────────────────────────────────────────────
 sep
@@ -176,6 +181,9 @@ check_pkg "serde"   "1.0.193" "production"
 check_pkg "reqwest" "0.11.22" "production"
 check_pkg "tokio"   "1.35.1"  "development"
 SERDE_TS=$(db_transitive "serde")
+# mock-crate itself is NOT a real dependency — Cargo.lock also lists the
+# workspace's own crate as a [[package]] entry, must not become a node.
+[ "$(db_pkg 'mock-crate')" -eq 0 ] && ok "mock-crate (root crate) non aggiunto come dipendenza" || fail "mock-crate (root crate) erroneamente aggiunto come dipendenza"
 [ "$SERDE_TS" = "complete" ] \
   && ok "serde transitive_status='complete' (Cargo.lock parser attivo)" \
   || { [ "$SERDE_TS" = "incomplete" ] && fail "serde transitive_status='incomplete'" || warn "serde transitive_status='${SERDE_TS:-null}'"; }
@@ -183,10 +191,19 @@ SERDE_TS=$(db_transitive "serde")
 # ── A5. pip + pyproject ───────────────────────────────────────────────────────
 sep
 echo -e "  ${BOLD}[A5] pip + pyproject  (requirements.txt + pyproject.toml)${RESET}"
-PYTHON_COUNT=$(db_dep_count "python")
-[ "$PYTHON_COUNT" -ge 2 ] && ok "python: $PYTHON_COUNT dep trovati" || fail "python: attesi >=2 dep, trovati $PYTHON_COUNT"
-[ "$(db_pkg 'fastapi')" -ge 1 ] && ok "fastapi  ${DIM}(ecosystem:python)${RESET}" || fail "fastapi non trovato"
-[ "$(db_pkg 'httpx')"   -ge 1 ] && ok "httpx  ${DIM}(ecosystem:python)${RESET}"   || fail "httpx non trovato"
+# Both requirements.txt (pip) and pyproject.toml (poetry) tag dependencies
+# with ecosystem 'pypi' — 'python' is only the internal plugin lookup key
+# (must match the architecture parser's name), never the persisted value.
+PYTHON_COUNT=$(db_dep_count "pypi")
+[ "$PYTHON_COUNT" -ge 2 ] && ok "pypi: $PYTHON_COUNT dep trovati" || fail "pypi: attesi >=2 dep, trovati $PYTHON_COUNT"
+check_pkg "requests" "2.31.0" "production"
+check_pkg "flask"    "3.0.0"  "production"
+[ "$(db_pkg 'fastapi')" -ge 1 ] && ok "fastapi  ${DIM}(ecosystem:pypi)${RESET}" || fail "fastapi non trovato"
+[ "$(db_pkg 'httpx')"   -ge 1 ] && ok "httpx  ${DIM}(ecosystem:pypi)${RESET}"   || fail "httpx non trovato"
+# anyio + starlette are NOT declared in pyproject.toml — only poetry.lock knows
+# about them as fastapi's own transitive dependencies.
+check_pkg "anyio"     "4.1.0"  "production"
+check_pkg "starlette" "0.32.0" "production"
 
 # ── A6. Maven ─────────────────────────────────────────────────────────────────
 sep
@@ -196,6 +213,13 @@ MAVEN_COUNT=$(db_dep_count "maven")
 check_pkg "org.springframework:spring-core"                  "6.1.1"   "production"
 check_pkg "junit:junit"                                      "4.13.2"  "development"
 check_pkg "com.fasterxml.jackson.core:jackson-databind"      "2.16.0"  "production"
+# spring-context has no <version> in pom.xml (BOM-managed, like under
+# spring-boot-starter-parent) — resolved only via dependency-tree.txt.
+check_pkg "org.springframework:spring-context"                "6.1.1"   "production"
+# spring-aop + jackson-core are NOT declared in pom.xml at all — only
+# dependency-tree.txt knows about them as transitive dependencies.
+[ "$(db_pkg 'org.springframework:spring-aop')" -ge 1 ] && ok "spring-aop  ${DIM}(transitive, dependency-tree.txt)${RESET}" || fail "spring-aop non trovato"
+[ "$(db_pkg 'com.fasterxml.jackson.core:jackson-core')" -ge 1 ] && ok "jackson-core  ${DIM}(transitive, dependency-tree.txt)${RESET}" || fail "jackson-core non trovato"
 
 # ── A7. NuGet ─────────────────────────────────────────────────────────────────
 sep
@@ -205,6 +229,9 @@ NUGET_COUNT=$(db_dep_count "nuget")
 check_pkg "Newtonsoft.Json" "13.0.3" "production"
 check_pkg "Serilog"         "3.1.1"  "production"
 check_pkg "xunit"           "2.6.2"  "development"
+# xunit.core is NOT a <PackageReference> in Mock.csproj — only marked "Transitive"
+# in packages.lock.json.
+check_pkg "xunit.core"      "2.6.2"  "production"
 
 # ── A8. Gradle ────────────────────────────────────────────────────────────────
 sep
@@ -213,6 +240,9 @@ GRADLE_COUNT=$(db_dep_count "gradle")
 [ "$GRADLE_COUNT" -ge 2 ] && ok "gradle: $GRADLE_COUNT dep trovati" || fail "gradle: attesi >=2 dep, trovati $GRADLE_COUNT"
 check_pkg "com.google.guava:guava"          "32.1.3-jre" "production"
 check_pkg "org.junit.jupiter:junit-jupiter" "5.10.1"     "development"
+# com.google.guava:failureaccess is NOT declared in build.gradle — only
+# gradle.lockfile knows about it as guava's own transitive dependency.
+check_pkg "com.google.guava:failureaccess"  "1.0.1"      "production"
 
 # ── A9. RubyGems ──────────────────────────────────────────────────────────────
 sep
@@ -222,6 +252,9 @@ RUBYGEMS_COUNT=$(db_dep_count "rubygems")
 check_pkg "rails"       "7.1.2" "production"
 check_pkg "pg"          "1.5.4" "production"
 check_pkg "rspec-rails" "6.1.0" "development"
+# rack is NOT in the Gemfile — only Gemfile.lock knows about it as a
+# transitive dependency of actionpack/rails.
+check_pkg "rack"        "2.2.8" "production"
 
 # ── A10. Composer ─────────────────────────────────────────────────────────────
 sep
@@ -231,6 +264,9 @@ COMPOSER_COUNT=$(db_dep_count "composer")
 check_pkg "symfony/http-foundation" "6.4.0"  "production"
 check_pkg "monolog/monolog"         "3.4.0"  "production"
 check_pkg "phpunit/phpunit"         "10.5.0" "development"
+# psr/http-message is NOT in composer.json's require — only composer.lock
+# knows about it as a transitive dependency.
+check_pkg "psr/http-message"        "2.0"    "production"
 
 # ── A11. Swift ────────────────────────────────────────────────────────────────
 sep
@@ -248,6 +284,9 @@ PUB_COUNT=$(db_dep_count "pub")
 check_pkg "http"     "1.1.2" "production"
 check_pkg "provider" "6.1.1" "production"
 check_pkg "mockito"  "5.4.4" "development"
+# collection is NOT in pubspec.yaml — only pubspec.lock knows about it,
+# marked "dependency: transitive".
+check_pkg "collection" "1.18.0" "production"
 
 # ── A13. Hex (Elixir) ─────────────────────────────────────────────────────────
 sep
@@ -257,6 +296,9 @@ HEX_COUNT=$(db_dep_count "hex")
 check_pkg "phoenix"    "1.7.10" "production"
 check_pkg "ecto"       "3.11.1" "production"
 check_pkg "ex_machina" "2.7.0"  "development"
+# decimal is NOT in mix.exs's deps — only mix.lock knows about it as ecto's
+# own transitive dependency.
+check_pkg "decimal"    "2.1.1"  "production"
 
 # ── A14. Riepilogo ────────────────────────────────────────────────────────────
 sep
@@ -277,6 +319,140 @@ sqlite3 "$DB" \
       printf "     %-12s  %2s dep  prod:%s  dev:%s  resolved:%s  incomplete:%s\n" \
              "$eco" "$n" "$prod" "$dev" "$resolved" "$incomplete"
     done || warn "Nessuna dipendenza nel DB"
+
+# ── A15. Reachability — dipendenza mai referenziata nel codice (issue #39) ─────
+sep
+echo -e "  ${BOLD}[A15] Reachability — dipendenza con zero edge in ingresso${RESET}"
+echo -e "  ${DIM}Un pacchetto tipo tomcat-embed-core: mai importato/chiamato esplicitamente (wiring via classpath/reflection).${RESET}"
+echo -e "  ${DIM}Prima del fix cadeva su 'not_affected' (falso negativo); ora deve risultare 'under_investigation'.${RESET}\n"
+
+ROOT_DIR="$ROOT" TEST_DIR="$TEST_DIR" node --input-type=module << 'NODEEOF'
+import path from 'path';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
+const rootDir = process.env.ROOT_DIR;
+const testDir = process.env.TEST_DIR;
+
+const KiroGraph = require(path.join(rootDir, 'dist/index.js')).default;
+const cg = await KiroGraph.open(testDir);
+const db = cg.getDatabase();
+db.applySecuritySchema();
+const rawDb = db.getRawDb();
+
+const now = Date.now();
+function upsertNode(id, kind, name, isExported = 0) {
+  rawDb.run(
+    `INSERT OR REPLACE INTO nodes (id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column, end_column, is_exported, is_async, is_static, is_abstract, updated_at)
+     VALUES (?, ?, ?, ?, 'src/app.ts', 'typescript', 1, 1, 0, 0, ?, 0, 0, 0, ?)`,
+    [id, kind, name, `src/app.ts::${name}`, isExported, now],
+  );
+}
+function insertEdge(source, target, kind) {
+  rawDb.run(`INSERT INTO edges (source, target, kind) VALUES (?, ?, ?)`, [source, target, kind]);
+}
+function upsertDependency(nodeId, ecosystem, pkgName) {
+  upsertNode(nodeId, 'dependency', pkgName);
+  rawDb.run(
+    `INSERT OR REPLACE INTO sec_dependencies (node_id, ecosystem, package_name, declared_constraint, resolved_version, scope, source_manifests)
+     VALUES (?, ?, ?, '1.0.0', '1.0.0', 'production', '[]')`,
+    [nodeId, ecosystem, pkgName],
+  );
+}
+function upsertVuln(vulnId, depNodeId) {
+  upsertNode(vulnId, 'vulnerability', vulnId);
+  rawDb.run(
+    `INSERT OR REPLACE INTO sec_vulnerabilities (node_id, cve_id, severity_score, affected_ranges, source_database)
+     VALUES (?, ?, 7.5, '[]', 'OSV')`,
+    [vulnId, vulnId],
+  );
+  insertEdge(depNodeId, vulnId, 'has_vulnerability');
+}
+
+upsertNode('reach-test:route:1', 'route', 'GET /api/x');
+
+// Case 1: "container" dependency — zero incoming calls/imports/references
+// edges anywhere in the graph (like tomcat-embed-core). Expect: under_investigation.
+upsertDependency('reach-test:dep:container', 'maven', 'org.apache.tomcat.embed:tomcat-embed-core');
+upsertVuln('reach-test:vuln:container', 'reach-test:dep:container');
+
+// Case 2 (regression guard): dependency IS referenced somewhere in code, but
+// that code is never reached from any entry point, and no unresolved imports
+// on the way. Must stay not_affected — the fix must not touch this case.
+upsertNode('reach-test:fn:unreached', 'function', 'deadCodeUser');
+upsertDependency('reach-test:dep:unreachable', 'npm', 'unreachable-lib');
+insertEdge('reach-test:fn:unreached', 'reach-test:dep:unreachable', 'imports');
+upsertVuln('reach-test:vuln:unreachable', 'reach-test:dep:unreachable');
+
+// Case 3 (regression guard): dependency genuinely reachable from the route.
+// Must stay affected.
+upsertDependency('reach-test:dep:reachable', 'npm', 'reachable-lib');
+insertEdge('reach-test:route:1', 'reach-test:dep:reachable', 'calls');
+upsertVuln('reach-test:vuln:reachable', 'reach-test:dep:reachable');
+
+// Synthetic fixture IDs, cleaned up in `finally` below regardless of outcome
+// — this shares the suite's one mock database with every later CLI-driven
+// section (e.g. `security ci-report`, which exits non-zero on an affected
+// vulnerability by design), so leaving these rows behind would leak a fake
+// "affected" finding into all of them.
+const testNodeIds = [
+  'reach-test:route:1', 'reach-test:fn:unreached',
+  'reach-test:dep:container', 'reach-test:dep:unreachable', 'reach-test:dep:reachable',
+  'reach-test:vuln:container', 'reach-test:vuln:unreachable', 'reach-test:vuln:reachable',
+];
+function cleanupFixtures() {
+  for (const id of testNodeIds) {
+    rawDb.run(`DELETE FROM edges WHERE source = ? OR target = ?`, [id, id]);
+    rawDb.run(`DELETE FROM sec_reachability WHERE vulnerability_node_id = ?`, [id]);
+    rawDb.run(`DELETE FROM sec_vulnerabilities WHERE node_id = ?`, [id]);
+    rawDb.run(`DELETE FROM sec_dependencies WHERE node_id = ?`, [id]);
+    rawDb.run(`DELETE FROM nodes WHERE id = ?`, [id]);
+  }
+}
+
+try {
+  const { ReachabilityAnalyzer } = require(path.join(rootDir, 'dist/security/reachability.js'));
+  const analyzer = new ReachabilityAnalyzer(db, {});
+
+  const r1 = await analyzer.analyze('reach-test:vuln:container');
+  const r2 = await analyzer.analyze('reach-test:vuln:unreachable');
+  const r3 = await analyzer.analyze('reach-test:vuln:reachable');
+
+  console.log('container (zero incoming edges):', r1.verdict, r1.reason);
+  console.log('unreachable (has edges, no path):', r2.verdict, r2.reason);
+  console.log('reachable (real path exists):   ', r3.verdict, r3.reason);
+
+  if (r1.verdict !== 'under_investigation') throw new Error(`container: expected under_investigation, got ${r1.verdict}`);
+  if (r1.reason !== 'no_call_graph_signal') throw new Error(`container: expected reason no_call_graph_signal, got ${r1.reason}`);
+  if (r2.verdict !== 'not_affected') throw new Error(`unreachable: expected not_affected, got ${r2.verdict}`);
+  if (r2.reason !== 'no_path_found') throw new Error(`unreachable: expected reason no_path_found, got ${r2.reason}`);
+  if (r3.verdict !== 'affected') throw new Error(`reachable: expected affected, got ${r3.verdict}`);
+  if (r3.reason !== 'path_found') throw new Error(`reachable: expected reason path_found, got ${r3.reason}`);
+
+  // --explain: a plain-English explanation exists for every reason and
+  // actually differs per case (not a generic fallback string).
+  const { explainReachability } = require(path.join(rootDir, 'dist/security/reachability.js'));
+  const e1 = explainReachability(r1);
+  const e2 = explainReachability(r2);
+  const e3 = explainReachability(r3);
+  if (!e1 || !e2 || !e3) throw new Error('explainReachability returned an empty string for one of the cases');
+  if (new Set([e1, e2, e3]).size !== 3) throw new Error('explainReachability returned the same text for different reasons');
+  if (!/classpath scanning|reflection/i.test(e1)) throw new Error(`container explanation missing expected content: ${e1}`);
+
+  console.log('ALL_REACHABILITY_EDGE_CASES_OK');
+} finally {
+  cleanupFixtures();
+}
+NODEEOF
+
+if [ $? -eq 0 ]; then
+  ok "dipendenza senza edge in ingresso (tipo tomcat-embed-core): under_investigation / no_call_graph_signal"
+  ok "dipendenza referenziata ma irraggiungibile: resta not_affected / no_path_found (nessuna regressione)"
+  ok "dipendenza realmente raggiungibile: resta affected / path_found (nessuna regressione)"
+  ok "explainReachability: testo diverso e non vuoto per ciascun reason"
+else
+  fail "reachability edge-case test fallito"
+fi
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PARTE B — Comandi CLI
@@ -302,6 +478,16 @@ echo -e "  ${BOLD}[B3] reachability${RESET}"
 OUT=$($KG reachability express 2>&1); EXIT=$?
 [ $EXIT -eq 0 ] && ok "reachability express: exit 0" || fail "reachability express: exit $EXIT"
 [ -n "$OUT"   ] && ok "reachability: output non vuoto" || warn "reachability: output vuoto"
+
+EXPLAIN_OUT=$($KG reachability express --explain 2>&1); EXPLAIN_EXIT=$?
+[ $EXPLAIN_EXIT -eq 0 ] && ok "reachability express --explain: exit 0" || fail "reachability express --explain: exit $EXPLAIN_EXIT"
+if echo "$EXPLAIN_OUT" | grep -qi "No vulnerabilities found"; then
+  ok "reachability --explain: nessuna vulnerabilità per 'express' in questo mock (atteso)"
+else
+  echo "$EXPLAIN_OUT" | grep -qi "Explanation" \
+    && ok "reachability --explain: sezione Explanation presente" \
+    || fail "reachability --explain: sezione Explanation mancante"
+fi
 
 # ── B4. staleness ─────────────────────────────────────────────────────────────
 sep

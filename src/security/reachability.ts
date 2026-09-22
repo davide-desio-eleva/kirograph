@@ -13,6 +13,7 @@ import type { GraphDatabase } from '../db/database';
 import type { KiroGraphConfig } from '../config';
 import type {
   ReachabilityVerdict,
+  ReachabilityReason,
   ReachabilityPath,
   ReachabilityResult,
   ImpactSummary,
@@ -20,6 +21,7 @@ import type {
 
 /** Edge kinds used for reachability traversal */
 const TRAVERSAL_EDGE_KINDS = ['calls', 'imports', 'references'] as const;
+const TRAVERSAL_EDGE_KINDS_SQL = TRAVERSAL_EDGE_KINDS.map(k => `'${k}'`).join(',');
 
 /** Maximum unresolved symbols to report (for the under_investigation verdict) */
 const MAX_UNRESOLVED_SYMBOLS = 50;
@@ -61,15 +63,45 @@ export class ReachabilityAnalyzer {
 
     if (!depEdge) {
       // No dependency linked — cannot determine reachability
-      return {
+      const result: ReachabilityResult = {
         verdict: 'under_investigation',
+        reason: 'no_dependency_link',
         paths: [],
         unresolvedSymbols: [],
         reachingEntryPointCount: 0,
       };
+      this.storeReachabilityResult(rawDb, vulnerabilityNodeId, result);
+      return result;
     }
 
     const dependencyNodeId: string = depEdge.source;
+
+    // Step 1b: If nothing in the indexed code ever calls, imports, or
+    // references this dependency directly, the reverse BFS below is a
+    // guaranteed no-op regardless of the rest of the graph — it always
+    // reports "no path, no unresolved imports" and falls through to
+    // not_affected. That's a false negative for dependencies a framework
+    // wires in via classpath scanning/reflection rather than an explicit
+    // reference — embedded servlet containers (Tomcat, Netty, Jetty,
+    // Undertow) are the common case: they sit in the request path of every
+    // route, but application code never calls into them by name. The call
+    // graph has no signal about this dependency at all, so "not reachable"
+    // cannot be concluded — report under_investigation instead.
+    const incomingEdgeCount: { c: number } = rawDb.get(
+      `SELECT COUNT(*) as c FROM edges WHERE target = ? AND kind IN (${TRAVERSAL_EDGE_KINDS_SQL})`,
+      [dependencyNodeId],
+    );
+    if (incomingEdgeCount.c === 0) {
+      const result: ReachabilityResult = {
+        verdict: 'under_investigation',
+        reason: 'no_call_graph_signal',
+        paths: [],
+        unresolvedSymbols: [],
+        reachingEntryPointCount: 0,
+      };
+      this.storeReachabilityResult(rawDb, vulnerabilityNodeId, result);
+      return result;
+    }
 
     // Step 2: Find all Entry_Points
     // Entry points are: nodes with kind='route' OR nodes with kind='function' that are exported
@@ -81,12 +113,15 @@ export class ReachabilityAnalyzer {
 
     if (entryPoints.length === 0) {
       // No entry points — cannot determine reachability
-      return {
+      const result: ReachabilityResult = {
         verdict: 'not_affected',
+        reason: 'no_entry_points',
         paths: [],
         unresolvedSymbols: [],
         reachingEntryPointCount: 0,
       };
+      this.storeReachabilityResult(rawDb, vulnerabilityNodeId, result);
+      return result;
     }
 
     // Step 3: Reverse BFS from the dependency node through INCOMING edges
@@ -115,16 +150,21 @@ export class ReachabilityAnalyzer {
     //  - not_affected: no path found and no unresolved imports — strong signal.
     const cappedUnresolved = unresolvedSymbols.slice(0, MAX_UNRESOLVED_SYMBOLS);
     let verdict: ReachabilityVerdict;
+    let reason: ReachabilityReason;
     if (reachingPaths.length > 0) {
       verdict = 'affected';
+      reason = 'path_found';
     } else if (cappedUnresolved.length > 0) {
       verdict = 'under_investigation';
+      reason = 'unresolved_imports';
     } else {
       verdict = 'not_affected';
+      reason = 'no_path_found';
     }
 
     const result: ReachabilityResult = {
       verdict,
+      reason,
       paths: reachingPaths,
       unresolvedSymbols: verdict === 'under_investigation' ? cappedUnresolved : [],
       reachingEntryPointCount: reachingPaths.length,
@@ -287,7 +327,7 @@ export class ReachabilityAnalyzer {
     const visited = new Set<string>();
     const parentMap = new Map<string, string>(); // child → parent (for path reconstruction)
 
-    const edgeKinds = TRAVERSAL_EDGE_KINDS.map(k => `'${k}'`).join(',');
+    const edgeKinds = TRAVERSAL_EDGE_KINDS_SQL;
     const queue: string[] = [dependencyNodeId];
     visited.add(dependencyNodeId);
 
@@ -386,5 +426,32 @@ export class ReachabilityAnalyzer {
         Date.now(),
       ],
     );
+  }
+}
+
+/**
+ * Plain-English explanation of a reachability result, for `--explain` on
+ * `kirograph reachability` and the `kirograph_reachability` MCP tool.
+ * Pure function of the result — no DB access, safe to call on a result
+ * that was just computed or re-derived from one already in hand.
+ */
+export function explainReachability(result: ReachabilityResult): string {
+  switch (result.reason) {
+    case 'path_found':
+      return `Reachable: ${result.reachingEntryPointCount} entry point${result.reachingEntryPointCount === 1 ? '' : 's'} have a call/import/reference path to this dependency (see paths below).`;
+    case 'no_dependency_link':
+      return `This vulnerability isn't linked to any dependency node in the graph, so reachability can't be evaluated at all. This usually means the vulnerability was registered manually (e.g. via "kirograph vulns --add") against a package that isn't currently indexed.`;
+    case 'no_call_graph_signal':
+      return `Nothing in the indexed code explicitly imports, calls, or references this dependency — it has zero incoming edges in the call graph. This is common for dependencies a framework wires in via classpath scanning or reflection rather than an explicit reference (e.g. an embedded servlet container like Tomcat, Netty, or Jetty). The call graph has no signal about it either way, so "not reachable" can't be concluded.`;
+    case 'unresolved_imports':
+      return `No call/import/reference path was found from any entry point, but the backward traversal hit ${result.unresolvedSymbols.length} unresolved import${result.unresolvedSymbols.length === 1 ? '' : 's'} along the way (dynamic dispatch, reflection, or unindexed code — see below). The graph is incomplete near this dependency, so "not reachable" can't be concluded with confidence.`;
+    case 'no_entry_points':
+      return `No entry points (HTTP routes or exported functions) were found anywhere in the indexed project, so there's nowhere to start a reachability search from. This can mean the project genuinely has none (a library, not a server), or that entry-point detection missed them for this codebase.`;
+    case 'no_path_found':
+      return `No call/import/reference path was found from any entry point to this dependency, and the traversal completed without hitting any unresolved imports — a high-confidence result.`;
+    default: {
+      const _exhaustive: never = result.reason;
+      return _exhaustive;
+    }
   }
 }
