@@ -25,6 +25,9 @@ const SCOPE_FIELDS: Array<{ field: string; scope: ParsedDependency['scope'] }> =
  */
 type ResolvedVersionMap = Map<string, string>;
 
+/** Package name → SPDX license string. Built from package-lock.json's "packages" map. */
+type LicenseMap = Map<string, string>;
+
 /**
  * Parse an npm package.json manifest and extract dependency declarations
  * with version constraints, scopes, and resolved versions from lock files.
@@ -58,8 +61,11 @@ export async function parseNpmManifest(
   // Attempt to load resolved versions from lock file
   const resolvedVersions = loadResolvedVersions(manifestDir);
 
-  // Extract the package-level license
-  const license = extractNpmLicense(pkg);
+  // Per-package licenses, keyed by package name — read from package-lock.json's
+  // "packages" map (npm v7+ lockfile v2/v3 records each installed package's own
+  // "license" field there). This is each dependency's *own* license, not the
+  // consuming project's — see loadNpmLicenses() for why that distinction matters.
+  const licenses = loadNpmLicenses(manifestDir);
 
   // Extract dependencies from each scope field
   const dependencies: ParsedDependency[] = [];
@@ -90,6 +96,8 @@ export async function parseNpmManifest(
       }
 
       const resolvedVersion = resolvedVersions.get(name);
+
+      const license = licenses.get(name);
 
       dependencies.push({
         name,
@@ -124,6 +132,7 @@ export async function parseNpmManifest(
       const alreadyDeclared = dependencies.some(d => d.name === name);
       if (!alreadyDeclared) {
         const resolvedVersion = resolvedVersions.get(name);
+        const license = licenses.get(name);
         dependencies.push({
           name,
           declaredConstraint: constraint,
@@ -264,6 +273,7 @@ function extractTransitiveNpmDependencies(
     if (typeof version !== 'string') continue;
 
     seen.add(name);
+    const license = normalizeLicenseField(pkg);
     transitive.push({
       name,
       // No real semver range exists at the project level for a transitive
@@ -273,6 +283,7 @@ function extractTransitiveNpmDependencies(
       scope: pkg.dev === true ? 'development' : 'production',
       ecosystem: 'npm',
       sourceManifest: lockRelativePath,
+      ...(license !== undefined ? { license } : {}),
     });
   }
 
@@ -321,6 +332,53 @@ function loadResolvedVersions(manifestDir: string): ResolvedVersionMap {
     } catch (err) {
       logWarn(`[sec:npm] Failed to parse yarn.lock: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  return map;
+}
+
+/**
+ * Load each installed package's own SPDX license from package-lock.json's
+ * "packages" map (npm v7+ lockfile v2/v3). npm records the "license" field
+ * from each package's own package.json there when it exists — this is the
+ * dependency's *own* license, not the consuming project's, so it's the
+ * correct source for license-compliance checks (issue #39 follow-up: the
+ * project's own root package.json "license" field was previously applied to
+ * every dependency, which is both wrong when present and leaves every
+ * transitive-only package — the majority in most trees — as "unknown").
+ *
+ * pnpm-lock.yaml and yarn.lock don't carry a comparably structured per-package
+ * license field, so this only covers package-lock.json for now; other lock
+ * formats fall back to no license data, same as before this fix.
+ */
+function loadNpmLicenses(manifestDir: string): LicenseMap {
+  const map: LicenseMap = new Map();
+
+  const lockPath = path.join(manifestDir, 'package-lock.json');
+  if (!fs.existsSync(lockPath)) return map;
+
+  let lockData: unknown;
+  try {
+    lockData = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+  } catch (err) {
+    logWarn(`[sec:npm] Failed to parse package-lock.json for license data: ${err instanceof Error ? err.message : String(err)}`);
+    return map;
+  }
+
+  if (typeof lockData !== 'object' || lockData === null) return map;
+  const packages = (lockData as Record<string, unknown>).packages;
+  if (typeof packages !== 'object' || packages === null) return map;
+
+  for (const [key, value] of Object.entries(packages as Record<string, unknown>)) {
+    if (key === '') continue; // skip the root project entry
+    if (typeof value !== 'object' || value === null) continue;
+    const pkg = value as Record<string, unknown>;
+
+    const name = key.replace(/^.*node_modules\//, '');
+    if (!name || map.has(name)) continue;
+
+    const license = normalizeLicenseField(pkg);
+    if (license !== undefined) map.set(name, license);
   }
 
   return map;
@@ -472,10 +530,13 @@ function extractPackageNameFromYarnHeader(header: string): string | null {
 }
 
 /**
- * Extract the license field from a parsed package.json object.
- * Handles both string format (`"MIT"`) and object format (`{"type":"MIT"}`).
+ * Normalize a package's `license`/`licenses` field into a single SPDX-ish
+ * string. Handles the string format (`"MIT"`), the object format
+ * (`{"type":"MIT"}`), and the legacy `licenses` array format. Used both for
+ * package-lock.json's per-package `license` entries and, if ever needed,
+ * a raw package.json object.
  */
-function extractNpmLicense(pkg: Record<string, unknown>): string | undefined {
+function normalizeLicenseField(pkg: Record<string, unknown>): string | undefined {
   const raw = pkg['license'];
   if (typeof raw === 'string' && raw.trim() !== '') {
     return raw.trim();

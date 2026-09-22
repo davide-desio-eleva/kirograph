@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.1] - Unreleased: Correct per-dependency license detection (npm + Maven)
+
+### Fixed
+
+- **Security (license detection)**: `kirograph licenses` reported almost every dependency as `unknown`, and the handful that did show a license could show the *wrong* one (issue #39 follow-up, reported after testing 1.1.1 against real Spring Boot and React projects). Root cause: `parseNpmManifest`/`parseMavenManifest` read the license from the **project's own** `package.json`/`pom.xml` and applied that single value to every dependency it declared — not each dependency's own license. A project with no `license` field produced `unknown` for everything; a project that did declare one had it silently bleed onto unrelated third-party packages, which also made `kirograph licenses --deny`/`--warn` policy checks meaningless (they'd match the project's own license, never a dependency's real one). Purely transitive-only packages — the majority of any dependency tree — never got a license at all, regardless of this bug, since that code path never touched the field.
+  - **npm**: now reads each dependency's own `license` field from `package-lock.json`'s per-package `"packages"` entries (present since npm v7 lockfile v2/v3, populated from that package's own `package.json` when npm generated the lock) — for both direct and transitive-only dependencies. No network call, no `node_modules` read required. pnpm/yarn lock files don't carry an equivalent structured field, so those stay `unknown` as before.
+  - **Maven**: now reads each dependency's own POM from the local Maven repository (`~/.m2/repository/<groupId>/<artifactId>/<version>/<artifactId>-<version>.pom`, respecting `~/.m2/settings.xml`'s `<localRepository>` override), the same local-file-only philosophy already used for `dependency-tree.txt`. Only covers dependencies that have actually been resolved locally (i.e. the project has been built at least once) — a clean-checkout CI run with an empty local repo still reports `unknown`, same as before this fix, rather than guessing.
+  - Neither ecosystem ever applies the *project's own* declared license to a dependency anymore.
+
 ## [1.2.0] - Unreleased: Opt-in typed schema validation for memory fields and wiki frontmatter
 
 Inspired by [tmd](https://github.com/alfonsograziano/tmd) (Typed Markdown): validating structured fields against a JSON Schema per kind/type, registered by dropping a schema file in a directory — no index to maintain, and a kind/type with no schema registered is simply never validated. Both features are off by default and fully additive: existing memory writes and wiki pages are completely unaffected until explicitly opted in.
