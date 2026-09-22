@@ -320,6 +320,126 @@ sqlite3 "$DB" \
              "$eco" "$n" "$prod" "$dev" "$resolved" "$incomplete"
     done || warn "Nessuna dipendenza nel DB"
 
+# ── A15. Reachability — dipendenza mai referenziata nel codice (issue #39) ─────
+sep
+echo -e "  ${BOLD}[A15] Reachability — dipendenza con zero edge in ingresso${RESET}"
+echo -e "  ${DIM}Un pacchetto tipo tomcat-embed-core: mai importato/chiamato esplicitamente (wiring via classpath/reflection).${RESET}"
+echo -e "  ${DIM}Prima del fix cadeva su 'not_affected' (falso negativo); ora deve risultare 'under_investigation'.${RESET}\n"
+
+ROOT_DIR="$ROOT" TEST_DIR="$TEST_DIR" node --input-type=module << 'NODEEOF'
+import path from 'path';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
+const rootDir = process.env.ROOT_DIR;
+const testDir = process.env.TEST_DIR;
+
+const KiroGraph = require(path.join(rootDir, 'dist/index.js')).default;
+const cg = await KiroGraph.open(testDir);
+const db = cg.getDatabase();
+db.applySecuritySchema();
+const rawDb = db.getRawDb();
+
+const now = Date.now();
+function upsertNode(id, kind, name, isExported = 0) {
+  rawDb.run(
+    `INSERT OR REPLACE INTO nodes (id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column, end_column, is_exported, is_async, is_static, is_abstract, updated_at)
+     VALUES (?, ?, ?, ?, 'src/app.ts', 'typescript', 1, 1, 0, 0, ?, 0, 0, 0, ?)`,
+    [id, kind, name, `src/app.ts::${name}`, isExported, now],
+  );
+}
+function insertEdge(source, target, kind) {
+  rawDb.run(`INSERT INTO edges (source, target, kind) VALUES (?, ?, ?)`, [source, target, kind]);
+}
+function upsertDependency(nodeId, ecosystem, pkgName) {
+  upsertNode(nodeId, 'dependency', pkgName);
+  rawDb.run(
+    `INSERT OR REPLACE INTO sec_dependencies (node_id, ecosystem, package_name, declared_constraint, resolved_version, scope, source_manifests)
+     VALUES (?, ?, ?, '1.0.0', '1.0.0', 'production', '[]')`,
+    [nodeId, ecosystem, pkgName],
+  );
+}
+function upsertVuln(vulnId, depNodeId) {
+  upsertNode(vulnId, 'vulnerability', vulnId);
+  rawDb.run(
+    `INSERT OR REPLACE INTO sec_vulnerabilities (node_id, cve_id, severity_score, affected_ranges, source_database)
+     VALUES (?, ?, 7.5, '[]', 'OSV')`,
+    [vulnId, vulnId],
+  );
+  insertEdge(depNodeId, vulnId, 'has_vulnerability');
+}
+
+upsertNode('reach-test:route:1', 'route', 'GET /api/x');
+
+// Case 1: "container" dependency — zero incoming calls/imports/references
+// edges anywhere in the graph (like tomcat-embed-core). Expect: under_investigation.
+upsertDependency('reach-test:dep:container', 'maven', 'org.apache.tomcat.embed:tomcat-embed-core');
+upsertVuln('reach-test:vuln:container', 'reach-test:dep:container');
+
+// Case 2 (regression guard): dependency IS referenced somewhere in code, but
+// that code is never reached from any entry point, and no unresolved imports
+// on the way. Must stay not_affected — the fix must not touch this case.
+upsertNode('reach-test:fn:unreached', 'function', 'deadCodeUser');
+upsertDependency('reach-test:dep:unreachable', 'npm', 'unreachable-lib');
+insertEdge('reach-test:fn:unreached', 'reach-test:dep:unreachable', 'imports');
+upsertVuln('reach-test:vuln:unreachable', 'reach-test:dep:unreachable');
+
+// Case 3 (regression guard): dependency genuinely reachable from the route.
+// Must stay affected.
+upsertDependency('reach-test:dep:reachable', 'npm', 'reachable-lib');
+insertEdge('reach-test:route:1', 'reach-test:dep:reachable', 'calls');
+upsertVuln('reach-test:vuln:reachable', 'reach-test:dep:reachable');
+
+// Synthetic fixture IDs, cleaned up in `finally` below regardless of outcome
+// — this shares the suite's one mock database with every later CLI-driven
+// section (e.g. `security ci-report`, which exits non-zero on an affected
+// vulnerability by design), so leaving these rows behind would leak a fake
+// "affected" finding into all of them.
+const testNodeIds = [
+  'reach-test:route:1', 'reach-test:fn:unreached',
+  'reach-test:dep:container', 'reach-test:dep:unreachable', 'reach-test:dep:reachable',
+  'reach-test:vuln:container', 'reach-test:vuln:unreachable', 'reach-test:vuln:reachable',
+];
+function cleanupFixtures() {
+  for (const id of testNodeIds) {
+    rawDb.run(`DELETE FROM edges WHERE source = ? OR target = ?`, [id, id]);
+    rawDb.run(`DELETE FROM sec_reachability WHERE vulnerability_node_id = ?`, [id]);
+    rawDb.run(`DELETE FROM sec_vulnerabilities WHERE node_id = ?`, [id]);
+    rawDb.run(`DELETE FROM sec_dependencies WHERE node_id = ?`, [id]);
+    rawDb.run(`DELETE FROM nodes WHERE id = ?`, [id]);
+  }
+}
+
+try {
+  const { ReachabilityAnalyzer } = require(path.join(rootDir, 'dist/security/reachability.js'));
+  const analyzer = new ReachabilityAnalyzer(db, {});
+
+  const r1 = await analyzer.analyze('reach-test:vuln:container');
+  const r2 = await analyzer.analyze('reach-test:vuln:unreachable');
+  const r3 = await analyzer.analyze('reach-test:vuln:reachable');
+
+  console.log('container (zero incoming edges):', r1.verdict);
+  console.log('unreachable (has edges, no path):', r2.verdict);
+  console.log('reachable (real path exists):   ', r3.verdict);
+
+  if (r1.verdict !== 'under_investigation') throw new Error(`container: expected under_investigation, got ${r1.verdict}`);
+  if (r2.verdict !== 'not_affected') throw new Error(`unreachable: expected not_affected, got ${r2.verdict}`);
+  if (r3.verdict !== 'affected') throw new Error(`reachable: expected affected, got ${r3.verdict}`);
+
+  console.log('ALL_REACHABILITY_EDGE_CASES_OK');
+} finally {
+  cleanupFixtures();
+}
+NODEEOF
+
+if [ $? -eq 0 ]; then
+  ok "dipendenza senza edge in ingresso (tipo tomcat-embed-core): under_investigation"
+  ok "dipendenza referenziata ma irraggiungibile: resta not_affected (nessuna regressione)"
+  ok "dipendenza realmente raggiungibile: resta affected (nessuna regressione)"
+else
+  fail "reachability edge-case test fallito"
+fi
+
 # ══════════════════════════════════════════════════════════════════════════════
 # PARTE B — Comandi CLI
 # ══════════════════════════════════════════════════════════════════════════════

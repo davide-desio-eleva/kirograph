@@ -20,6 +20,7 @@ import type {
 
 /** Edge kinds used for reachability traversal */
 const TRAVERSAL_EDGE_KINDS = ['calls', 'imports', 'references'] as const;
+const TRAVERSAL_EDGE_KINDS_SQL = TRAVERSAL_EDGE_KINDS.map(k => `'${k}'`).join(',');
 
 /** Maximum unresolved symbols to report (for the under_investigation verdict) */
 const MAX_UNRESOLVED_SYMBOLS = 50;
@@ -72,6 +73,32 @@ export class ReachabilityAnalyzer {
     }
 
     const dependencyNodeId: string = depEdge.source;
+
+    // Step 1b: If nothing in the indexed code ever calls, imports, or
+    // references this dependency directly, the reverse BFS below is a
+    // guaranteed no-op regardless of the rest of the graph — it always
+    // reports "no path, no unresolved imports" and falls through to
+    // not_affected. That's a false negative for dependencies a framework
+    // wires in via classpath scanning/reflection rather than an explicit
+    // reference — embedded servlet containers (Tomcat, Netty, Jetty,
+    // Undertow) are the common case: they sit in the request path of every
+    // route, but application code never calls into them by name. The call
+    // graph has no signal about this dependency at all, so "not reachable"
+    // cannot be concluded — report under_investigation instead.
+    const incomingEdgeCount: { c: number } = rawDb.get(
+      `SELECT COUNT(*) as c FROM edges WHERE target = ? AND kind IN (${TRAVERSAL_EDGE_KINDS_SQL})`,
+      [dependencyNodeId],
+    );
+    if (incomingEdgeCount.c === 0) {
+      const result: ReachabilityResult = {
+        verdict: 'under_investigation',
+        paths: [],
+        unresolvedSymbols: [],
+        reachingEntryPointCount: 0,
+      };
+      this.storeReachabilityResult(rawDb, vulnerabilityNodeId, result);
+      return result;
+    }
 
     // Step 2: Find all Entry_Points
     // Entry points are: nodes with kind='route' OR nodes with kind='function' that are exported
@@ -291,7 +318,7 @@ export class ReachabilityAnalyzer {
     const visited = new Set<string>();
     const parentMap = new Map<string, string>(); // child → parent (for path reconstruction)
 
-    const edgeKinds = TRAVERSAL_EDGE_KINDS.map(k => `'${k}'`).join(',');
+    const edgeKinds = TRAVERSAL_EDGE_KINDS_SQL;
     const queue: string[] = [dependencyNodeId];
     visited.add(dependencyNodeId);
 
