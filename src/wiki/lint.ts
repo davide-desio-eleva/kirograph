@@ -8,8 +8,7 @@
 import * as path from 'path';
 import type { WikiLintIssue } from './types';
 import type { WikiDatabase } from './database';
-
-const LINK_RE = /\[\[([^\]]+)\]\]/g;
+import { extractLinks } from './links';
 
 export function lintWiki(wikiDb: WikiDatabase): WikiLintIssue[] {
   const issues: WikiLintIssue[] = [];
@@ -18,10 +17,7 @@ export function lintWiki(wikiDb: WikiDatabase): WikiLintIssue[] {
 
   for (const page of pages) {
     // Broken [[slug]] links
-    let m: RegExpExecArray | null;
-    const re = new RegExp(LINK_RE.source, 'g');
-    while ((m = re.exec(page.content)) !== null) {
-      const linked = m[1].trim();
+    for (const linked of extractLinks(page.content)) {
       if (!slugSet.has(linked)) {
         issues.push({
           kind: 'broken_link',
@@ -34,7 +30,7 @@ export function lintWiki(wikiDb: WikiDatabase): WikiLintIssue[] {
 
     // Orphan: no ## Related section and no incoming links from other pages
     const hasRelated = /^## Related/m.test(page.content);
-    const hasIncoming = pages.some(p => p.slug !== page.slug && p.content.includes(`[[${page.slug}]]`));
+    const hasIncoming = pages.some(p => p.slug !== page.slug && extractLinks(p.content).includes(page.slug));
     if (!hasRelated && !hasIncoming && pages.length > 1) {
       issues.push({
         kind: 'orphan',

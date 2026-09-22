@@ -1348,6 +1348,8 @@
       { name: 'wiki page',       args: '<slug>',   desc: 'Print the full content of a wiki page' },
       { name: 'wiki list',       args: null,       desc: 'List all wiki pages' },
       { name: 'wiki lint',       args: null,       desc: 'Health check the wiki for broken links and orphans' },
+      { name: 'wiki links',      args: '<slug>',   desc: 'Show outgoing, broken, and incoming [[slug]] links for a page' },
+      { name: 'wiki rename',     args: '<from> <to>', desc: 'Rename a page slug, updating every [[slug]] reference to it' },
       { name: 'wiki reindex',    args: null,       desc: 'Rebuild SQLite index from .kirograph/wiki/*.md files' },
       { name: 'wiki status',     args: null,       desc: 'Wiki subsystem stats: page count, source count' },
       { name: 'wiki synthesize', args: null,       desc: 'Run local-model wiki synthesis over the pending queue' },

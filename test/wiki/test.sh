@@ -1073,6 +1073,99 @@ echo "$REINDEX_OUT" | grep -qiE "reindexed|✓|page" \
   && ok "kirograph wiki reindex: output OK" \
   || fail "kirograph wiki reindex: output inatteso"
 
+# ── [24] CLI: wiki links ──────────────────────────────────────────────────────
+sep
+echo -e "  ${BOLD}[24] CLI: kirograph wiki links${RESET}\n"
+echo -e "  ${DIM}Fixture: auth-service <-> payment-flow (sezioni 8-10), payment-flow -> [[database-schema]] (rotto, mai creata)${RESET}\n"
+
+LINKS_OUT=$($KG wiki links auth-service 2>&1)
+echo "$LINKS_OUT" | sed 's/^/     /'
+
+echo "$LINKS_OUT" | grep -q "payment-flow" \
+  && ok "wiki links auth-service: outgoing payment-flow presente" \
+  || fail "wiki links auth-service: outgoing payment-flow mancante"
+echo "$LINKS_OUT" | grep -qi "Incoming" \
+  && ok "wiki links auth-service: sezione Incoming presente" \
+  || fail "wiki links auth-service: sezione Incoming mancante"
+
+LINKS_PF_OUT=$($KG wiki links payment-flow 2>&1)
+echo "$LINKS_PF_OUT" | sed 's/^/     /'
+
+echo "$LINKS_PF_OUT" | grep -qi "Broken" \
+  && ok "wiki links payment-flow: sezione Broken presente (database-schema mai creata)" \
+  || fail "wiki links payment-flow: link rotto a database-schema non rilevato"
+echo "$LINKS_PF_OUT" | grep -q "auth-service" \
+  && ok "wiki links payment-flow: incoming da auth-service presente" \
+  || fail "wiki links payment-flow: incoming auth-service mancante"
+
+LINKS_JSON_TMP=$(mktemp)
+$KG wiki links payment-flow --format json > "$LINKS_JSON_TMP" 2>/dev/null || true
+node -e "
+  const fs = require('fs');
+  const links = JSON.parse(fs.readFileSync('$LINKS_JSON_TMP', 'utf8'));
+  if (!links.outgoing.includes('auth-service')) throw new Error('outgoing missing auth-service: ' + JSON.stringify(links));
+  if (!links.broken.includes('database-schema')) throw new Error('broken missing database-schema: ' + JSON.stringify(links));
+  if (!links.incoming.includes('auth-service')) throw new Error('incoming missing auth-service: ' + JSON.stringify(links));
+  console.log('json ok');
+" 2>/dev/null && ok "wiki links --format json: outgoing/broken/incoming corretti" || fail "wiki links --format json: struttura inattesa"
+rm -f "$LINKS_JSON_TMP"
+
+# Slug inesistente → exit 1 + messaggio chiaro
+LINKS_ERR=$($KG wiki links nonexistent-slug-xyz 2>&1 || true)
+echo "$LINKS_ERR" | grep -qiE "not found|nonexistent" \
+  && ok "wiki links (slug inesistente): messaggio di errore chiaro" \
+  || fail "wiki links: errore silenzioso per slug inesistente"
+
+# ── [25] CLI: wiki rename ─────────────────────────────────────────────────────
+sep
+echo -e "  ${BOLD}[25] CLI: kirograph wiki rename${RESET}\n"
+
+RENAME_OUT=$($KG wiki rename payment-flow payments 2>&1)
+echo "$RENAME_OUT" | sed 's/^/     /'
+
+echo "$RENAME_OUT" | grep -q "payments" \
+  && ok "wiki rename payment-flow payments: output OK" \
+  || fail "wiki rename: output inatteso"
+echo "$RENAME_OUT" | grep -qi "auth-service" \
+  && ok "wiki rename: segnala auth-service tra le pagine con link aggiornati" \
+  || fail "wiki rename: auth-service non segnalata come link aggiornato"
+
+[ -f "$TEST_DIR/.kirograph/wiki/payments.md" ] \
+  && ok "  payments.md scritto su disco" \
+  || fail "  payments.md non trovato su disco"
+[ ! -f "$TEST_DIR/.kirograph/wiki/payment-flow.md" ] \
+  && ok "  payment-flow.md rimosso dal vecchio percorso" \
+  || fail "  payment-flow.md ancora presente dopo il rename"
+
+grep -q '\[\[payments\]\]' "$TEST_DIR/.kirograph/wiki/auth-service.md" \
+  && ok "  auth-service.md: [[payment-flow]] riscritto in [[payments]]" \
+  || fail "  auth-service.md: link non riscritto"
+grep -q '\[\[payment-flow\]\]' "$TEST_DIR/.kirograph/wiki/auth-service.md" \
+  && fail "  auth-service.md: riferimento residuo a [[payment-flow]]" \
+  || ok "  auth-service.md: nessun riferimento residuo a [[payment-flow]]"
+
+# DB riflette il rename
+RENAME_PAGE_OUT=$($KG wiki page payments 2>&1)
+echo "$RENAME_PAGE_OUT" | grep -qi "Payment Flow" \
+  && ok "wiki page payments: contenuto raggiungibile con il nuovo slug" \
+  || fail "wiki page payments: contenuto non trovato dopo il rename"
+OLD_PAGE_ERR=$($KG wiki page payment-flow 2>&1 || true)
+echo "$OLD_PAGE_ERR" | grep -qi "not found" \
+  && ok "wiki page payment-flow: vecchio slug non più risolvibile" \
+  || fail "wiki page payment-flow: vecchio slug ancora risolvibile dopo il rename"
+
+# Slug di destinazione già esistente → rifiutato
+RENAME_CONFLICT=$($KG wiki rename auth-service payments 2>&1 || true)
+echo "$RENAME_CONFLICT" | grep -qiE "already exists" \
+  && ok "wiki rename (destinazione esistente): rifiutato correttamente" \
+  || fail "wiki rename: rinomina su slug esistente non rifiutata"
+
+# Slug sorgente inesistente → rifiutato
+RENAME_MISSING=$($KG wiki rename nonexistent-slug-xyz some-target 2>&1 || true)
+echo "$RENAME_MISSING" | grep -qiE "not found" \
+  && ok "wiki rename (sorgente inesistente): rifiutato correttamente" \
+  || fail "wiki rename: rinomina di slug inesistente non rifiutata"
+
 # ── 26. DB: tabelle e conteggi ────────────────────────────────────────────────
 sep
 echo -e "  ${BOLD}[24] DB: tabelle wiki_pages + wiki_fts${RESET}\n"

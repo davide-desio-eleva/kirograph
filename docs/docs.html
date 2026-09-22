@@ -1196,9 +1196,13 @@ kirograph mem export --format jsonl</code></pre>
           <tr><td><code>memoryContextLimit</code></td><td>number</td><td><code>3</code></td><td>Max observations shown in <code>kirograph_context</code></td></tr>
           <tr><td><code>memoryContextThreshold</code></td><td>number</td><td><code>0.3</code></td><td>Min relevance score to include in context</td></tr>
           <tr><td><code>memoryExcludePatterns</code></td><td>string[]</td><td><code>[]</code></td><td>Glob patterns for paths to never capture</td></tr>
+          <tr><td><code>memoryStrictWrites</code></td><td>boolean</td><td><code>false</code></td><td>Reject an observation write with an unknown <code>kind</code> or blank tags instead of silently accepting it</td></tr>
         </tbody>
       </table>
     </div>
+
+    <h3>Schema validation (opt-in)</h3>
+    <p><code>kind</code> is typed as a fixed 6-value union, but nothing validated it at runtime — the CLI's <code>--kind</code> flag and the MCP tool's <code>kind</code> argument both cast straight through, so an arbitrary string could silently land in the <code>kind</code> column and break every downstream consumer that pattern-matches against the known set (search filters, watchmen's passive-capture kind map, timeline rendering). Set <code>memoryStrictWrites: true</code> to reject a write with an unknown <code>kind</code> or blank tags — the violation is named in the error instead of a silent corruption or an opaque crash. Off by default, so existing free-form writes are unaffected. Inspired by <a href="https://github.com/iwe-org/iwe" target="_blank" rel="noopener">IWE</a>'s schema-validated agent writes over MCP.</p>
 
     <h3>Privacy</h3>
     <p>Wrap sensitive content in <code>&lt;private&gt;...&lt;/private&gt;</code> blocks — they are stripped before storage. All data stays in the local <code>.kirograph/kirograph.db</code> file, same as the rest of the graph.</p>
@@ -1336,8 +1340,18 @@ kirograph wiki reindex
 # Lint the wiki: detect broken links, orphan pages
 kirograph wiki lint
 
+# Show outgoing/broken/incoming [[slug]] links for a page
+kirograph wiki links auth-service
+
+# Rename a page slug — moves its file and rewrites every [[slug]] reference to it
+kirograph wiki rename auth-service auth
+
 # Wiki status
 kirograph wiki status</code></pre>
+
+    <h3>Link graph &amp; rename</h3>
+    <p>The wiki's <code>[[slug]]</code> cross-references form a real link graph over the <code>.md</code> files on disk — <code>wiki lint</code> already used it to detect broken links and orphans. <code>kirograph wiki links &lt;slug&gt;</code> exposes that graph directly: outgoing links, broken links (pointing to a slug that doesn't exist), and incoming links (backlinks — other pages that reference this one), as text or <code>--format json</code>. <code>kirograph wiki rename &lt;from&gt; &lt;to&gt;</code> moves the page's file and rewrites every <code>[[from]]</code> reference across the wiki to <code>[[to]]</code> — including the page's own content, for hub pages that link to themselves — then updates the SQLite index and <code>MANIFEST.md</code>. It refuses to rename onto an existing slug or a missing source page.</p>
+    <p>This is a CLI-first port of the navigation/refactor features <a href="https://github.com/iwe-org/iwe" target="_blank" rel="noopener">IWE</a> gets from a full LSP integration (go-to-definition, find-references, rename-with-link-updates) — built on the link graph the wiki module already had, rather than standing up an LSP server. Not exposed as MCP tools; these are maintenance commands, not part of the agent's read/write loop.</p>
 
     <h3>Local model synthesis</h3>
     <p>When <code>wikiSynthesisMode: 'local'</code>, KiroGraph queues source texts and runs a local HuggingFace model (<code>wikiLocalModel</code>) at <code>agentStop</code> via a <code>runCommand</code> hook. Same infrastructure as Watchmen — model downloaded once to <code>~/.kirograph/models/</code>, runs on-device, no API key required.</p>
@@ -1830,6 +1844,7 @@ npm run build   # requires Rust toolchain — https://rustup.rs</code></pre>
       <li><a href="https://github.com/JuliusBrussee/caveman" target="_blank" rel="noopener">caveman</a> by <a href="https://www.linkedin.com/in/julius-brussee/" target="_blank" rel="noopener">Julius Brussee</a>: the caveman mode's agent prose compression concept, multi-level steering injection.</li>
       <li><a href="https://github.com/firstbatchxyz/watchmen" target="_blank" rel="noopener">watchmen</a> by <a href="https://github.com/firstbatchxyz" target="_blank" rel="noopener">firstbatch</a>: the watchmen module's session-mining concept, workspace brief generation, and <code>AGENTS.md</code> mirroring pattern.</li>
       <li><a href="https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f" target="_blank" rel="noopener">LLM Wiki</a> by <a href="https://karpathy.ai/" target="_blank" rel="noopener">Andrej Karpathy</a>: the wiki module's three-op pattern (ingest → apply → lint), WIKI_DIFF block format, two-tool ingest flow, and the principle of knowledge compounding rather than accumulating.</li>
+      <li><a href="https://github.com/iwe-org/iwe" target="_blank" rel="noopener">IWE</a>: a markdown knowledge-graph tool with a full LSP integration and schema-validated agent writes (<code>expect</code> guards, per-type document schemas) over MCP. <code>memoryStrictWrites</code> (opt-in observation schema validation) and <code>kirograph wiki links</code>/<code>kirograph wiki rename</code> (link-graph navigation and rename-with-reference-updates, ported to the CLI rather than a full LSP server) both scale down ideas from IWE to fit KiroGraph's existing memory and wiki modules.</li>
       <li><a href="https://github.com/jgravelle/jdocmunch-mcp" target="_blank" rel="noopener">jDocMunch-MCP</a> by <a href="https://www.linkedin.com/in/j-gravelle-2778223/" target="_blank" rel="noopener">J. Gravelle</a>: the documentation module's section-first retrieval approach, stable section IDs, and byte-offset addressing.</li>
       <li><a href="https://github.com/jgravelle/jdatamunch-mcp" target="_blank" rel="noopener">jDataMunch-MCP</a> by <a href="https://www.linkedin.com/in/j-gravelle-2778223/" target="_blank" rel="noopener">J. Gravelle</a>: the data module's column profiling, streaming parsers, and server-side aggregation approach.</li>
       <li><a href="https://github.com/tirth8205/code-review-graph" target="_blank" rel="noopener">code-review-graph</a> by <a href="https://github.com/tirth8205" target="_blank" rel="noopener">Tirth Kanani</a>: community detection, execution flow tracing, refactoring tools, and multi-platform auto-detection patterns.</li>

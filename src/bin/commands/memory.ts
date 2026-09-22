@@ -104,7 +104,7 @@ export function register(program: Command): void {
     .option('--topic-key <key>', 'Stable semantic key (e.g. architecture/auth-model)')
     .option('--review-after <ms>', 'Epoch ms: schedule re-evaluation after this timestamp')
     .action(async (content: string | undefined, opts: { kind: string; topicKey?: string; reviewAfter?: string }) => {
-      const { MemoryManager } = await import('../../memory/index');
+      const { MemoryManager, MemorySchemaError } = await import('../../memory/index');
       const { loadConfig } = await import('../../config');
       const KiroGraph = (await import('../../index')).default;
 
@@ -140,13 +140,22 @@ export function register(program: Command): void {
       const mem = new MemoryManager(config, db.getRawDb());
       mem.initialize();
 
-      const result = await mem.store({
-        content: text,
-        kind: opts.kind as any,
-        source: 'manual',
-        topicKey: opts.topicKey,
-        reviewAfter: opts.reviewAfter ? parseInt(opts.reviewAfter) : undefined,
-      });
+      let result;
+      try {
+        result = await mem.store({
+          content: text,
+          kind: opts.kind as any,
+          source: 'manual',
+          topicKey: opts.topicKey,
+          reviewAfter: opts.reviewAfter ? parseInt(opts.reviewAfter) : undefined,
+        });
+      } catch (err) {
+        if (err instanceof MemorySchemaError) {
+          console.error(`  ✖ ${err.message}`);
+          cg.close(); process.exit(1);
+        }
+        throw err;
+      }
 
       if (!result) {
         console.log(`  ${dim}Duplicate observation — already stored.${reset}`);

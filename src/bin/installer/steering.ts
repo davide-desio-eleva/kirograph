@@ -1558,9 +1558,14 @@ kirograph wiki search "<query>"
 kirograph wiki page <slug>
 kirograph wiki list
 kirograph wiki lint
+kirograph wiki links <slug>          # outgoing/broken/incoming [[slug]] links for a page
+kirograph wiki rename <from> <to>    # move a page + rewrite every [[from]] reference to [[to]]
 kirograph wiki status
 kirograph wiki reindex
 \`\`\`
+
+Use \`wiki links\` before a \`rename\` to see what else references the page — \`rename\` rewrites
+those references automatically, but it's still a file move, not an MCP tool call.
 `);
     console.log(`  ✓ Wiki workflow steering file written`);
   }
@@ -1601,6 +1606,10 @@ kirograph_mem_store(
 \`\`\`
 
 **topicKey examples:** \`"architecture/auth-model"\`, \`"infra/db-choice"\`, \`"pattern/error-handling"\`
+
+Always use a \`kind\` from the list above. If \`memoryStrictWrites: true\` is set, an unrecognized
+\`kind\` or a blank tag is rejected with the violation named — fix the call and retry, it isn't
+silently dropped.
 
 ## 3. Capture observations from structured text
 
