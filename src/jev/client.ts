@@ -7,7 +7,7 @@
  * detection) as a cheaper/faster alternative to delegating a narrow
  * classification decision to a full agent turn.
  */
-import type { JevQuestion, JevResponse } from './types';
+import type { DecisionClient, JevQuestion, JevResponse } from './types';
 
 const DEFAULT_BASE_URL = 'https://api.typesafe.ai';
 const DEFAULT_MODEL = 'jev-latest';
@@ -29,7 +29,7 @@ export interface JevClientOptions {
   timeoutMs?: number;
 }
 
-export class JevClient {
+export class JevClient implements DecisionClient {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly model: string;

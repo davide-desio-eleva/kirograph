@@ -8,17 +8,17 @@
 import * as path from 'path';
 import type { WikiLintIssue } from './types';
 import type { WikiDatabase } from './database';
-import type { JevClient } from '../jev/client';
+import type { DecisionClient } from '../jev/types';
 import { extractLinks } from './links';
 import { parseFrontmatter, validatePageSchema } from './typed-pages';
 
 export interface LintWikiOptions {
-  /** 'heuristic' (default): keyword co-occurrence. 'jev': ask jev to judge each FTS-similar pair. */
-  contradictionMode?: 'heuristic' | 'jev';
-  /** Confidence (0.0–1.0) above which a jev contradiction judgment is reported. Default: 0.7. */
+  /** 'heuristic' (default): keyword co-occurrence. 'jev'/'strands': ask the model to judge each FTS-similar pair. */
+  contradictionMode?: 'heuristic' | 'jev' | 'strands';
+  /** Confidence (0.0–1.0) above which a model contradiction judgment is reported. Default: 0.7. */
   contradictionConfidenceThreshold?: number;
-  /** Required when contradictionMode is 'jev'. */
-  jevClient?: JevClient;
+  /** Required when contradictionMode is 'jev' or 'strands'. */
+  decisionClient?: DecisionClient;
   /**
    * When set, pages declaring `_type` in their frontmatter are validated
    * against `.kirograph/wiki-schemas/<type>.schema.json` (wikiTypedPages).
@@ -92,15 +92,15 @@ export async function lintWiki(wikiDb: WikiDatabase, opts: LintWikiOptions = {})
       );
       if (alreadyReported) continue;
 
-      if (opts.contradictionMode === 'jev' && opts.jevClient) {
+      if ((opts.contradictionMode === 'jev' || opts.contradictionMode === 'strands') && opts.decisionClient) {
         const { checkContradictionWithJev } = await import('./contradiction-jev');
-        const result = await checkContradictionWithJev(opts.jevClient, page.content, other.content);
+        const result = await checkContradictionWithJev(opts.decisionClient, page.content, other.content);
         const threshold = opts.contradictionConfidenceThreshold ?? 0.7;
         if (result.contradicts && result.confidence >= threshold) {
           issues.push({
             kind: 'contradiction',
             slug: page.slug,
-            detail: `Possible contradiction with [[${other.slug}]] — jev confidence: ${result.confidence.toFixed(2)}`,
+            detail: `Possible contradiction with [[${other.slug}]] — ${opts.contradictionMode} confidence: ${result.confidence.toFixed(2)}`,
             relatedSlug: other.slug,
           });
         }

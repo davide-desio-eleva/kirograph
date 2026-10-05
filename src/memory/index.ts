@@ -339,9 +339,15 @@ export class MemoryManager {
     if (!obsA) throw new Error(`Observation not found: ${observationA}`);
     if (!obsB) throw new Error(`Observation not found: ${observationB}`);
 
-    const { createJevClientFromConfig } = await import('../jev/client');
+    const { createDecisionClient } = await import('../jev/factory');
     const { classifyRelationWithJev } = await import('./relation-jev');
-    const client = createJevClientFromConfig(this.config as unknown as { jevApiKey?: string; jevBaseUrl?: string; jevModel?: string });
+    const cfg = this.config as unknown as {
+      memoryRelationMode?: 'agent' | 'jev' | 'strands';
+      jevApiKey?: string; jevBaseUrl?: string; jevModel?: string;
+      strandsBaseUrl?: string; strandsModel?: string;
+    };
+    const backend = cfg.memoryRelationMode === 'strands' ? 'strands' : 'jev';
+    const client = await createDecisionClient(backend, cfg);
     const { relation, confidence } = await classifyRelationWithJev(client, obsA.content, obsB.content);
 
     const relationId = this.memDb.insertRelation({
@@ -349,13 +355,13 @@ export class MemoryManager {
       observationB: obsBId,
       relation,
       confidence,
-      reason: 'Auto-classified by jev',
+      reason: `Auto-classified by ${backend}`,
     });
 
     const threshold = (this.config as unknown as { memoryRelationConfidenceThreshold?: number }).memoryRelationConfidenceThreshold ?? 0.8;
     const autoJudged = confidence >= threshold;
     if (autoJudged) {
-      this.memDb.judgeRelation(relationId, relation, confidence, 'Auto-judged by jev (confidence >= memoryRelationConfidenceThreshold)');
+      this.memDb.judgeRelation(relationId, relation, confidence, `Auto-judged by ${backend} (confidence >= memoryRelationConfidenceThreshold)`);
     }
 
     return { relationId, relation, confidence, autoJudged };

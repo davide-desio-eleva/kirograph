@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.4.0] - 2026-10-04: strands-decider — local classification backend *(experimental)*
+
+A second typed-classification backend alongside jev, selectable per module. ⚠️ **Experimental.** [strands-decider](https://github.com/strands-labs/strands-decider) is a small, fast decision model ("system one") that runs **locally** — no API key, no cloud, no data leaving the machine. Its `POST /v1/systemone` endpoint is wire-compatible with jev's (same `{state, model, questions}` body, same Choice/Score/Noul answers), so the two backends are interchangeable: the three `*Mode` toggles now accept `'strands'` wherever they accept `'jev'`. Pick `'strands'` for local-only classification, `'jev'` to avoid running a model server. Both are opt-in and off by default; each toggle falls back to its existing behavior when the chosen backend is unreachable.
+
+### Added
+
+- **`memoryRelationMode: 'strands'`**, **`wikiContradictionMode: 'strands'`**, **`securityAuthDetectionMode: 'strands'`** ⚠️ *experimental*: identical behavior to the respective `'jev'` modes (auto-classify + auto-judge relations; judge FTS-similar wiki pairs; backstop the attack-surface auth heuristic), but the judgment is made by a local strands-decider server instead of the jev cloud API.
+- New config: `strandsBaseUrl` (default `http://127.0.0.1:8000`, the `strands-decider serve` default) and `strandsModel` (default `'StrandsAgents/strands-decider-2B-hobson-v19'`). No API key — the local server is unauthenticated.
+- `src/jev/strands-client.ts`: `StrandsClient`, an HTTP client for `POST /v1/systemone` that sends **no** `Authorization` header. `src/jev/types.ts` now exports a `DecisionClient` interface implemented by both `JevClient` and `StrandsClient`; `src/jev/factory.ts` (`createDecisionClient`) selects the backend by mode. The three classification helpers (`classifyRelationWithJev`, `checkContradictionWithJev`, `checkAuthWithJev`) now take a `DecisionClient`, so they run unchanged against either backend.
+- Installer: the classification prompt is now a three-way choice — off (default), jev (cloud, needs `JEV_API_KEY`), or strands-decider (local, no key). Strands setup prints the `strands-decider serve` command instead of creating a `.kirograph/.env`.
+- `test/strands/`: a local mock strands-decider server (`mock-server.js`) and `test.sh` covering all three integrations end-to-end. The mock rejects any request carrying an `Authorization` header, pinning the no-auth contract of `StrandsClient`.
+- `test/benchmark-jev-strands/`: a benchmark (`benchmark.mjs` + `run.sh`) comparing jev and strands-decider across the three production question shapes — per-use-case latency (mean/p50/p95/min/max), batched-request efficiency, and answer agreement. Runs against the bundled mocks with zero setup, or real endpoints via `JEV_API_KEY` / `STRANDS_BASE_URL`.
+
+### Fixed
+
+- The CLI commands `kirograph wiki lint`, `kirograph attack-surface`/`security export`, and `kirograph mem conflicts compare` now forward the strands config fields (and accept `'strands'` mode), so the local backend works from the CLI, not only the MCP tools.
+
 ## [1.3.0] - 2026-09-22: jev-powered classification *(experimental)*
 
 Three `*Mode: 'jev'` toggles, opt-in and off by default. ⚠️ **Experimental.** [jev](https://docs.typesafe.ai) (TypeSafe's System One) is a fast typed-classification model — it returns a calibrated Choice/Score/Noul answer for one narrow question, instead of a full agent turn spent reasoning out the same kind of decision. Each toggle replaces a place where KiroGraph either delegated a narrow classification to the calling agent, or used a fragile keyword/substring heuristic, with an actual judgment call. Unlike KiroGraph's other opt-in modules, jev is a new dependency on a paid third-party API — the only KiroGraph feature requiring one — and its classification quality and API stability haven't been exercised in production yet. Each toggle falls back to its existing non-jev behavior when unset.

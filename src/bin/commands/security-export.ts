@@ -1372,6 +1372,8 @@ export function register(secCmd: import('commander').Command): void {
           jevApiKey: config.jevApiKey,
           jevBaseUrl: config.jevBaseUrl,
           jevModel: config.jevModel,
+          strandsBaseUrl: config.strandsBaseUrl,
+          strandsModel: config.strandsModel,
         });
         attackSurface = await analyzer.analyze();
       } catch { /* non-critical */ }

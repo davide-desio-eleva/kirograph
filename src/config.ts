@@ -89,9 +89,11 @@ export interface KiroGraphConfig {
    * 'jev' — `relation` becomes optional; when omitted, KiroGraph classifies it via
    * the jev API (see `jevApiKey`) and auto-judges it when confidence is above
    * `memoryRelationConfidenceThreshold`, otherwise leaves it pending for review.
+   * 'strands' — same as 'jev' but classified by a local strands-decider server
+   * (see `strandsBaseUrl`) instead of the cloud API; no API key required.
    * Default: 'agent'.
    */
-  memoryRelationMode: 'agent' | 'jev';
+  memoryRelationMode: 'agent' | 'jev' | 'strands';
   /** Confidence (0.0–1.0) above which a jev-classified relation is auto-judged instead of left pending. Default: 0.8. */
   memoryRelationConfidenceThreshold: number;
   /**
@@ -155,9 +157,11 @@ export interface KiroGraphConfig {
    * 'heuristic' — keyword co-occurrence on FTS-similar pages (current behavior).
    * 'jev' — asks the jev API whether each FTS-similar pair actually contradicts,
    * flagged when confidence is above `wikiContradictionConfidenceThreshold`.
+   * 'strands' — same as 'jev' but judged by a local strands-decider server
+   * (see `strandsBaseUrl`) instead of the cloud API; no API key required.
    * Default: 'heuristic'.
    */
-  wikiContradictionMode: 'heuristic' | 'jev';
+  wikiContradictionMode: 'heuristic' | 'jev' | 'strands';
   /** Confidence (0.0–1.0) above which a jev contradiction judgment is reported by `wiki lint`. Default: 0.7. */
   wikiContradictionConfidenceThreshold: number;
   /** Lint frequency: 'weekly' (every ~20 sessions) or 'off'. Default: 'off'. */
@@ -226,9 +230,11 @@ export interface KiroGraphConfig {
    * confirm/override using the route + call-path names as context. The
    * heuristic's positive matches are trusted as-is (not re-checked) to keep
    * this cheap — jev only resolves the heuristic's false-negative gap.
+   * 'strands' — same as 'jev' but asks a local strands-decider server (see
+   * `strandsBaseUrl`) instead of the cloud API; no API key required.
    * Default: 'heuristic'.
    */
-  securityAuthDetectionMode: 'heuristic' | 'jev';
+  securityAuthDetectionMode: 'heuristic' | 'jev' | 'strands';
   /** Confidence (0.0–1.0) above which a jev auth judgment overrides the heuristic's "not authenticated" default. Default: 0.6. */
   securityAuthConfidenceThreshold: number;
   /**
@@ -261,6 +267,19 @@ export interface KiroGraphConfig {
   jevBaseUrl?: string;
   /** jev model ID. Default: 'jev-latest'. */
   jevModel: string;
+  /**
+   * Base URL of a local strands-decider server (https://github.com/strands-labs/strands-decider),
+   * started with `strands-decider serve <checkpoint> --port 8000`. Used by the
+   * `*Mode: 'strands'` toggles — the local, no-API-key alternative to jev.
+   * Default: http://127.0.0.1:8000.
+   */
+  strandsBaseUrl?: string;
+  /**
+   * The model/checkpoint the strands-decider server was started with. Only
+   * echoed back in the request; the server uses whatever checkpoint it loaded.
+   * Default: 'StrandsAgents/strands-decider-2B-hobson-v19'.
+   */
+  strandsModel: string;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -293,6 +312,7 @@ const KNOWN_FIELDS = new Set<string>([
   'enableAgentUtils', 'enableGeneralCompression',
   'contextBudget',
   'jevApiKey', 'jevBaseUrl', 'jevModel',
+  'strandsBaseUrl', 'strandsModel',
   // Legacy aliases / derived fields (accepted but ignored or recomputed)
   'enableCompression', 'compressionLevel', 'enableShellExec',
   // Deprecated: dissolved flag kept here so old configs don't warn
@@ -419,6 +439,8 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     jevApiKey: undefined,
     jevBaseUrl: undefined,
     jevModel: 'jev-latest',
+    strandsBaseUrl: undefined,
+    strandsModel: 'StrandsAgents/strands-decider-2B-hobson-v19',
   };
 }
 
@@ -557,7 +579,7 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const memoryStrictWrites = typeof raw.memoryStrictWrites === 'boolean'
     ? raw.memoryStrictWrites
     : defaults.memoryStrictWrites;
-  const MEMORY_RELATION_MODES = new Set(['agent', 'jev']);
+  const MEMORY_RELATION_MODES = new Set(['agent', 'jev', 'strands']);
   const memoryRelationMode = typeof raw.memoryRelationMode === 'string' && MEMORY_RELATION_MODES.has(raw.memoryRelationMode)
     ? (raw.memoryRelationMode as KiroGraphConfig['memoryRelationMode'])
     : defaults.memoryRelationMode;
@@ -594,7 +616,10 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const wikiLintFrequency = raw.wikiLintFrequency === 'weekly' ? 'weekly' as const : 'off' as const;
   const wikiContextLimit = typeof raw.wikiContextLimit === 'number' ? raw.wikiContextLimit : defaults.wikiContextLimit;
   const wikiContextThreshold = typeof raw.wikiContextThreshold === 'number' ? raw.wikiContextThreshold : defaults.wikiContextThreshold;
-  const wikiContradictionMode = raw.wikiContradictionMode === 'jev' ? 'jev' as const : 'heuristic' as const;
+  const WIKI_CONTRADICTION_MODES = new Set(['heuristic', 'jev', 'strands']);
+  const wikiContradictionMode = typeof raw.wikiContradictionMode === 'string' && WIKI_CONTRADICTION_MODES.has(raw.wikiContradictionMode)
+    ? (raw.wikiContradictionMode as KiroGraphConfig['wikiContradictionMode'])
+    : 'heuristic' as const;
   const wikiContradictionConfidenceThreshold = typeof raw.wikiContradictionConfidenceThreshold === 'number'
     && raw.wikiContradictionConfidenceThreshold >= 0 && raw.wikiContradictionConfidenceThreshold <= 1
     ? raw.wikiContradictionConfidenceThreshold
@@ -679,7 +704,10 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     securityEnrichMaxAgeDays = defaults.securityEnrichMaxAgeDays;
   }
 
-  const securityAuthDetectionMode = raw.securityAuthDetectionMode === 'jev' ? 'jev' as const : 'heuristic' as const;
+  const SECURITY_AUTH_DETECTION_MODES = new Set(['heuristic', 'jev', 'strands']);
+  const securityAuthDetectionMode = typeof raw.securityAuthDetectionMode === 'string' && SECURITY_AUTH_DETECTION_MODES.has(raw.securityAuthDetectionMode)
+    ? (raw.securityAuthDetectionMode as KiroGraphConfig['securityAuthDetectionMode'])
+    : 'heuristic' as const;
   const securityAuthConfidenceThreshold = typeof raw.securityAuthConfidenceThreshold === 'number'
     && raw.securityAuthConfidenceThreshold >= 0 && raw.securityAuthConfidenceThreshold <= 1
     ? raw.securityAuthConfidenceThreshold
@@ -791,6 +819,10 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const jevBaseUrl = typeof raw.jevBaseUrl === 'string' && raw.jevBaseUrl.length > 0 ? raw.jevBaseUrl : undefined;
   const jevModel = typeof raw.jevModel === 'string' && raw.jevModel.length > 0 ? raw.jevModel : defaults.jevModel;
 
+  // ── strands-decider config ──────────────────────────────────────────────────
+  const strandsBaseUrl = typeof raw.strandsBaseUrl === 'string' && raw.strandsBaseUrl.length > 0 ? raw.strandsBaseUrl : undefined;
+  const strandsModel = typeof raw.strandsModel === 'string' && raw.strandsModel.length > 0 ? raw.strandsModel : defaults.strandsModel;
+
   // ── Context budget config ─────────────────────────────────────────────────
   let contextBudget: KiroGraphConfig['contextBudget'] | undefined;
   if (raw.contextBudget && typeof raw.contextBudget === 'object' && !Array.isArray(raw.contextBudget)) {
@@ -899,10 +931,12 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     enableGeneralCompression,
     enableShellExec: shellCompressionLevel !== 'off',
     jevModel,
+    strandsModel,
     ...(architectureLayers !== undefined ? { architectureLayers } : {}),
     ...(contextBudget !== undefined ? { contextBudget } : {}),
     ...(jevApiKey !== undefined ? { jevApiKey } : {}),
     ...(jevBaseUrl !== undefined ? { jevBaseUrl } : {}),
+    ...(strandsBaseUrl !== undefined ? { strandsBaseUrl } : {}),
   };
 }
 

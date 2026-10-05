@@ -65,14 +65,17 @@ export interface AttackSurfaceResult {
 export interface AttackSurfaceAnalyzerOptions {
   /**
    * 'heuristic' (default): substring match only.
-   * 'jev': when the heuristic finds no auth pattern, ask jev to confirm/override.
+   * 'jev': when the heuristic finds no auth pattern, ask jev (cloud) to confirm/override.
+   * 'strands': same backstop, judged by a local strands-decider server.
    */
-  authDetectionMode?: 'heuristic' | 'jev';
-  /** Confidence (0.0–1.0) above which a jev auth judgment overrides the heuristic's "not authenticated" default. Default: 0.6. */
+  authDetectionMode?: 'heuristic' | 'jev' | 'strands';
+  /** Confidence (0.0–1.0) above which a model auth judgment overrides the heuristic's "not authenticated" default. Default: 0.6. */
   authConfidenceThreshold?: number;
   jevApiKey?: string;
   jevBaseUrl?: string;
   jevModel?: string;
+  strandsBaseUrl?: string;
+  strandsModel?: string;
 }
 
 export class AttackSurfaceAnalyzer {
@@ -84,10 +87,10 @@ export class AttackSurfaceAnalyzer {
   async analyze(): Promise<AttackSurfaceResult> {
     const rawDb = this.db.getRawDb();
 
-    let jevClient: import('../jev/client').JevClient | undefined;
-    if (this.opts.authDetectionMode === 'jev') {
-      const { createJevClientFromConfig } = await import('../jev/client');
-      jevClient = createJevClientFromConfig(this.opts);
+    let decisionClient: import('../jev/types').DecisionClient | undefined;
+    if (this.opts.authDetectionMode === 'jev' || this.opts.authDetectionMode === 'strands') {
+      const { createDecisionClient } = await import('../jev/factory');
+      decisionClient = await createDecisionClient(this.opts.authDetectionMode, this.opts);
     }
 
     // Step 1: Query all route nodes
@@ -235,10 +238,10 @@ export class AttackSurfaceAnalyzer {
 
       // jev backstop: only consulted when the heuristic found nothing, to
       // catch custom-named auth wrappers without re-checking every route.
-      if (!isAuthenticated && jevClient) {
+      if (!isAuthenticated && decisionClient) {
         const { checkAuthWithJev } = await import('./auth-detection-jev');
         const jevResult = await checkAuthWithJev(
-          jevClient,
+          decisionClient,
           route.name ?? route.id,
           pathNodeNames.map(r => r.name).filter((n): n is string => !!n),
         );

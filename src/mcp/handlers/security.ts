@@ -610,6 +610,8 @@ export async function handleSecurity(toolName: string, args: Record<string, unkn
         jevApiKey: config.jevApiKey,
         jevBaseUrl: config.jevBaseUrl,
         jevModel: config.jevModel,
+        strandsBaseUrl: config.strandsBaseUrl,
+        strandsModel: config.strandsModel,
       });
       let result;
       try {

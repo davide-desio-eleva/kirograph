@@ -26,9 +26,12 @@ export class KiroGraphWiki {
   private wikiDir: string;
   private wikiSchemasDir: string;
   private autoResolveConflicts: boolean;
-  private contradictionMode: 'heuristic' | 'jev';
+  private contradictionMode: 'heuristic' | 'jev' | 'strands';
   private contradictionConfidenceThreshold: number;
-  private jevConfig: { jevApiKey?: string; jevBaseUrl?: string; jevModel?: string };
+  private decisionConfig: {
+    jevApiKey?: string; jevBaseUrl?: string; jevModel?: string;
+    strandsBaseUrl?: string; strandsModel?: string;
+  };
   private typedPages: boolean;
 
   constructor(
@@ -36,11 +39,13 @@ export class KiroGraphWiki {
     kirographDir: string,
     opts: {
       autoResolveConflicts?: boolean;
-      wikiContradictionMode?: 'heuristic' | 'jev';
+      wikiContradictionMode?: 'heuristic' | 'jev' | 'strands';
       wikiContradictionConfidenceThreshold?: number;
       jevApiKey?: string;
       jevBaseUrl?: string;
       jevModel?: string;
+      strandsBaseUrl?: string;
+      strandsModel?: string;
       typedPages?: boolean;
     } = {}
   ) {
@@ -50,7 +55,10 @@ export class KiroGraphWiki {
     this.autoResolveConflicts = opts.autoResolveConflicts ?? false;
     this.contradictionMode = opts.wikiContradictionMode ?? 'heuristic';
     this.contradictionConfidenceThreshold = opts.wikiContradictionConfidenceThreshold ?? 0.7;
-    this.jevConfig = { jevApiKey: opts.jevApiKey, jevBaseUrl: opts.jevBaseUrl, jevModel: opts.jevModel };
+    this.decisionConfig = {
+      jevApiKey: opts.jevApiKey, jevBaseUrl: opts.jevBaseUrl, jevModel: opts.jevModel,
+      strandsBaseUrl: opts.strandsBaseUrl, strandsModel: opts.strandsModel,
+    };
     this.typedPages = opts.typedPages ?? false;
   }
 
@@ -144,15 +152,15 @@ export class KiroGraphWiki {
 
   async lint(): Promise<WikiLintIssue[]> {
     this.initialize();
-    let jevClient: import('../jev/client').JevClient | undefined;
-    if (this.contradictionMode === 'jev') {
-      const { createJevClientFromConfig } = await import('../jev/client');
-      jevClient = createJevClientFromConfig(this.jevConfig);
+    let decisionClient: import('../jev/types').DecisionClient | undefined;
+    if (this.contradictionMode === 'jev' || this.contradictionMode === 'strands') {
+      const { createDecisionClient } = await import('../jev/factory');
+      decisionClient = await createDecisionClient(this.contradictionMode, this.decisionConfig);
     }
     return lintWiki(this.wikiDb, {
       contradictionMode: this.contradictionMode,
       contradictionConfidenceThreshold: this.contradictionConfidenceThreshold,
-      jevClient,
+      decisionClient,
       ...(this.typedPages ? { wikiSchemasDir: this.wikiSchemasDir } : {}),
     });
   }

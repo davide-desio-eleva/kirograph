@@ -57,6 +57,8 @@ export function register(program: Command): void {
         jevApiKey: config.jevApiKey,
         jevBaseUrl: config.jevBaseUrl,
         jevModel: config.jevModel,
+        strandsBaseUrl: config.strandsBaseUrl,
+        strandsModel: config.strandsModel,
       });
       let result;
       try {

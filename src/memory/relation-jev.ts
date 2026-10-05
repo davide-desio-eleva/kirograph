@@ -5,7 +5,7 @@
  * question instead of requiring the calling agent to reason it out manually
  * and supply `relation`/`confidence` itself.
  */
-import type { JevClient } from '../jev/client';
+import type { DecisionClient } from '../jev/types';
 import type { RelationType } from './types';
 
 const RELATION_CRITERIA: Record<RelationType, string> = {
@@ -24,7 +24,7 @@ export interface JevRelationClassification {
 
 /** Classify how observation B relates to observation A. */
 export async function classifyRelationWithJev(
-  client: JevClient,
+  client: DecisionClient,
   contentA: string,
   contentB: string,
 ): Promise<JevRelationClassification> {

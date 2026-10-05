@@ -233,19 +233,23 @@ async function promptJevClassification(rl: readline.Interface, patch: ConfigPatc
   if (patch.enableSecurity) targets.push('attack-surface auth detection');
   if (targets.length === 0) return;
 
-  printSection('🧪', 'jev Classification (experimental)');
+  printSection('🧪', 'Model-backed Classification (experimental)');
 
-  const enableJev = await askToggle(
+  const backend = await arrowSelect<'off' | 'jev' | 'strands'>(
     rl,
-    `jev-powered classification for: ${targets.join(', ')}?`,
-    '⚠ Experimental. jev (TypeSafe System One, https://docs.typesafe.ai) is a fast typed-classification model that replaces a heuristic or agent-reasoning step with a real judgment call for each of the modules above. Requires a paid third-party API key — a .kirograph/.env file will be created for you to add JEV_API_KEY after install. Falls back to each module\'s existing non-jev behavior whenever the key is unset.',
-    false,
+    `Typed-classification backend for: ${targets.join(', ')}?`,
+    [
+      { value: 'off', label: 'Off (default)', description: 'Keep each module\'s existing heuristic / agent-reasoning behavior. No model calls.' },
+      { value: 'jev', label: 'jev (cloud)', description: '⚠ Experimental. jev (TypeSafe System One, https://docs.typesafe.ai) — a fast cloud model. Needs a paid JEV_API_KEY (added to .kirograph/.env after install). Falls back to non-jev behavior when the key is unset.' },
+      { value: 'strands', label: 'strands-decider (local)', description: '⚠ Experimental. A local strands-decider server (github.com/strands-labs/strands-decider) — no API key, no cloud. Start it with "strands-decider serve <checkpoint> --port 8000" (default URL http://127.0.0.1:8000).' },
+    ],
+    0,
   );
-  if (!enableJev) return;
+  if (backend === 'off') return;
 
-  if (patch.enableMemory) patch.memoryRelationMode = 'jev';
-  if (patch.enableWiki) patch.wikiContradictionMode = 'jev';
-  if (patch.enableSecurity) patch.securityAuthDetectionMode = 'jev';
+  if (patch.enableMemory) patch.memoryRelationMode = backend;
+  if (patch.enableWiki) patch.wikiContradictionMode = backend;
+  if (patch.enableSecurity) patch.securityAuthDetectionMode = backend;
 }
 
 export async function promptConfigOptions(

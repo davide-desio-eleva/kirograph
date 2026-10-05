@@ -63,3 +63,18 @@ export interface JevResponse {
   answers: Record<string, JevAnswer>;
   usage?: JevUsage;
 }
+
+/**
+ * Backend-agnostic contract for a typed-classification client.
+ *
+ * Both JevClient (TypeSafe System One, cloud) and StrandsClient
+ * (strands-decider, a local server) implement this. The request/response
+ * shape is identical across backends — strands-decider's `POST /v1/systemone`
+ * is wire-compatible with jev's — so consumers depend only on this interface
+ * and never on a concrete backend. The classification helpers
+ * (classifyRelationWithJev / checkContradictionWithJev / checkAuthWithJev)
+ * accept a DecisionClient, so they run unchanged against either backend.
+ */
+export interface DecisionClient {
+  ask(state: string, questions: Record<string, JevQuestion>): Promise<JevResponse>;
+}

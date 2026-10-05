@@ -5,7 +5,7 @@
  * words like "instead of"/"superseded" on FTS-similar pages) with an actual
  * judgment call, still restricted to the same FTS-similar candidate pairs.
  */
-import type { JevClient } from '../jev/client';
+import type { DecisionClient } from '../jev/types';
 
 export interface JevContradictionResult {
   contradicts: boolean;
@@ -13,7 +13,7 @@ export interface JevContradictionResult {
 }
 
 export async function checkContradictionWithJev(
-  client: JevClient,
+  client: DecisionClient,
   contentA: string,
   contentB: string,
 ): Promise<JevContradictionResult> {

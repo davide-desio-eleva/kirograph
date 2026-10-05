@@ -173,6 +173,7 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
     let hooksToImport: string[] | null = null;
     let jevEnabled = false;
     let jevTargets: string[] = [];
+    let classificationBackend: 'jev' | 'strands' | null = null;
 
     try {
       if (alreadyInitialized) {
@@ -199,9 +200,9 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
         enableAgentUtils = config.enableAgentUtils ?? true;
         enableGeneralCompression = config.enableGeneralCompression ?? false;
         trackCallSites = config.trackCallSites ?? false;
-        if (config.memoryRelationMode === 'jev') jevTargets.push('memory relation judging');
-        if (config.wikiContradictionMode === 'jev') jevTargets.push('wiki contradiction detection');
-        if (config.securityAuthDetectionMode === 'jev') jevTargets.push('attack-surface auth detection');
+        if (config.memoryRelationMode === 'jev' || config.memoryRelationMode === 'strands') { jevTargets.push('memory relation judging'); classificationBackend = config.memoryRelationMode; }
+        if (config.wikiContradictionMode === 'jev' || config.wikiContradictionMode === 'strands') { jevTargets.push('wiki contradiction detection'); classificationBackend = config.wikiContradictionMode; }
+        if (config.securityAuthDetectionMode === 'jev' || config.securityAuthDetectionMode === 'strands') { jevTargets.push('attack-surface auth detection'); classificationBackend = config.securityAuthDetectionMode; }
         jevEnabled = jevTargets.length > 0;
         console.log(`  ✓ Reusing existing KiroGraph data in ${cwd}/.kirograph/`);
         console.log(`  • semanticEngine: ${config.semanticEngine}`);
@@ -264,9 +265,9 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
         trackCallSites = patch.trackCallSites ?? false;
         typesenseDashboard = patch.typesenseDashboard;
         qdrantDashboard = patch.qdrantDashboard;
-        if (patch.memoryRelationMode === 'jev') jevTargets.push('memory relation judging');
-        if (patch.wikiContradictionMode === 'jev') jevTargets.push('wiki contradiction detection');
-        if (patch.securityAuthDetectionMode === 'jev') jevTargets.push('attack-surface auth detection');
+        if (patch.memoryRelationMode === 'jev' || patch.memoryRelationMode === 'strands') { jevTargets.push('memory relation judging'); classificationBackend = patch.memoryRelationMode; }
+        if (patch.wikiContradictionMode === 'jev' || patch.wikiContradictionMode === 'strands') { jevTargets.push('wiki contradiction detection'); classificationBackend = patch.wikiContradictionMode; }
+        if (patch.securityAuthDetectionMode === 'jev' || patch.securityAuthDetectionMode === 'strands') { jevTargets.push('attack-surface auth detection'); classificationBackend = patch.securityAuthDetectionMode; }
         jevEnabled = jevTargets.length > 0;
 
         console.log(`\n  Configuration saved to ${cwd}/.kirograph/config.json`);
@@ -355,7 +356,7 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
         console.log(`  • enableSecurity: ${enableSecurity}`);
         console.log(`  • enablePatterns: ${enablePatterns}`);
         if (jevEnabled) {
-          console.log(`  • jev classification: enabled (${jevTargets.join(', ')})`);
+          console.log(`  • ${classificationBackend} classification: enabled (${jevTargets.join(', ')})`);
         }
 
         // Install optional data format deps if enableData is on
@@ -542,13 +543,19 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
 
     installer.printNextSteps(cwd);
 
-    if (jevEnabled) {
+    if (jevEnabled && classificationBackend === 'jev') {
       const envCreated = ensureJevEnvFile(cwd);
       console.log(`\n  🧪 jev classification is enabled (${jevTargets.join(', ')}) — add your API key to finish setup:`);
       console.log(`     ${dim}${envCreated ? 'Created' : 'Found existing'} ${cwd}/.kirograph/.env${reset}`);
       console.log(`     Open it and set: ${dim}JEV_API_KEY=<your key>${reset}`);
       console.log(`     Get a key at ${dim}https://docs.typesafe.ai${reset}`);
       console.log(`     ${dim}Without a key, these features fall back to their existing non-jev behavior.${reset}`);
+    } else if (jevEnabled && classificationBackend === 'strands') {
+      console.log(`\n  🧪 strands-decider classification is enabled (${jevTargets.join(', ')}) — start the local server to finish setup:`);
+      console.log(`     ${dim}pip install strands-decider${reset}`);
+      console.log(`     ${dim}strands-decider serve StrandsAgents/strands-decider-2B-hobson-v19 --port 8000${reset}`);
+      console.log(`     ${dim}Default URL http://127.0.0.1:8000 — override with "strandsBaseUrl" in .kirograph/config.json.${reset}`);
+      console.log(`     ${dim}No API key required. These features fall back to their existing behavior while the server is unreachable.${reset}`);
     }
   } finally {
     rl.close();

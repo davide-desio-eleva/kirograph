@@ -760,7 +760,7 @@ export function register(program: Command): void {
 
   conflicts
     .command('compare <observationA> <observationB>')
-    .description('Establish a typed relation between two observations (IDs or topic_keys). With memoryRelationMode: "jev", omit --relation to classify it automatically.')
+    .description('Establish a typed relation between two observations (IDs or topic_keys). With memoryRelationMode: "jev" or "strands", omit --relation to classify it automatically.')
     .option('--relation <type>', 'Relation: supersedes, conflicts_with, compatible, scoped, related, not_conflict')
     .option('--confidence <n>', 'Confidence 0.0–1.0', '1.0')
     .option('--reason <text>', 'Explanation')
@@ -778,14 +778,14 @@ export function register(program: Command): void {
       const mem = new MemoryManager(config, db.getRawDb()); mem.initialize();
 
       if (!opts.relation) {
-        if (config.memoryRelationMode !== 'jev') {
-          console.error('  ✖ --relation is required (set memoryRelationMode: "jev" in config to classify it automatically instead).');
+        if (config.memoryRelationMode !== 'jev' && config.memoryRelationMode !== 'strands') {
+          console.error('  ✖ --relation is required (set memoryRelationMode: "jev" or "strands" in config to classify it automatically instead).');
           cg.close(); process.exit(1);
         }
         try {
           const result = await mem.autoCompareObservations(observationA, observationB);
           const status = result.autoJudged ? `${dim}auto-judged${reset}` : `${dim}pending review${reset}`;
-          console.log(`  ✓ Relation ${dim}${result.relationId}${reset} classified by jev: ${violet}${result.relation}${reset} (confidence: ${result.confidence.toFixed(2)}, ${status})`);
+          console.log(`  ✓ Relation ${dim}${result.relationId}${reset} classified by ${config.memoryRelationMode}: ${violet}${result.relation}${reset} (confidence: ${result.confidence.toFixed(2)}, ${status})`);
           if (!result.autoJudged) console.log(`  ${dim}Use \`kirograph mem conflicts judge ${result.relationId} --relation <type> --confidence <n>\` to finalize.${reset}`);
         } catch (err) {
           console.error(`  ✖ ${err instanceof Error ? err.message : String(err)}`);

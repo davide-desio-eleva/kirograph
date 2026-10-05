@@ -127,6 +127,8 @@ export async function handleWiki(toolName: string, args: Record<string, unknown>
         jevApiKey: config.jevApiKey,
         jevBaseUrl: config.jevBaseUrl,
         jevModel: config.jevModel,
+        strandsBaseUrl: config.strandsBaseUrl,
+        strandsModel: config.strandsModel,
         typedPages: config.wikiTypedPages,
       });
       wiki.initialize();

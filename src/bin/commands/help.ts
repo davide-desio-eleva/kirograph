@@ -282,7 +282,7 @@ const GROUPS: Group[] = [
       { name: 'mem lint',     desc: 'Health check and auto-repair',                               opts: ['--fix  Auto-fix issues'] },
       { name: 'mem reembed',  desc: 'Re-embed all observations after model change' },
       { name: 'mem conflicts list',   desc: 'List pending conflict relations' },
-      { name: 'mem conflicts compare', args: '<a> <b>', desc: 'Establish a relation between two observations. With memoryRelationMode: "jev", omit --relation to classify it automatically.', opts: ['--relation <type>  supersedes | conflicts_with | compatible | scoped | related | not_conflict'] },
+      { name: 'mem conflicts compare', args: '<a> <b>', desc: 'Establish a relation between two observations. With memoryRelationMode: "jev" or "strands", omit --relation to classify it automatically.', opts: ['--relation <type>  supersedes | conflicts_with | compatible | scoped | related | not_conflict'] },
       { name: 'mem conflicts judge',  args: '<id>', desc: 'Finalize a pending relation', opts: ['--relation <type>', '--confidence <n>'] },
       { name: 'mem conflicts ignore', args: '<id>', desc: 'Dismiss a pending conflict relation' },
       { name: 'mem watchmen status',    desc: 'Show watchmen observation counter and last synthesis time' },

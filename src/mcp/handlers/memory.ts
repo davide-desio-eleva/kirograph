@@ -172,12 +172,13 @@ export async function handleMemory(toolName: string, args: Record<string, unknow
       const mem = new MemoryManager(config, db.getRawDb());
       mem.initialize();
 
-      // jev mode: relation is optional — when omitted, KiroGraph classifies it itself.
-      if (config.memoryRelationMode === 'jev' && !args.relation) {
+      // jev/strands mode: relation is optional — when omitted, KiroGraph classifies it itself.
+      const relationAutoMode = config.memoryRelationMode === 'jev' || config.memoryRelationMode === 'strands';
+      if (relationAutoMode && !args.relation) {
         try {
           const result = await mem.autoCompareObservations(args.observationA as string, args.observationB as string);
           const status = result.autoJudged ? 'auto-judged' : 'pending review';
-          return `Relation ${result.relationId} classified by jev: ${result.relation} (confidence: ${result.confidence.toFixed(2)}, ${status}).`
+          return `Relation ${result.relationId} classified by ${config.memoryRelationMode}: ${result.relation} (confidence: ${result.confidence.toFixed(2)}, ${status}).`
             + (result.autoJudged ? '' : ' Use kirograph_mem_judge to finalize.');
         } catch (err) {
           return `Error: ${err instanceof Error ? err.message : String(err)}`;
@@ -185,7 +186,7 @@ export async function handleMemory(toolName: string, args: Record<string, unknow
       }
 
       if (!args.relation) {
-        return 'Error: relation is required (set memoryRelationMode: "jev" to classify it automatically instead).';
+        return 'Error: relation is required (set memoryRelationMode: "jev" or "strands" to classify it automatically instead).';
       }
       const relationId = mem.compareObservations({
         observationA: args.observationA as string,

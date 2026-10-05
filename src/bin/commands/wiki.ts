@@ -47,6 +47,8 @@ async function getWiki(cwd: string) {
     jevApiKey: config.jevApiKey,
     jevBaseUrl: config.jevBaseUrl,
     jevModel: config.jevModel,
+    strandsBaseUrl: config.strandsBaseUrl,
+    strandsModel: config.strandsModel,
     typedPages: config.wikiTypedPages,
   });
   wiki.initialize();

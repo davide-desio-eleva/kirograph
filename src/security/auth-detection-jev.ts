@@ -7,7 +7,7 @@
  * misclassify as unauthenticated. The heuristic's positive matches are
  * trusted as-is and never re-checked, keeping this cheap.
  */
-import type { JevClient } from '../jev/client';
+import type { DecisionClient } from '../jev/types';
 
 export interface JevAuthResult {
   authenticated: boolean;
@@ -15,7 +15,7 @@ export interface JevAuthResult {
 }
 
 export async function checkAuthWithJev(
-  client: JevClient,
+  client: DecisionClient,
   routeName: string,
   callPathNames: string[],
 ): Promise<JevAuthResult> {
