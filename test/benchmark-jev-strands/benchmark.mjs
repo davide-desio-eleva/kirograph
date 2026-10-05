@@ -32,6 +32,7 @@
  * Flags:
  *   --iterations N   per-use-case samples (default 30)
  *   --warmup N       discarded warmup calls per backend (default 3)
+ *   --timeout MS     per-request timeout (default 60000, or BENCH_TIMEOUT_MS)
  *   --only jev|strands   benchmark a single backend
  *   --json           emit machine-readable JSON instead of the table
  *
@@ -63,6 +64,12 @@ const ITERATIONS = parseInt(flag('iterations', '30'), 10);
 const WARMUP = parseInt(flag('warmup', '3'), 10);
 const ONLY = flag('only', null);           // 'jev' | 'strands' | null
 const AS_JSON = flag('json', false) === true;
+// Per-request timeout for the clients. A real strands-decider server's FIRST
+// inference includes a device/kernel warm-up (and a 2B model's first forward
+// pass is slow), so the default is generous. Override with --timeout <ms> or
+// BENCH_TIMEOUT_MS. The warmup iterations exist precisely to absorb this, so
+// steady-state numbers are unaffected.
+const TIMEOUT_MS = parseInt(flag('timeout', process.env.BENCH_TIMEOUT_MS || '60000'), 10);
 
 // ── Load the built clients from dist/ ────────────────────────────────────────
 let JevClient, StrandsClient;
@@ -76,9 +83,13 @@ try {
 }
 
 // ── Backend configuration ────────────────────────────────────────────────────
-const JEV_API_KEY   = process.env.JEV_API_KEY || 'mock-jev-key';
-const JEV_BASE_URL  = process.env.JEV_BASE_URL || 'http://127.0.0.1:8842';
+// jev base URL default depends on mode: when a real key is set (live), default
+// to the production API; otherwise default to the bundled mock (run.sh starts
+// it on :8842). An explicit JEV_BASE_URL always wins. This avoids the trap of
+// "key set, but URL still points at a mock that was never started".
 const JEV_IS_LIVE   = !!process.env.JEV_API_KEY;
+const JEV_API_KEY   = process.env.JEV_API_KEY || 'mock-jev-key';
+const JEV_BASE_URL  = process.env.JEV_BASE_URL || (JEV_IS_LIVE ? 'https://api.typesafe.ai' : 'http://127.0.0.1:8842');
 const STRANDS_BASE_URL = process.env.STRANDS_BASE_URL || 'http://127.0.0.1:8843';
 const STRANDS_IS_LIVE  = !!process.env.STRANDS_BASE_URL;
 
@@ -126,6 +137,11 @@ const USE_CASES = [
   },
 ];
 
+// Batching test fixture — ONE fixed state, asked N times. Uses the memory
+// relation case (a Choice question), which is the richest of the three.
+const BATCH_STATE = USE_CASES[0].state;
+const BATCH_QUESTION = USE_CASES[0].question;
+
 // ── Stats helpers ─────────────────────────────────────────────────────────────
 function percentile(sorted, p) {
   if (sorted.length === 0) return 0;
@@ -157,6 +173,21 @@ async function benchBackend(name, client, isLive) {
   const perUseCase = {};
   const sampleAnswers = {};
 
+  // One-time cold-start warm-up, isolated and reported. A freshly loaded model
+  // server's first inference pays a device/kernel warm-up cost that is not
+  // representative of steady-state latency. We do it once up front (outside the
+  // timed loops) so it doesn't skew the samples, and report how long it took.
+  let coldStartMs = null;
+  if (isLive) {
+    const uc0 = USE_CASES[0];
+    try {
+      const t = await timeCall(() => client.ask(uc0.state, { [uc0.questionId]: uc0.question }));
+      coldStartMs = t.elapsed;
+    } catch (err) {
+      return { name, isLive, error: `cold-start warm-up: ${err.message}` };
+    }
+  }
+
   // Per-use-case: one question per request, ITERATIONS times (+ warmup).
   for (const uc of USE_CASES) {
     const samples = [];
@@ -175,22 +206,45 @@ async function benchBackend(name, client, isLive) {
     perUseCase[uc.id] = summarize(samples);
   }
 
-  // Batched: all three questions about their combined state in ONE request,
-  // ITERATIONS times. This is the shared-prefix path both servers optimize.
-  const batchedState = USE_CASES.map((uc) => `[${uc.id}]\n${uc.state}`).join('\n\n');
-  const batchedQuestions = Object.fromEntries(USE_CASES.map((uc) => [uc.questionId, uc.question]));
-  const batchSamples = [];
+  // Batching: the "one state, many questions" shared-prefix path. To make this
+  // a FAIR apples-to-apples measurement, we hold the state FIXED (one single
+  // state, encoded once) and vary only the number of questions — 3 questions
+  // on that one state, as one batched request vs three separate requests.
+  //
+  // (An earlier version concatenated all three use-case states into one giant
+  // state; that penalised a local model unfairly, because it then had to encode
+  // a 3x-longer state in the "batched" case but short states in the "separate"
+  // case — measuring state length, not batching. Here both paths use the SAME
+  // single state, so the only variable is how many requests carry the questions.)
+  const BATCH_N = 3;
+  const batchState = BATCH_STATE;
+  // N distinct question ids, all about the same state (same shape, independent).
+  const batchQuestions = {};
+  for (let k = 0; k < BATCH_N; k++) batchQuestions[`q${k}`] = BATCH_QUESTION;
+
+  const batchSamples = [];      // one request carrying all N questions
+  const separateSamples = [];   // N separate requests, summed per iteration
   for (let i = 0; i < WARMUP + ITERATIONS; i++) {
-    let timed;
+    let batched, sepTotal = 0;
     try {
-      timed = await timeCall(() => client.ask(batchedState, batchedQuestions));
+      batched = await timeCall(() => client.ask(batchState, batchQuestions));
+      for (let k = 0; k < BATCH_N; k++) {
+        const t = await timeCall(() => client.ask(batchState, { [`q${k}`]: BATCH_QUESTION }));
+        sepTotal += t.elapsed;
+      }
     } catch (err) {
       return { name, isLive, error: `batched: ${err.message}` };
     }
-    if (i >= WARMUP) batchSamples.push(timed.elapsed);
+    if (i >= WARMUP) { batchSamples.push(batched.elapsed); separateSamples.push(sepTotal); }
   }
 
-  return { name, isLive, perUseCase, batched: summarize(batchSamples), sampleAnswers };
+  return {
+    name, isLive, perUseCase,
+    batched: summarize(batchSamples),
+    separate: summarize(separateSamples),
+    batchN: BATCH_N,
+    sampleAnswers, coldStartMs,
+  };
 }
 
 // ── Reporting ─────────────────────────────────────────────────────────────────
@@ -220,27 +274,52 @@ function printTable(results) {
         `  ${pad(uc.label, 26)}${pad(r.name, 12)}${padL(ms(s.mean), 9)}${padL(ms(s.p50), 9)}${padL(ms(s.p95), 9)}${padL(ms(s.min), 9)}${padL(ms(s.max), 9)}  ${DIM}${r.sampleAnswers[uc.id]}${RESET}`,
       );
     }
-    // Agreement line when both backends ran
+    // Agreement line when both backends ran. Compare the label (the actual
+    // decision) separately from the confidence — two backends can pick the same
+    // label with very different confidence, which is worth surfacing, not hiding.
     if (live.length === 2) {
       const [a, b] = live;
-      const agree = a.sampleAnswers[uc.id].split('@')[0] === b.sampleAnswers[uc.id].split('@')[0];
-      console.log(`  ${DIM}${pad('', 26)}${pad('agreement', 12)}${agree ? '✓ same answer' : '✗ differ'}${RESET}`);
+      const [la, ca] = a.sampleAnswers[uc.id].split('@');
+      const [lb, cb] = b.sampleAnswers[uc.id].split('@');
+      const sameLabel = la === lb;
+      let note;
+      if (!sameLabel) {
+        note = `✗ differ (${la} vs ${lb})`;
+      } else {
+        const na = parseFloat(ca), nb = parseFloat(cb);
+        const confGap = (!isNaN(na) && !isNaN(nb)) ? Math.abs(na - nb) : null;
+        note = `✓ same label (${la})`;
+        if (confGap != null) note += `, confidence ${ca} vs ${cb} (Δ${confGap.toFixed(2)})`;
+      }
+      console.log(`  ${DIM}${pad('', 26)}${pad('agreement', 12)}${note}${RESET}`);
     }
   }
 
   console.log(`  ${DIM}${'─'.repeat(header.length + 4)}${RESET}`);
+  console.log(`  ${DIM}Batching: ${live[0].batchN} questions on ONE fixed state (same state both ways)${RESET}`);
   for (const r of live) {
-    const s = r.batched;
+    const b = r.batched, s = r.separate;
     console.log(
-      `  ${pad('batched (3 questions)', 26)}${pad(r.name, 12)}${padL(ms(s.mean), 9)}${padL(ms(s.p50), 9)}${padL(ms(s.p95), 9)}${padL(ms(s.min), 9)}${padL(ms(s.max), 9)}  ${DIM}1 request${RESET}`,
+      `  ${pad(`${r.batchN} q, 1 request`, 26)}${pad(r.name, 12)}${padL(ms(b.mean), 9)}${padL(ms(b.p50), 9)}${padL(ms(b.p95), 9)}${padL(ms(b.min), 9)}${padL(ms(b.max), 9)}  ${DIM}batched${RESET}`,
+    );
+    console.log(
+      `  ${pad(`${r.batchN} q, ${r.batchN} requests`, 26)}${pad(r.name, 12)}${padL(ms(s.mean), 9)}${padL(ms(s.p50), 9)}${padL(ms(s.p95), 9)}${padL(ms(s.min), 9)}${padL(ms(s.max), 9)}  ${DIM}separate${RESET}`,
     );
   }
 
-  // Batching efficiency note
+  // Batching efficiency note — both paths use the identical state, so this is
+  // a clean measure of the shared-prefix benefit. Negative → batching is slower.
   for (const r of live) {
-    const seqMean = USE_CASES.reduce((sum, uc) => sum + r.perUseCase[uc.id].mean, 0);
-    const saved = seqMean > 0 ? (1 - r.batched.mean / seqMean) * 100 : 0;
-    console.log(`  ${DIM}${r.name}: batching 3 questions vs 3 separate requests → ${saved.toFixed(0)}% faster (${ms(r.batched.mean)} vs ${ms(seqMean)})${RESET}`);
+    const sepMean = r.separate.mean;
+    const delta = sepMean > 0 ? (1 - r.batched.mean / sepMean) * 100 : 0;
+    const verb = delta >= 0 ? `${delta.toFixed(0)}% faster` : `${(-delta).toFixed(0)}% slower`;
+    console.log(`  ${DIM}${r.name}: ${r.batchN} questions batched vs ${r.batchN} separate requests → ${verb} (${ms(r.batched.mean)} vs ${ms(sepMean)})${RESET}`);
+  }
+  // Cold-start note (one-time, excluded from the samples above)
+  for (const r of live) {
+    if (r.coldStartMs != null) {
+      console.log(`  ${DIM}${r.name}: first (cold) request took ${ms(r.coldStartMs)} — one-time warm-up, not counted in the stats above${RESET}`);
+    }
   }
   console.log('');
 }
@@ -250,11 +329,11 @@ function printTable(results) {
   const results = [];
 
   if (ONLY !== 'strands') {
-    const jev = new JevClient({ apiKey: JEV_API_KEY, baseUrl: JEV_BASE_URL });
+    const jev = new JevClient({ apiKey: JEV_API_KEY, baseUrl: JEV_BASE_URL, timeoutMs: TIMEOUT_MS });
     results.push(await benchBackend('jev', jev, JEV_IS_LIVE));
   }
   if (ONLY !== 'jev') {
-    const strands = new StrandsClient({ baseUrl: STRANDS_BASE_URL });
+    const strands = new StrandsClient({ baseUrl: STRANDS_BASE_URL, timeoutMs: TIMEOUT_MS });
     results.push(await benchBackend('strands', strands, STRANDS_IS_LIVE));
   }
 

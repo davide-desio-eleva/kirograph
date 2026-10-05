@@ -1,0 +1,2 @@
+# Local benchmark config — may contain a real JEV_API_KEY, never commit it.
+.env
