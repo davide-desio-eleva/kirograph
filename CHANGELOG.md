@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.4.3] - 2026-10-11: `withGraph()` closes the database on error
+
+### Added
+
+- **`withGraph(projectRoot, fn)`** (exported from `src/index.ts`): opens the graph, runs `fn`, and closes the handle in a `finally`, so the database and its WAL are closed whether the operation succeeds or throws. The `kirograph index` command uses it as the reference call site.
+
+### Fixed
+
+- **Command flows no longer leak the database handle when the operation throws** ([#61](https://github.com/davide-desio-eleva/kirograph/issues/61), partial): other commands still open the graph and close it only on the success path. They will move to `withGraph()` in follow-up changes.
+
 ## [1.4.2] - 2026-10-11: stale vulnerability flag clears, no mutex leak on lock contention
 
 ### Fixed
