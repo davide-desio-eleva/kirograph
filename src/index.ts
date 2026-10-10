@@ -35,6 +35,17 @@ export type { FileTreeNode, FileTree };
 
 const KIROGRAPH_DIR = '.kirograph';
 
+// Every instance opened and not yet closed. Commands exit through many paths
+// (success, a thrown error, or one of the many process.exit() calls), so the
+// exit hook below closes whatever is still open, and the DB handle and WAL are
+// always released — see issue #61.
+const openGraphs = new Set<KiroGraph>();
+process.once('exit', () => {
+  for (const kg of [...openGraphs]) {
+    try { kg.close(); } catch { /* best effort on the way out */ }
+  }
+});
+
 export default class KiroGraph {
   private readonly db: GraphDatabase;
   private readonly config: KiroGraphConfig;
@@ -47,6 +58,7 @@ export default class KiroGraph {
   private readonly lock: LockManager;
   private readonly pipeline: IndexPipeline;
   private readonly searcher: Searcher;
+  private closed = false;
 
   private constructor(projectRoot: string, db: GraphDatabase, config: KiroGraphConfig) {
     this.projectRoot = projectRoot;
@@ -94,8 +106,14 @@ export default class KiroGraph {
     const db = new GraphDatabase(resolved);
     const kg = new KiroGraph(resolved, db, cfg);
     if (!opts?.skipVectors) {
-      await kg.vectors.initialize(onModelProgress);
+      try {
+        await kg.vectors.initialize(onModelProgress);
+      } catch (e) {
+        kg.close(); // not yet registered: release the DB handle before rethrowing
+        throw e;
+      }
     }
+    openGraphs.add(kg);
     return kg;
   }
 
@@ -297,9 +315,18 @@ export default class KiroGraph {
   getDatabase(): GraphDatabase { return this.db; }
 
   close(): void {
-    this.vectors.close();
-    this.lock.release();
-    this.db.close();
+    if (this.closed) return;
+    this.closed = true;
+    openGraphs.delete(this);
+    // The process lock is not released here: it is acquired and released by
+    // IndexPipeline around each index/sync. Releasing it on close would delete
+    // the lock of a sync running in another process whenever a read-only
+    // command (query, status, …) closed its own handle.
+    try {
+      this.vectors.close();
+    } finally {
+      this.db.close();
+    }
   }
 }
 
