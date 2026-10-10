@@ -27,31 +27,69 @@ export class LockManager {
   // ── Process lock ───────────────────────────────────────────────────────────
 
   acquire(): void {
-    if (fs.existsSync(this.lockPath)) {
-      try {
-        const content = fs.readFileSync(this.lockPath, 'utf8').trim();
-        const [pidStr, tsStr] = content.split(':');
-        const pid = parseInt(pidStr, 10);
-        const ts = parseInt(tsStr, 10);
+    // Atomic create with O_EXCL ('wx'): if the file already exists the open
+    // fails with EEXIST instead of us doing a non-atomic existsSync→write, so
+    // two processes starting together cannot both pass the check and both
+    // write (which previously let two writers index the same DB concurrently).
+    try {
+      const fd = fs.openSync(this.lockPath, 'wx');
+      fs.writeSync(fd, `${process.pid}:${Date.now()}`);
+      fs.closeSync(fd);
+      return;
+    } catch (e: any) {
+      if (e?.code !== 'EEXIST') throw e;
+      // Lock file exists — only now inspect it for staleness.
+    }
 
-        if (!isNaN(pid) && pid !== process.pid) {
-          const isStale = !isNaN(ts) && Date.now() - ts > LOCK_STALE_MS;
-          if (!isStale) {
-            try {
-              process.kill(pid, 0);
+    // A lock file is present. Decide whether it is live (refuse) or stale (take
+    // it over atomically via a temp file + rename, never a bare unlink+write).
+    let takeOver = false;
+    try {
+      const content = fs.readFileSync(this.lockPath, 'utf8').trim();
+      const [pidStr, tsStr] = content.split(':');
+      const pid = parseInt(pidStr, 10);
+      const ts = parseInt(tsStr, 10);
+
+      if (isNaN(pid) || pid === process.pid) {
+        takeOver = true; // our own or unparseable pid — safe to reclaim
+      } else {
+        const isStale = !isNaN(ts) && Date.now() - ts > LOCK_STALE_MS;
+        if (isStale) {
+          takeOver = true;
+        } else {
+          try {
+            process.kill(pid, 0);
+            // Process is alive — genuinely locked.
+            throw new Error(`KiroGraph is locked by PID ${pid}. Use 'kirograph unlock' to force-release.`);
+          } catch (e: any) {
+            if (e.message.includes('KiroGraph is locked')) throw e;
+            // EPERM means the process EXISTS but we may not signal it (a live
+            // process owned by another user) — still locked, not stale. Only
+            // ESRCH (no such process) means the holder is gone.
+            if (e?.code === 'EPERM') {
               throw new Error(`KiroGraph is locked by PID ${pid}. Use 'kirograph unlock' to force-release.`);
-            } catch (e: any) {
-              if (e.message.includes('KiroGraph is locked')) throw e;
-              // Process not found — stale lock, override it
             }
+            takeOver = true; // ESRCH / process not found — stale
           }
         }
-      } catch (e: any) {
-        if (e.message.includes('KiroGraph is locked')) throw e;
-        // Could not read lock file — override
       }
+    } catch (e: any) {
+      if (e.message?.includes('KiroGraph is locked')) throw e;
+      // A transient read error must NOT be treated as "free to override": the
+      // lock demonstrably exists (EEXIST above). Refuse rather than stomp it.
+      throw new Error(
+        `KiroGraph lock file exists but could not be read (${e?.code ?? e?.message ?? 'unknown'}). ` +
+        `Retry, or run 'kirograph unlock' if it is stale.`,
+      );
     }
-    fs.writeFileSync(this.lockPath, `${process.pid}:${Date.now()}`);
+
+    if (takeOver) {
+      // Overwrite atomically: write a temp file then rename over the lock, so a
+      // concurrent reader never sees a half-written lock.
+      const tmp = `${this.lockPath}.${process.pid}.${Date.now()}.tmp`;
+      fs.writeFileSync(tmp, `${process.pid}:${Date.now()}`);
+      fs.renameSync(tmp, this.lockPath);
+    }
   }
 
   release(): void {
@@ -87,7 +125,8 @@ export class LockManager {
       if (isNaN(pid) || pid === process.pid) return false;
       const isStale = !isNaN(ts) && Date.now() - ts > LOCK_STALE_MS;
       if (isStale) return false;
-      try { process.kill(pid, 0); return true; } catch { return false; }
+      try { process.kill(pid, 0); return true; }
+      catch (e: any) { return e?.code === 'EPERM'; } // EPERM = alive but not ours
     } catch { return false; }
   }
 }
