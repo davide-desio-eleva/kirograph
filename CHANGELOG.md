@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.1] - 2026-10-11: `unlock` clears the database lock
+
+### Fixed
+
+- **`kirograph unlock` releases `kirograph.db.lock`** ([#55](https://github.com/davide-desio-eleva/kirograph/issues/55)): the "Database is locked" error points at `kirograph.db.lock` and tells you to run `unlock`, but `unlock` only removed the process lock, so the advice printed `No lock file found.` while the database stayed locked. It now releases both locks. The database lock is only cleared when no live indexer holds the process lock; if a sync/index is running, both locks are left in place and a warning is printed.
+
 ## [1.4.0] - 2026-10-04: strands-decider — local classification backend *(experimental)*
 
 A second typed-classification backend alongside jev, selectable per module. ⚠️ **Experimental.** [strands-decider](https://github.com/strands-labs/strands-decider) is a small, fast decision model ("system one") that runs **locally** — no API key, no cloud, no data leaving the machine. Its `POST /v1/systemone` endpoint is wire-compatible with jev's (same `{state, model, questions}` body, same Choice/Score/Noul answers), so the two backends are interchangeable: the three `*Mode` toggles now accept `'strands'` wherever they accept `'jev'`. Pick `'strands'` for local-only classification, `'jev'` to avoid running a model server. Both are opt-in and off by default; each toggle falls back to its existing behavior when the chosen backend is unreachable.
