@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.5] - 2026-10-11: every command closes the graph, on success, error and exit
+
+### Fixed
+
+- **The database handle and WAL are released on every exit path** ([#61](https://github.com/davide-desio-eleva/kirograph/issues/61)): commands closed the graph only on the success path, so a thrown error or a `process.exit()` call left the SQLite handle open. Open instances are now tracked, and a process `exit` hook closes whatever is still open. This covers success, thrown errors and every `process.exit()` call, without editing each command.
+- **`KiroGraph.close()` is idempotent**: a second call used to throw `Database already closed`. It now does nothing.
+- **`close()` no longer deletes another process's lock**: it used to release `kirograph.lock` unconditionally, so a read-only command (`query`, `status`, …) closing its own handle could remove the lock of a sync running elsewhere. The lock is released by the indexing pipeline around each index/sync, as before.
+- If `vectors.initialize` fails while opening a graph, the database handle is released before the error is rethrown.
+
 ## [1.4.4] - 2026-10-11: process lock acquire is atomic
 
 ### Fixed
