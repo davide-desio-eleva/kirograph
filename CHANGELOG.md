@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.2] - 2026-10-11: stale vulnerability flag clears, no mutex leak on lock contention
+
+### Fixed
+
+- **`vuln_data_stale` is cleared after a successful query** ([#57](https://github.com/davide-desio-eleva/kirograph/issues/57)): a dependency whose vulnerability query failed once (offline, or during an EPSS/OSV outage) stayed flagged stale forever, even after later successful syncs. A dependency whose adapters all answer without error now has its flag reset, and it is removed from the stale list for that run.
+- **In-process mutex no longer leaks when the file lock is held by another process** ([#58](https://github.com/davide-desio-eleva/kirograph/issues/58)): `IndexPipeline` acquired the file lock outside the `try` that releases the mutex, so a contended lock deadlocked every later `indexAll`/`sync` in the long-lived MCP server (`serve --mcp`). The mutex is now released before the error is rethrown, and the file lock is only released by the call that actually acquired it.
+
 ## [1.4.1] - 2026-10-11: `unlock` clears the database lock
 
 ### Fixed
