@@ -390,6 +390,7 @@ export class VulnerabilityDatabaseClient {
     adapterList: VulnDatabaseAdapter[] = this.adapters,
   ): Promise<CVERecord[]> {
     const allRecords: CVERecord[] = [];
+    let hadError = false;
 
     for (const adapter of adapterList) {
       try {
@@ -409,6 +410,7 @@ export class VulnerabilityDatabaseClient {
         }
       } catch (error: unknown) {
         // Handle unreachable database (Requirement 3.5)
+        hadError = true;
         const errorMessage = error instanceof Error ? error.message : String(error);
         logError(
           `[sec:vuln] Failed to query ${adapter.name} for ${dep.package_name}@${version}: ${errorMessage}`,
@@ -423,6 +425,14 @@ export class VulnerabilityDatabaseClient {
         // Set vulnDataStale flag on the dependency node
         this.markDependencyStale(dep.node_id, result);
       }
+    }
+
+    // Every adapter answered without error: the dependency's vuln data is fresh
+    // again, so clear any stale flag a previous failed run left behind. Without
+    // this, one offline/flaky run marks a dependency stale permanently — no
+    // later successful sync ever resets it.
+    if (!hadError) {
+      this.clearDependencyStale(dep.node_id, result);
     }
 
     return allRecords;
@@ -450,6 +460,28 @@ export class VulnerabilityDatabaseClient {
     logWarn(
       `[sec:vuln] Vulnerability data marked stale for dependency node ${nodeId}`,
     );
+  }
+
+  /**
+   * Clear the stale-vulnerability-data flag on a dependency node after a
+   * successful query. Paired with markDependencyStale: without a reset path, a
+   * dependency flagged stale by one failed (e.g. offline) run would stay stale
+   * forever, even after many successful online syncs.
+   */
+  private clearDependencyStale(nodeId: string, result: EnrichmentResult): void {
+    const rawDb = this.db.getRawDb();
+
+    rawDb.run(
+      `UPDATE sec_dependencies
+       SET vuln_data_stale = 0, vuln_data_stale_since = NULL
+       WHERE node_id = ? AND vuln_data_stale = 1`,
+      [nodeId],
+    );
+
+    const idx = result.staleNodes.indexOf(nodeId);
+    if (idx !== -1) {
+      result.staleNodes.splice(idx, 1);
+    }
   }
 
   /**
