@@ -305,6 +305,29 @@ export default class KiroGraph {
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
+/**
+ * Open a KiroGraph for `projectRoot`, run `fn` with it, and guarantee the DB
+ * handle is closed afterwards — on success AND on any thrown error.
+ *
+ * Command actions previously did `const cg = await KiroGraph.open(target); ...;
+ * cg.close();` with no try/finally, so a throw from the operation (a
+ * node-sqlite3-wasm "Aborted()", the database lock throw, a parser crash) left
+ * the SQLite handle open and the WAL unchecked. Wrapping the body here closes
+ * it exactly once, whatever happens.
+ */
+export async function withGraph<T>(
+  projectRoot: string,
+  fn: (cg: KiroGraph) => Promise<T>,
+  opts?: { skipVectors?: boolean },
+): Promise<T> {
+  const cg = await KiroGraph.open(projectRoot, undefined, opts);
+  try {
+    return await fn(cg);
+  } finally {
+    cg.close();
+  }
+}
+
 /** Walk up directories to find the nearest .kirograph/ folder. */
 export function findNearestKiroGraphRoot(startPath: string): string | null {
   let current = path.resolve(startPath);
