@@ -47,7 +47,19 @@ export class IndexPipeline {
     signal?: AbortSignal;
   }): Promise<IndexResult> {
     const release = await this.mutex.acquire();
-    this.lock.acquire();
+    // Acquire the file lock inside a guard: if it throws (another live PID
+    // holds it), release the in-process mutex before rethrowing. Otherwise the
+    // mutex leaks and every later indexAll/sync in a long-lived process (the
+    // MCP server reuses this instance) deadlocks on mutex.acquire(). heldByUs
+    // gates the finally so we never unlink a lock owned by another process.
+    let heldByUs = false;
+    try {
+      this.lock.acquire();
+      heldByUs = true;
+    } catch (e) {
+      release();
+      throw e;
+    }
     const start = Date.now();
     const errors: string[] = [];
     let filesIndexed = 0;
@@ -313,7 +325,7 @@ export class IndexPipeline {
       this.lock.clearDirty();
       return { success: errors.length === 0, filesIndexed, nodesCreated, edgesCreated, errors, duration: Date.now() - start };
     } finally {
-      this.lock.release();
+      if (heldByUs) this.lock.release();
       release();
     }
   }
@@ -323,7 +335,19 @@ export class IndexPipeline {
     onProgress?: (p: IndexProgress) => void;
   }): Promise<SyncResult> {
     const release = await this.mutex.acquire();
-    this.lock.acquire();
+    // Acquire the file lock inside a guard: if it throws (another live PID
+    // holds it), release the in-process mutex before rethrowing. Otherwise the
+    // mutex leaks and every later indexAll/sync in a long-lived process (the
+    // MCP server reuses this instance) deadlocks on mutex.acquire(). heldByUs
+    // gates the finally so we never unlink a lock owned by another process.
+    let heldByUs = false;
+    try {
+      this.lock.acquire();
+      heldByUs = true;
+    } catch (e) {
+      release();
+      throw e;
+    }
     const start = Date.now();
     const changedFiles = opts?.changedFiles;
     const onProgress = opts?.onProgress;
@@ -600,7 +624,7 @@ export class IndexPipeline {
       result.duration = Date.now() - start;
       return result;
     } finally {
-      this.lock.release();
+      if (heldByUs) this.lock.release();
       release();
     }
   }
