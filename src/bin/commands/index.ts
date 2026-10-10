@@ -10,17 +10,17 @@ export function register(program: Command): void {
     .description('Full index of a project')
     .option('--force', 'Force re-index all files')
     .action(async (projectPath: string | undefined, opts: { force?: boolean }) => {
-      const KiroGraph = (await import('../../index')).default;
+      const { withGraph } = await import('../../index');
       const target = path.resolve(projectPath ?? process.cwd());
-      const cg = await KiroGraph.open(target);
-      const result = await cg.indexAll({
-        force: opts.force,
-        onProgress: renderIndexProgress,
+      await withGraph(target, async (cg) => {
+        const result = await cg.indexAll({
+          force: opts.force,
+          onProgress: renderIndexProgress,
+        });
+        process.stdout.write('\n');
+        console.log(`  ${green}✓${reset} ${value(String(result.filesIndexed))} ${dim}files,${reset} ${value(String(result.nodesCreated))} ${dim}symbols,${reset} ${value(String(result.edgesCreated))} ${dim}edges${reset} ${dim}(${result.duration}ms)${reset}`);
+        if (result.errors.length) console.warn(`  \x1b[33m⚠ ${result.errors.length} warning(s)\x1b[0m`);
+        warnFallback(cg.getEngineFallback());
       });
-      process.stdout.write('\n');
-      console.log(`  ${green}✓${reset} ${value(String(result.filesIndexed))} ${dim}files,${reset} ${value(String(result.nodesCreated))} ${dim}symbols,${reset} ${value(String(result.edgesCreated))} ${dim}edges${reset} ${dim}(${result.duration}ms)${reset}`);
-      if (result.errors.length) console.warn(`  \x1b[33m⚠ ${result.errors.length} warning(s)\x1b[0m`);
-      warnFallback(cg.getEngineFallback());
-      cg.close();
     });
 }
