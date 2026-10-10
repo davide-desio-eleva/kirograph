@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.4] - 2026-10-11: process lock acquire is atomic
+
+### Fixed
+
+- **`LockManager.acquire()` is atomic and no longer overrides a live or unreadable lock** ([#60](https://github.com/davide-desio-eleva/kirograph/issues/60)): the lock is now created with an exclusive open, so two processes starting together can no longer both take it and index the same database. A lock file that exists but cannot be read is refused instead of overwritten. A lock owned by another user (`EPERM` on the liveness probe) counts as held, not stale; only a missing process (`ESRCH`) or an expired lock is taken over, through a temp file and rename.
+
 ## [1.4.3] - 2026-10-11: `withGraph()` closes the database on error
 
 ### Added
