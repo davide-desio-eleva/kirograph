@@ -20,6 +20,7 @@ export type { FrameworkResolver, ResolutionContext, UnresolvedRef, ResolvedRef }
 export { reactResolver } from './react';
 export { svelteResolver } from './svelte';
 export { expressResolver } from './express';
+export { fastifyResolver } from './fastify';
 export { djangoResolver, flaskResolver, fastapiResolver } from './python';
 export { railsResolver } from './ruby';
 export { springResolver } from './java';
@@ -48,6 +49,7 @@ export { flutterResolver } from './flutter';
 import { reactResolver } from './react';
 import { svelteResolver } from './svelte';
 import { expressResolver } from './express';
+import { fastifyResolver } from './fastify';
 import { djangoResolver, flaskResolver, fastapiResolver } from './python';
 import { railsResolver } from './ruby';
 import { springResolver } from './java';
@@ -76,6 +78,7 @@ const FRAMEWORK_RESOLVERS: FrameworkResolver[] = [
   laravelResolver,
   // JavaScript / TypeScript
   expressResolver,
+  fastifyResolver,
   reactResolver,
   svelteResolver,
   angularResolver,
@@ -301,7 +304,7 @@ async function detectFromPackageJson(projectRoot: string): Promise<FrameworkReso
   const PACKAGE_TO_RESOLVER: Record<string, string> = {
     react: 'react', next: 'react', 'react-native': 'react',
     svelte: 'svelte', '@sveltejs/kit': 'svelte',
-    express: 'express', fastify: 'express', koa: 'express',
+    express: 'express', fastify: 'fastify', koa: 'express',
   };
 
   const detectedNames = new Set<string>();

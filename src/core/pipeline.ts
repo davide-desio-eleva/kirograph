@@ -128,8 +128,9 @@ export class IndexPipeline {
             });
             for (const node of extracted.nodes) { this.db.upsertNode(node); nodesCreated++; }
             for (const edge of extracted.edges) { this.db.insertEdge(edge); edgesCreated++; }
-            for (const ref of extracted.unresolvedRefs) {
-              this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column);
+            for (const mount of extracted.routeMounts ?? []) this.db.insertRouteMount(extracted.filePath, mount);
+              for (const ref of extracted.unresolvedRefs) {
+              this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column, ref.metadata);
             }
           });
 
@@ -201,8 +202,9 @@ export class IndexPipeline {
               });
               for (const node of extracted.nodes) { this.db.upsertNode(node); nodesCreated++; }
               for (const edge of extracted.edges) { this.db.insertEdge(edge); edgesCreated++; }
+              for (const mount of extracted.routeMounts ?? []) this.db.insertRouteMount(extracted.filePath, mount);
               for (const ref of extracted.unresolvedRefs) {
-                this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column);
+                this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column, ref.metadata);
               }
             });
             filesIndexed++;
@@ -466,8 +468,9 @@ export class IndexPipeline {
             });
             for (const node of extracted.nodes) { this.db.upsertNode(node); result.nodesCreated++; }
             for (const edge of extracted.edges) { this.db.insertEdge(edge); result.edgesCreated++; }
-            for (const ref of extracted.unresolvedRefs) {
-              this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column);
+            for (const mount of extracted.routeMounts ?? []) this.db.insertRouteMount(extracted.filePath, mount);
+              for (const ref of extracted.unresolvedRefs) {
+              this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column, ref.metadata);
             }
           });
 

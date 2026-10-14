@@ -4,7 +4,6 @@
  * Mirrors CodeGraph src/resolution/frameworks/express.ts
  */
 
-import type { Node } from '../types';
 import type { FrameworkResolver, UnresolvedRef, ResolvedRef, ResolutionContext } from './types';
 
 export const expressResolver: FrameworkResolver = {
@@ -16,7 +15,10 @@ export const expressResolver: FrameworkResolver = {
       try {
         const pkg = JSON.parse(packageJson);
         const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-        if (deps.express || deps.fastify || deps.koa || deps.hapi) return true;
+        // fastify has its own resolver (./fastify): its routes are not express routes,
+        // so the content-based fallback below must not claim the project either
+        if (deps.fastify) return false;
+        if (deps.express || deps.koa || deps.hapi) return true;
       } catch { /* invalid JSON */ }
     }
     for (const file of context.getAllFiles()) {
@@ -46,33 +48,7 @@ export const expressResolver: FrameworkResolver = {
       if (id) return { original: ref, targetNodeId: id, confidence: 0.8, resolvedBy: 'framework' };
     }
     return null;
-  },
-
-  extractNodes(filePath: string, content: string): Node[] {
-    const nodes: Node[] = [];
-    const now = Date.now();
-    const routePattern = /(app|router)\.(get|post|put|patch|delete|all|use)\(\s*['"]([^'"]+)['"]/g;
-    let match;
-    while ((match = routePattern.exec(content)) !== null) {
-      const [, , method, path] = match;
-      if (method === 'use' && !path?.startsWith('/')) continue;
-      const line = content.slice(0, match.index).split('\n').length;
-      nodes.push({
-        id: `route:${filePath}:${method!.toUpperCase()}:${path}:${line}`,
-        kind: 'route',
-        name: `${method!.toUpperCase()} ${path}`,
-        qualifiedName: `${filePath}::${method!.toUpperCase()}:${path}`,
-        filePath,
-        startLine: line,
-        endLine: line,
-        startColumn: 0,
-        endColumn: match[0].length,
-        language: filePath.endsWith('.ts') ? 'typescript' : 'javascript',
-        updatedAt: now,
-      });
-    }
-    return nodes;
-  },
+  }
 };
 
 function isMiddlewareName(name: string): boolean {

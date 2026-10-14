@@ -258,6 +258,14 @@ export class DependencyGraphIntegrator {
       return { importsEdgesCreated, referencesEdgesCreated };
     }
 
+    // Edges into dependency nodes are rebuilt on every run. Without this, each re-index
+    // stacks another copy of the same imports/references edges. (Extractor edges point at
+    // import nodes, never at dependency nodes, so this does not touch them.)
+    rawDb.run(
+      `DELETE FROM edges WHERE kind IN ('imports', 'references')
+         AND target IN (SELECT node_id FROM sec_dependencies)`,
+    );
+
     // Build a lookup map: package name → dependency node ID
     const depByName = new Map<string, string>();
     for (const row of depRows) {
@@ -304,7 +312,8 @@ export class DependencyGraphIntegrator {
     // For each import node that matched a dependency, find code symbols in the
     // same file that call or reference that import node. Those symbols effectively
     // reference the dependency.
-    const codeKinds = new Set(['function', 'method', 'class', 'variable', 'constant', 'property']);
+    // 'route': inline Fastify/Express handlers attribute their calls to the route node
+    const codeKinds = new Set(['function', 'method', 'class', 'variable', 'constant', 'property', 'route']);
     const createdRefEdges = new Set<string>();
 
     for (const importNode of importNodes) {

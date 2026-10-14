@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import type { Node, Edge, FileRecord, NodeKind, Language, GraphStats, NodeContext, NodeMetrics, SearchOptions } from '../types';
 import type { ArchPackage, ArchLayer, ArchPackageDep, ArchLayerDep, ArchCoupling } from '../architecture/types';
+import type { RouteMountFact } from '../extraction/extractor';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { Database } = require('node-sqlite3-wasm');
@@ -182,6 +183,13 @@ export class GraphDatabase {
       // Migration 1: schema.sql CREATE IF NOT EXISTS handles initial setup.
       this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)',
         [1, Date.now()]);
+    }
+
+    // Add metadata column to unresolved_refs if not present (call-site facts, e.g. argKind).
+    try {
+      this.db.run('ALTER TABLE unresolved_refs ADD COLUMN metadata TEXT');
+    } catch {
+      // Column already exists — nothing to do.
     }
 
     // Add attempted_strategies column to unresolved_refs if not present.
@@ -498,16 +506,26 @@ export class GraphDatabase {
 
   // ── Unresolved References ──────────────────────────────────────────────────
 
-  insertUnresolvedRef(sourceId: string, refName: string, refKind: string, filePath: string, line?: number, column?: number): void {
+  insertUnresolvedRef(sourceId: string, refName: string, refKind: string, filePath: string, line?: number, column?: number, metadata?: Record<string, unknown>): void {
     this.db.run(
-      `INSERT INTO unresolved_refs (source_id, ref_name, ref_kind, file_path, line, column)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [sourceId, refName, refKind, filePath, line ?? null, column ?? null]
+      `INSERT INTO unresolved_refs (source_id, ref_name, ref_kind, file_path, line, column, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [sourceId, refName, refKind, filePath, line ?? null, column ?? null, metadata ? JSON.stringify(metadata) : null]
     );
   }
 
   deleteUnresolvedRefsByFile(filePath: string): void {
     this.db.run('DELETE FROM unresolved_refs WHERE file_path = ?', [filePath]);
+    // Route mounts are per-file extraction facts too: they are rewritten with the file
+    this.db.run('DELETE FROM route_mounts WHERE file_path = ?', [filePath]);
+  }
+
+  insertRouteMount(filePath: string, mount: RouteMountFact): void {
+    this.db.run(
+      'INSERT INTO route_mounts (file_path, plugin_name, imported_name, specifier, prefix, line, inline_start, inline_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [filePath, mount.pluginName, mount.importedName, mount.specifier, mount.prefix, mount.line,
+        mount.inlineStart ?? null, mount.inlineEnd ?? null]
+    );
   }
 
   /**
