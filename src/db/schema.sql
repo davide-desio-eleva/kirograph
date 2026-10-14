@@ -91,8 +91,24 @@ CREATE TABLE IF NOT EXISTS unresolved_refs (
   ref_kind TEXT NOT NULL,
   file_path TEXT NOT NULL,
   line INTEGER,
-  column INTEGER
+  column INTEGER,
+  metadata TEXT
 );
+
+-- register(plugin, { prefix }) calls, applied to the plugin's routes by the resolver
+CREATE TABLE IF NOT EXISTS route_mounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  file_path TEXT NOT NULL,
+  plugin_name TEXT NOT NULL,
+  imported_name TEXT,
+  specifier TEXT,
+  prefix TEXT NOT NULL,
+  line INTEGER,
+  inline_start INTEGER,
+  inline_end INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_route_mounts_file ON route_mounts(file_path);
 
 CREATE INDEX IF NOT EXISTS idx_unresolved_source ON unresolved_refs(source_id);
 CREATE INDEX IF NOT EXISTS idx_unresolved_name ON unresolved_refs(ref_name);

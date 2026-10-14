@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.4.6] - 2026-10-14: Fastify routes are detected, SQL false positives on tagged templates are gone
+
+### Added
+
+- **Route extraction for Express and Fastify** ([#66](https://github.com/davide-desio-eleva/kirograph/issues/66)): route registrations are now read from the AST (`app|router|fastify|server|api` or the plugin's first parameter, `.get/.post/...('/path', ..., handler)`, `.route({ method, url, handler })`). Each route links to its handler, so `attack-surface`, `reachability` and `vulns` see the routes that reach a vulnerable dependency.
+- **Fastify framework detection**: a project with `fastify` in `package.json` is detected as `fastify`, not `express`.
+- **Plugin prefixes** are applied across files and nested plugins: `register(plugin, { prefix })` in its own module, aliased or namespace imports, default exports, `require()`, and inline plugins. A route reads as its full path (`GET /api/v1/users/:id`).
+- **First-argument classification** for SQL sinks (`argKind`): JS/TS, Python, Java, Go, C#, PHP, Ruby, Rust and Kotlin. A Drizzle `sql\`...\`` template, a literal with no interpolation, or a query with bound parameters is `parameterized` or `static`; string concatenation, interpolation and formatting are `dynamic`.
+
+### Fixed
+
+- **`security flows` no longer flags Drizzle `sql\`\`` templates as SQL injection** ([#67](https://github.com/davide-desio-eleva/kirograph/issues/67)): the `sql-injection` detector reports only dynamic first arguments. Calls through a package binding also link to that package's dependency, so the usage counts for reachability.
+- **Dependency references no longer accumulate on re-index**: the security integrator rebuilds its `imports` and `references` edges into dependency nodes on every run.
+
 ## [1.4.5] - 2026-10-11: every command closes the graph, on success, error and exit
 
 ### Fixed

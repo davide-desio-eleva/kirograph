@@ -125,6 +125,8 @@ export class ReferenceResolver {
     const remaining = rawDb.get('SELECT COUNT(*) as c FROM unresolved_refs')?.c ?? 0;
     const total = resolvedCount + remaining;
 
+    this.applyRoutePrefixes();
+
     // Run cross-language bridge resolvers after standard resolution
     let bridgeResult: BridgeResolutionResult | undefined;
     if (this.projectRoot) {
@@ -187,6 +189,7 @@ export class ReferenceResolver {
             file_path: filePath,
             line,
             column,
+            metadata: refMetadata,
           } = ref;
 
           const attemptedStrategies: string[] = [];
@@ -263,6 +266,7 @@ export class ReferenceResolver {
               kind: edgeKind,
               line: line ?? undefined,
               column: column ?? undefined,
+              metadata: refMetadata ? JSON.parse(refMetadata) : undefined,
             };
             this.db.insertEdge(edge);
             rawDb.run('DELETE FROM unresolved_refs WHERE id = ?', [refId]);
@@ -365,6 +369,139 @@ export class ReferenceResolver {
    *  3. Namespace-level imports (C# `using MyApp.Services`) — namespace node lookup, then
    *     namespace prefix cache (O(1)) to find any class in that namespace.
    */
+  /**
+   * Apply `register(target, { prefix })` mounts so each route reads as its full path
+   * (`GET /api/v1/users/:id`), including through nested plugins.
+   *
+   * Model: a mount's target is a scope (a plugin declaration, an inline plugin function, or the
+   * whole file when the plugin cannot be matched by name). A scope's absolute prefix is its
+   * owner's absolute prefix plus the prefix of the mount that targets it. A route takes the
+   * prefix of the innermost mounted scope that contains it.
+   *
+   * Raw paths are kept in qualified_name and names are recomputed on every pass, so a removed
+   * mount or a re-indexed plugin file cannot leave a stale prefix behind.
+   */
+  private applyRoutePrefixes(): void {
+    const rawDb = (this.db as any).db;
+    const mounts: RouteMountRow[] = rawDb.all(
+      'SELECT id, file_path, plugin_name, imported_name, specifier, prefix, line, inline_start, inline_end FROM route_mounts ORDER BY id',
+    );
+
+    const declCache = new Map<string, DeclRow[]>();
+    const declsOf = (file: string): DeclRow[] => {
+      let decls = declCache.get(file);
+      if (!decls) {
+        decls = rawDb.all(
+          "SELECT name, start_line, end_line FROM nodes WHERE file_path = ? AND kind IN ('function', 'method', 'constant')",
+          [file],
+        );
+        declCache.set(file, decls!);
+      }
+      return decls!;
+    };
+
+    // Each mount targets one scope. The first mount that targets a scope is the one that counts.
+    const targetOf = new Map<number, RouteScope>();
+    const mountOfScope = new Map<string, RouteMountRow>();
+    const scopeByKey = new Map<string, RouteScope>();
+    for (const m of mounts) {
+      const target = this._mountTarget(m, declsOf);
+      if (!target) continue;
+      targetOf.set(m.id, target);
+      if (!mountOfScope.has(target.key)) {
+        mountOfScope.set(target.key, m);
+        scopeByKey.set(target.key, target);
+      }
+    }
+
+    // Owner of a mount: the innermost scope in its file that contains the register call. A
+    // mount never owns itself, which matters for an inline plugin registered on its own line.
+    const ownerOf = (m: RouteMountRow): string => {
+      const own = targetOf.get(m.id)?.key;
+      const candidates: RouteScope[] = [
+        ...mounts
+          .filter(x => x.file_path === m.file_path && x.inline_start != null)
+          .map(x => ({ key: `${x.file_path}@${x.inline_start}`, file: x.file_path, start: x.inline_start!, end: x.inline_end! })),
+        ...declsOf(m.file_path).map(d => ({
+          key: `${m.file_path}#${d.name}@${d.start_line}`, file: m.file_path, start: d.start_line, end: d.end_line,
+        })),
+      ];
+      let best: RouteScope | null = null;
+      for (const c of candidates) {
+        if (c.key === own || m.line < c.start || m.line > c.end) continue;
+        if (!best || c.end - c.start < best.end - best.start) best = c;
+      }
+      return best ? best.key : wholeFileKey(m.file_path);
+    };
+
+    const memo = new Map<string, string>();
+    const absolutePrefix = (key: string, depth = 0): string => {
+      const cached = memo.get(key);
+      if (cached !== undefined) return cached;
+      const mount = mountOfScope.get(key);
+      if (!mount || depth > 32) return '';
+      const value = joinPrefix(absolutePrefix(ownerOf(mount), depth + 1), mount.prefix);
+      memo.set(key, value);
+      return value;
+    };
+
+    // Innermost mounted scope containing each route
+    const mountedScopes = [...scopeByKey.values()];
+
+    const routes: Array<{ id: string; name: string; file_path: string; qualified_name: string; start_line: number }> =
+      rawDb.all("SELECT id, name, file_path, qualified_name, start_line FROM nodes WHERE kind = 'route'");
+    for (const r of routes) {
+      const match = /::([A-Z]+):(.*)$/.exec(r.qualified_name);
+      if (!match) continue;
+      const [, method, rawPath] = match;
+      let scope: RouteScope | null = null;
+      for (const s of mountedScopes) {
+        if (s.file !== r.file_path || r.start_line < s.start || r.start_line > s.end) continue;
+        if (!scope || s.end - s.start < scope.end - scope.start) scope = s;
+      }
+      const prefix = scope ? absolutePrefix(scope.key) : '';
+      const name = `${method} ${fullRoutePath(prefix, rawPath!)}`;
+      if (name !== r.name) rawDb.run('UPDATE nodes SET name = ? WHERE id = ?', [name, r.id]);
+    }
+  }
+
+  /**
+   * The scope a mount targets. An inline plugin is its own function span; a named plugin is its
+   * declaration in the target module, matched by export name; otherwise the whole target file.
+   */
+  private _mountTarget(m: RouteMountRow, declsOf: (file: string) => DeclRow[]): RouteScope | null {
+    if (m.inline_start != null) {
+      return { key: `${m.file_path}@${m.inline_start}`, file: m.file_path, start: m.inline_start, end: m.inline_end! };
+    }
+    const file = m.specifier ? this._resolveModuleFile(m.specifier, m.file_path) : m.file_path;
+    if (!file) return null;
+    const name = m.imported_name ?? m.plugin_name;
+    const decl = declsOf(file).find(d => d.name === name);
+    if (decl) {
+      return { key: `${file}#${decl.name}@${decl.start_line}`, file, start: decl.start_line, end: decl.end_line };
+    }
+    return { key: wholeFileKey(file), file, start: 0, end: Number.MAX_SAFE_INTEGER };
+  }
+
+  /** File path of a relative module specifier, or null. Package imports are not project files. */
+  private _resolveModuleFile(specifier: string, fromFile: string): string | null {
+    if (!specifier.startsWith('.')) return null;
+    const sourceDir = fromFile.replace(/[^/]+$/, '');
+    const normalized: string[] = [];
+    for (const seg of (sourceDir + specifier).split('/')) {
+      if (seg === '..') normalized.pop();
+      else if (seg !== '.') normalized.push(seg);
+    }
+    const base = normalized.join('/');
+    const rawDb = (this.db as any).db;
+    for (const candidate of [base, base + '.ts', base + '.tsx', base + '.js', base + '.jsx',
+      base + '/index.ts', base + '/index.tsx', base + '/index.js']) {
+      const row = rawDb.get('SELECT path FROM files WHERE path = ?', [candidate]);
+      if (row) return row.path;
+    }
+    return null;
+  }
+
   private _resolveImportPath(importPath: string, sourceFilePath: string): string | null {
     // ── 1. Relative path (JS/TS etc.) ──────────────────────────────────────────
     if (importPath.startsWith('.')) {
@@ -525,4 +662,47 @@ export class ReferenceResolver {
       },
     };
   }
+}
+
+/** Key of the scope that stands for a whole file (a plugin the resolver could not match by name). */
+function wholeFileKey(file: string): string {
+  return `${file}#*`;
+}
+
+/** Absolute prefix of a scope: the owner's prefix with this mount's prefix appended. */
+function joinPrefix(ownerPrefix: string, mountPrefix: string): string {
+  return ownerPrefix.replace(/\/$/, '') + mountPrefix;
+}
+
+/** Full path of a route: its mount prefix followed by the path as written. */
+function fullRoutePath(prefix: string, path: string): string {
+  if (!prefix) return path;
+  if (path === '/') return prefix.replace(/\/$/, '') || '/';
+  return prefix.replace(/\/$/, '') + path;
+}
+
+interface RouteMountRow {
+  id: number;
+  file_path: string;
+  plugin_name: string;
+  imported_name: string | null;
+  specifier: string | null;
+  prefix: string;
+  line: number;
+  inline_start: number | null;
+  inline_end: number | null;
+}
+
+interface DeclRow {
+  name: string;
+  start_line: number;
+  end_line: number;
+}
+
+/** A scope of code that a mount targets: a line span in one file, identified by key. */
+interface RouteScope {
+  key: string;
+  file: string;
+  start: number;
+  end: number;
 }

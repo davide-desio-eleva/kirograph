@@ -11,6 +11,7 @@ import type { Node, Edge, NodeKind, Language } from '../types';
 import { detectLanguage, isSupportedLanguage } from './languages';
 import { initGrammars, getParser, hasWasmGrammar } from './grammars';
 import { extractNotebook } from './notebook';
+import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
 
 export interface UnresolvedRef {
   sourceId: string;
@@ -18,6 +19,23 @@ export interface UnresolvedRef {
   refKind: 'function' | 'import' | 'extends' | 'implements';
   line: number;
   column: number;
+  /** Call-site facts the detectors need later, e.g. how the first argument was built. */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * A `register(target, { prefix })` call. `specifier` is the module the plugin comes from (null
+ * when it is declared in the same file); `importedName` is its export name, which differs from
+ * `pluginName` under an alias. An inline plugin carries its function's line span instead.
+ */
+export interface RouteMountFact {
+  pluginName: string;
+  importedName: string | null;
+  specifier: string | null;
+  prefix: string;
+  line: number;
+  inlineStart?: number;
+  inlineEnd?: number;
 }
 
 export interface ExtractedFile {
@@ -28,6 +46,7 @@ export interface ExtractedFile {
   nodes: Node[];
   edges: Edge[];
   unresolvedRefs: UnresolvedRef[];
+  routeMounts?: RouteMountFact[];
 }
 
 export function makeNodeId(filePath: string, kind: string, name: string, line: number): string {
@@ -170,6 +189,22 @@ export async function extractFile(filePath: string, projectRoot: string, content
 
     walkTree(tree.rootNode, source, relPath, language, nodes, edges, unresolvedRefs, now);
 
+    let routeMounts: RouteMountFact[] | undefined;
+    if (JS_TS_LANGUAGES.has(language)) {
+      const imports = collectImportBindings(tree.rootNode, source, relPath, language);
+
+      // HTTP routes (Express/Fastify/...): route nodes plus route → handler references
+      const routes = extractRoutes(tree.rootNode, source, relPath, now,
+        (handler, routeId, refs) => walkForCalls(handler, source, routeId, refs, language));
+      nodes.push(...routes.nodes);
+      unresolvedRefs.push(...routes.refs);
+      routeMounts = routes.mounts.map(m => toMountFact(m, imports));
+
+      // Code that uses a package binding points at that import, so the security pass can
+      // turn the usage into a dependency reference
+      linkImportBindings(imports, edges, unresolvedRefs);
+    }
+
     // Complexity post-processing: compute metrics for function/method nodes when enabled.
     if (opts?.enableComplexity) {
       const sourceLines = source.split('\n');
@@ -192,7 +227,7 @@ export async function extractFile(filePath: string, projectRoot: string, content
       }
     }
 
-    return { filePath: relPath, language, contentHash, fileSize, nodes, edges, unresolvedRefs };
+    return { filePath: relPath, language, contentHash, fileSize, nodes, edges, unresolvedRefs, routeMounts };
   } finally {
     tree?.delete();
     parser.delete();
@@ -311,7 +346,7 @@ function walkElixirCall(
         updatedAt: now,
       });
       if (parentId) edges.push({ source: parentId, target: id, kind: 'contains' });
-      collectCallRefs(node, source, id, unresolvedRefs);
+      collectCallRefs(node, source, id, unresolvedRefs, language);
       for (let i = 0; i < node.childCount; i++) {
         walkTree(node.child(i), source, filePath, language, nodes, edges, unresolvedRefs, now, id);
       }
@@ -529,7 +564,7 @@ function walkTree(
       }
 
       // Collect call references within this symbol
-      collectCallRefs(node, source, id, unresolvedRefs);
+      collectCallRefs(node, source, id, unresolvedRefs, language);
 
       // Extract inheritance edges for C# and Java class/interface nodes
       if ((kind === 'class' || kind === 'interface') && (language === 'csharp' || language === 'java')) {
@@ -1119,26 +1154,225 @@ function extractCallName(node: any, source: string): string | null {
   return null;
 }
 
-function collectCallRefs(node: any, source: string, sourceId: string, unresolvedRefs: UnresolvedRef[]): void {
-  walkForCalls(node, source, sourceId, unresolvedRefs);
+function collectCallRefs(node: any, source: string, sourceId: string, unresolvedRefs: UnresolvedRef[], language: Language): void {
+  walkForCalls(node, source, sourceId, unresolvedRefs, language);
 }
 
-function walkForCalls(node: any, source: string, sourceId: string, unresolvedRefs: UnresolvedRef[]): void {
+function walkForCalls(node: any, source: string, sourceId: string, unresolvedRefs: UnresolvedRef[], language: Language): void {
   if (CALL_NODE_TYPES.has(node.type)) {
     const calleeName = extractCallName(node, source);
     if (calleeName) {
+      const metadata: Record<string, unknown> = {};
+      if (JS_TS_LANGUAGES.has(language)) {
+        const argKind = classifyFirstArgument(node, source);
+        if (argKind) metadata.argKind = argKind;
+        const rootName = calleeRootName(node, source);
+        if (rootName) metadata.rootName = rootName;
+      } else {
+        const argKind = classifyGenericArgument(node, source, language);
+        if (argKind) metadata.argKind = argKind;
+      }
       unresolvedRefs.push({
         sourceId,
         refName: calleeName,
         refKind: 'function',
         line: node.startPosition.row + 1,
         column: node.startPosition.column,
+        ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
       });
     }
   }
   for (let i = 0; i < node.childCount; i++) {
-    walkForCalls(node.child(i), source, sourceId, unresolvedRefs);
+    walkForCalls(node.child(i), source, sourceId, unresolvedRefs, language);
   }
+}
+
+/** The identifier a call chain starts from: `db` in `db.execute(...)`, `sql` in `sql\`...\``. */
+function calleeRootName(callNode: any, source: string): string | undefined {
+  let fn = callNode.childForFieldName?.('function');
+  while (fn && fn.type === 'member_expression') fn = fn.childForFieldName?.('object');
+  return fn?.type === 'identifier' ? source.slice(fn.startIndex, fn.endIndex) : undefined;
+}
+
+/**
+ * Per-language node types for the first argument of a call. `static` lists literal strings,
+ * `interpolating` lists string forms that always splice values in, `binary` lists
+ * concatenation and formatting operators. Anything else is classified as dynamic.
+ * Grammars differ, so each entry was checked against its tree-sitter node names.
+ */
+const GENERIC_ARG_SHAPES: Partial<Record<Language, { static: string[]; interpolating?: string[]; binary: string[]; wrapper?: string }>> = {
+  python: { static: ['string'], binary: ['binary_operator'] },
+  java: { static: ['string_literal'], binary: ['binary_expression'] },
+  go: { static: ['interpreted_string_literal', 'raw_string_literal'], binary: ['binary_expression'] },
+  csharp: { static: ['string_literal', 'verbatim_string_literal', 'raw_string_literal'], interpolating: ['interpolated_string_expression'], binary: ['binary_expression'], wrapper: 'argument' },
+  php: { static: ['string'], interpolating: ['encapsed_string', 'heredoc'], binary: ['binary_expression'], wrapper: 'argument' },
+  ruby: { static: ['string'], binary: ['binary'] },
+  rust: { static: ['string_literal', 'raw_string_literal'], binary: ['binary_expression'] },
+  kotlin: { static: ['string_literal'], binary: ['additive_expression'] },
+};
+
+/** Text markers of a string that splices values in: f-strings, `$`-variables and `#{}` interpolation. */
+const INTERPOLATION_MARKER = /#\{|\$\{|\{\$|\$[A-Za-z_@]|^\$@?"|^[A-Za-z]*[fF][A-Za-z]*["']/;
+
+/**
+ * First-argument shape for non-JS languages (the same three classes as the JS classifier).
+ * Languages without a table entry get no classification, so their sinks are reported as before.
+ */
+function classifyGenericArgument(callNode: any, source: string, language: Language): 'static' | 'dynamic' | undefined {
+  const shape = GENERIC_ARG_SHAPES[language];
+  if (!shape) return undefined;
+  let first = callNode.childForFieldName?.('arguments')?.namedChild?.(0);
+  while (first && first.type === 'comment') first = first.nextNamedSibling;
+  if (!first) return undefined;
+  if (shape.wrapper && first.type === shape.wrapper) first = first.namedChild?.(0);
+  if (!first) return undefined;
+  if (shape.binary.includes(first.type)) return 'dynamic';
+  if (shape.interpolating?.includes(first.type)) return 'dynamic';
+  if (shape.static.includes(first.type)) {
+    const text = source.slice(first.startIndex, first.endIndex);
+    return INTERPOLATION_MARKER.test(text) ? 'dynamic' : 'static';
+  }
+  return 'dynamic';
+}
+
+/**
+ * How the first argument of a JS/TS call was built:
+ * - 'parameterized': a tagged template with the `sql` tag (Drizzle), bound by the driver
+ * - 'static': a string or template literal with no substitutions
+ * - 'dynamic': anything else (concatenation, interpolation, a variable)
+ * Calls without arguments get no classification.
+ */
+function classifyFirstArgument(callNode: any, source: string): 'parameterized' | 'static' | 'dynamic' | undefined {
+  const argsNode = callNode.childForFieldName?.('arguments');
+  const first = argsNode?.namedChild?.(0);
+  if (!first) return undefined;
+  // Tagged templates: tree-sitter-typescript parses sql`...` as a call whose argument is a
+  // template_string; other grammars use a dedicated tagged_template_expression node.
+  if (first.type === 'tagged_template_expression' || first.type === 'call_expression') {
+    const tag = first.childForFieldName?.('function');
+    const tagArgs = first.childForFieldName?.('arguments');
+    const isSqlTag = tag?.type === 'identifier' && source.slice(tag.startIndex, tag.endIndex) === 'sql';
+    if (first.type === 'tagged_template_expression' || tagArgs?.type === 'template_string') {
+      return isSqlTag ? 'parameterized' : 'dynamic';
+    }
+  }
+  if (first.type === 'string') return 'static';
+  if (first.type === 'template_string') {
+    const hasSubstitution = (first.namedChildren as any[]).some(c => c.type === 'template_substitution');
+    return hasSubstitution ? 'dynamic' : 'static';
+  }
+  return 'dynamic';
+}
+
+interface ImportBinding {
+  specifier: string;
+  importId: string;
+  /** Name exported by the module; null for default and namespace imports. */
+  importedName: string | null;
+}
+
+/**
+ * Local names bound by each top-level JS/TS import (default, namespace and named imports),
+ * mapped to the module they come from and the import node that records it.
+ */
+function collectImportBindings(
+  root: any,
+  source: string,
+  filePath: string,
+  language: Language,
+): Map<string, ImportBinding> {
+  const bindings = new Map<string, ImportBinding>();
+  for (const node of root.namedChildren as any[]) {
+    if (node.type !== 'import_statement') continue;
+    const specifier = extractImportSource(node, source, language);
+    if (!specifier) continue;
+    const importId = makeNodeId(filePath, 'import', specifier, node.startPosition.row + 1);
+    for (const { local, imported } of importBindingNames(node, source)) {
+      bindings.set(local, { specifier, importId, importedName: imported });
+    }
+  }
+  return bindings;
+}
+
+/**
+ * Link calls made through an imported package binding to that file's import node with a
+ * `references` edge. The security integrator then maps the import node to its dependency.
+ * Relative imports are skipped: they point at project files, not dependencies.
+ */
+function linkImportBindings(
+  imports: Map<string, ImportBinding>,
+  edges: Edge[],
+  unresolvedRefs: UnresolvedRef[],
+): void {
+  if (imports.size === 0) return;
+  const linked = new Set<string>();
+  for (const ref of unresolvedRefs) {
+    const root = ref.metadata?.rootName;
+    if (ref.refKind !== 'function' || typeof root !== 'string') continue;
+    const binding = imports.get(root);
+    if (!binding || binding.specifier.startsWith('.') || binding.specifier.startsWith('/')) continue;
+    const key = `${ref.sourceId}→${binding.importId}`;
+    if (linked.has(key)) continue;
+    linked.add(key);
+    edges.push({
+      source: ref.sourceId,
+      target: binding.importId,
+      kind: 'references',
+      line: ref.line,
+      column: ref.column,
+      confidence: 'inferred',
+      confidenceScore: 0.8,
+    });
+  }
+}
+
+/** Local names bound by a JS/TS import, with the exported name they refer to. */
+function importBindingNames(node: any, source: string): Array<{ local: string; imported: string | null }> {
+  const text = (n: any): string => source.slice(n.startIndex, n.endIndex);
+  const names: Array<{ local: string; imported: string | null }> = [];
+  const clause = (node.namedChildren as any[]).find(c => c.type === 'import_clause');
+  if (!clause) return names;
+  for (const child of clause.namedChildren as any[]) {
+    if (child.type === 'identifier') {
+      names.push({ local: text(child), imported: null });
+    } else if (child.type === 'namespace_import') {
+      const id = (child.namedChildren as any[]).find(c => c.type === 'identifier');
+      if (id) names.push({ local: text(id), imported: null });
+    } else if (child.type === 'named_imports') {
+      for (const spec of child.namedChildren as any[]) {
+        if (spec.type !== 'import_specifier') continue;
+        const name = spec.childForFieldName?.('name');
+        const alias = spec.childForFieldName?.('alias');
+        const local = alias ?? name;
+        if (local && name) names.push({ local: text(local), imported: text(name) });
+      }
+    }
+  }
+  return names;
+}
+
+/** Turn a route-extraction mount into a fact, resolving the target's module through the file's imports. */
+function toMountFact(m: RouteMount, imports: Map<string, ImportBinding>): RouteMountFact {
+  const t = m.target;
+  if (t.kind === 'inline') {
+    return { pluginName: '<inline>', importedName: null, specifier: null, prefix: m.prefix, line: m.line,
+      inlineStart: t.startLine, inlineEnd: t.endLine };
+  }
+  if (t.kind === 'require') {
+    return { pluginName: t.specifier, importedName: null, specifier: t.specifier, prefix: m.prefix, line: m.line };
+  }
+  if (t.kind === 'namespace') {
+    const ns = imports.get(t.object);
+    return { pluginName: t.name, importedName: t.name, specifier: ns?.specifier ?? null, prefix: m.prefix, line: m.line };
+  }
+  const binding = imports.get(t.name);
+  return {
+    pluginName: t.name,
+    importedName: binding?.importedName ?? null,
+    specifier: binding?.specifier ?? null,
+    prefix: m.prefix,
+    line: m.line,
+  };
 }
 
 // ── Inheritance extraction ────────────────────────────────────────────────────

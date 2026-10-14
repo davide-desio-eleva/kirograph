@@ -250,6 +250,10 @@ export class DataFlowAnalyzer {
       WHERE e.kind = 'calls'
         AND n2.name IN ('query', 'execute', 'exec', 'raw', 'runQuery', 'executeQuery', 'runSql', 'executeSql')
         AND n.file_path != ''
+        -- Only dynamic first arguments are injection candidates. A Drizzle sql-tagged
+        -- template (parameterized) or a literal with no substitutions cannot carry user input
+        -- into the query text. Edges written before argKind existed have no metadata: keep them.
+        AND COALESCE(json_extract(e.metadata, '$.argKind'), 'dynamic') = 'dynamic'
     `);
 
     // Only report entries that do NOT also have a sanitize/escape call in the same scope
