@@ -11,6 +11,7 @@ import type { RouteMountFact } from '../extraction/extractor';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { Database } = require('node-sqlite3-wasm');
+import { BusyRetryDatabase, waitForDbLock } from './db-lock';
 
 const CURRENT_SCHEMA_VERSION = 2;
 
@@ -24,20 +25,14 @@ export class GraphDatabase {
     fs.mkdirSync(dbDir, { recursive: true });
     const dbPath = path.join(dbDir, 'kirograph.db');
 
-    // ── Pre-flight lock check ─────────────────────────────────────────────────
-    // node-sqlite3-wasm calls process.abort() when the DB is locked, producing
-    // a cryptic "Aborted()" with no context. Detect the lock file early and
-    // throw a clean error instead so the global handler can surface it clearly.
+    // ── Lock check ────────────────────────────────────────────────────────────
+    // The WASM driver locks by creating kirograph.db.lock and never removes it when the
+    // process dies. A stale one is cleared here; a live holder is waited for, then reported
+    // as a clean error (the driver would otherwise abort the process with "Aborted()").
     const lockPath = path.join(dbDir, 'kirograph.db.lock');
-    if (fs.existsSync(lockPath)) {
-      throw new Error(
-        `Database is locked by another process (${lockPath} exists).\n` +
-        `Run: kirograph unlock\n` +
-        `Or delete the lock manually: ${lockPath}`
-      );
-    }
+    waitForDbLock(dbDir, lockPath);
 
-    this.db = new Database(dbPath);
+    this.db = new BusyRetryDatabase(new Database(dbPath), dbDir, lockPath);
     this.db.exec(`
       PRAGMA journal_mode=WAL;
       PRAGMA foreign_keys=ON;
@@ -1189,15 +1184,24 @@ export class GraphDatabase {
 
   // ── Transactions ──────────────────────────────────────────────────────────
 
+  /**
+   * Runs `fn` in one transaction. The process stays marked as a writer for the whole call, so
+   * another process does not mistake this lock for a stale one.
+   */
   transaction<T>(fn: () => T): T {
-    this.db.run('BEGIN');
+    const release = this.db.hold();
     try {
-      const result = fn();
-      this.db.run('COMMIT');
-      return result;
-    } catch (err) {
-      this.db.run('ROLLBACK');
-      throw err;
+      this.db.run('BEGIN');
+      try {
+        const result = fn();
+        this.db.run('COMMIT');
+        return result;
+      } catch (err) {
+        this.db.run('ROLLBACK');
+        throw err;
+      }
+    } finally {
+      release();
     }
   }
 
