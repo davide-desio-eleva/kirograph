@@ -164,14 +164,6 @@ export class ReferenceResolver {
     // WASM linear memory, which can exceed the 2GB limit on large codebases.
     const BATCH_SIZE = 1000;
 
-    // Skip the expensive "scan all nodes" fuzzy fallback for very large graphs.
-    // The O(N*M) cost is prohibitive and the WASM heap cannot sustain it.
-    const FUZZY_ALL_NODES_LIMIT = 200_000;
-    const skipFullFuzzy = this.nodeByIdCache.size > FUZZY_ALL_NODES_LIMIT;
-    if (skipFullFuzzy) {
-      logDebug(`ReferenceResolver: skipping full-scan fuzzy (${this.nodeByIdCache.size} nodes exceeds ${FUZZY_ALL_NODES_LIMIT} limit)`);
-    }
-
     for (let batchStart = 0; batchStart < refs.length; batchStart += BATCH_SIZE) {
       const batchEnd = Math.min(batchStart + BATCH_SIZE, refs.length);
 
@@ -244,14 +236,10 @@ export class ReferenceResolver {
                 }
               }
 
-              // Full-scan fuzzy: only for smaller graphs (O(N*M) is too expensive otherwise)
-              if (!targetId && !skipFullFuzzy) {
-                const allCandidates = [...this.nodeByIdCache.values()];
-                const match = matchReference(refName, allCandidates, threshold);
-                if (match) {
-                  targetId = match.nodeId;
-                }
-              }
+              // No full-scan fallback here: the lowercase index above already holds every node
+              // whose name matches case-insensitively, and the exact, qualified and method
+              // strategies were answered from their indexes earlier. A scan of all nodes per
+              // unresolved reference only repeated that work.
             }
           }
 

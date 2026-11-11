@@ -24,6 +24,7 @@ import { ArchitectureAnalyzer } from '../architecture/index';
 import type { KiroGraphConfig } from '../config';
 import type { IndexResult, IndexProgress, SyncResult } from '../types';
 import { LockManager } from './lock-manager';
+import { WriteBatch } from './write-batch';
 import { Mutex } from '../utils';
 
 const FILE_IO_BATCH_SIZE = 10;
@@ -88,6 +89,7 @@ export class IndexPipeline {
         }
       }
 
+      const batch = new WriteBatch(this.db);
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         opts?.onProgress?.({ phase: 'parsing', current: i + 1, total: files.length, currentFile: file });
@@ -115,7 +117,8 @@ export class IndexPipeline {
           const oldNodes = this.db.getNodesByFile(extracted.filePath);
           if (oldNodes.length > 0) await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
 
-          this.db.transaction(() => {
+          // Written with the other files of its batch, in one transaction (see WriteBatch)
+          batch.add(() => {
             this.db.deleteNodesByFile(extracted.filePath);
             this.db.deleteUnresolvedRefsByFile(extracted.filePath);
             this.db.upsertFile({
@@ -129,12 +132,13 @@ export class IndexPipeline {
             for (const node of extracted.nodes) { this.db.upsertNode(node); nodesCreated++; }
             for (const edge of extracted.edges) { this.db.insertEdge(edge); edgesCreated++; }
             for (const mount of extracted.routeMounts ?? []) this.db.insertRouteMount(extracted.filePath, mount);
-              for (const ref of extracted.unresolvedRefs) {
+            for (const ref of extracted.unresolvedRefs) {
               this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column, ref.metadata);
             }
-          });
-
-          filesIndexed++;
+            filesIndexed++;
+          }, writeErr => {
+            errors.push(`${file}: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`);
+          }, extracted.nodes.length + extracted.edges.length + extracted.unresolvedRefs.length);
           // Reset crash count on successful parse for this language
           crashCounts.set(lang, 0);
         } catch (err) {
@@ -171,6 +175,8 @@ export class IndexPipeline {
           }
         }
       }
+
+      batch.flush();
 
       // Re-process files that have symbolCount=0 but should have symbols (WASM recovery)
       const emptyFiles = this.db.getAllFiles().filter(
@@ -426,6 +432,7 @@ export class IndexPipeline {
       const crashCounts = new Map<string, number>();
       const POISON_THRESHOLD = 3;
 
+      const batch = new WriteBatch(this.db);
       for (let i = 0; i < filesToProcess.length; i++) {
         const file = filesToProcess[i];
         onProgress?.({ phase: 'parsing', current: i + 1, total: filesToProcess.length, currentFile: file });
@@ -442,6 +449,15 @@ export class IndexPipeline {
           const lang = detectLanguage(file);
           if (poisonedLanguages.has(lang)) continue;
 
+          // Skip an unchanged file by hash before parsing it. Parsing is the expensive step, and
+          // when git reports no changes (clean tree, after a pull or a branch switch) the
+          // fallback scan reaches every indexed file.
+          const known = this.db.getFile(path.relative(this.projectRoot, file).replace(/\\/g, '/'));
+          if (known && (await fs.promises.stat(file)).size <= this.config.maxFileSize) {
+            const content = await fs.promises.readFile(file).catch(() => null);
+            if (content && hashContent(content) === known.contentHash) continue;
+          }
+
           const extracted = await extractFile(file, this.projectRoot, undefined, { enableComplexity: !!(this.config as any).enableComplexity, maxFileSize: this.config.maxFileSize });
           if (!extracted) continue;
 
@@ -453,7 +469,8 @@ export class IndexPipeline {
           const oldEdgeCount = this.db.getEdgesForNodes(oldNodes.map(n => n.id)).length;
           await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
 
-          this.db.transaction(() => {
+          // Written with the other files of its batch, in one transaction (see WriteBatch)
+          batch.add(() => {
             result.nodesRemoved += oldNodes.length;
             result.edgesRemoved += oldEdgeCount;
             this.db.deleteNodesByFile(extracted.filePath);
@@ -469,16 +486,17 @@ export class IndexPipeline {
             for (const node of extracted.nodes) { this.db.upsertNode(node); result.nodesCreated++; }
             for (const edge of extracted.edges) { this.db.insertEdge(edge); result.edgesCreated++; }
             for (const mount of extracted.routeMounts ?? []) this.db.insertRouteMount(extracted.filePath, mount);
-              for (const ref of extracted.unresolvedRefs) {
+            for (const ref of extracted.unresolvedRefs) {
               this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column, ref.metadata);
             }
-          });
-
-          this.resolver.invalidateFile(extracted.filePath);
+            this.resolver.invalidateFile(extracted.filePath);
+            if (isNew) result.added.push(extracted.filePath);
+            else { result.modified.push(extracted.filePath); result.nodesUpdated += extracted.nodes.length; }
+          }, writeErr => {
+            result.errors.push(`${file}: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`);
+          }, extracted.nodes.length + extracted.edges.length + extracted.unresolvedRefs.length);
           // Reset crash count on successful parse for this language
           crashCounts.set(lang, 0);
-          if (isNew) result.added.push(extracted.filePath);
-          else { result.modified.push(extracted.filePath); result.nodesUpdated += extracted.nodes.length; }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           result.errors.push(`${file}: ${msg}`);
@@ -510,6 +528,8 @@ export class IndexPipeline {
           }
         }
       }
+
+      batch.flush();
 
       // Resolve cross-file references
       onProgress?.({ phase: 'resolving', current: 0, total: 1 });

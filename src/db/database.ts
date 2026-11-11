@@ -1205,6 +1205,31 @@ export class GraphDatabase {
     }
   }
 
+  private savepointDepth = 0;
+
+  /**
+   * Runs `fn` inside the current transaction and undoes only its own writes if it throws.
+   * Must be called inside `transaction()`. The name depends only on the nesting depth, so the
+   * statements are the same every time and stay in the statement cache.
+   */
+  savepoint<T>(fn: () => T): T {
+    const name = `kg_sp${this.savepointDepth++}`;
+    try {
+      this.db.run(`SAVEPOINT ${name}`);
+      try {
+        const result = fn();
+        this.db.run(`RELEASE ${name}`);
+        return result;
+      } catch (err) {
+        this.db.run(`ROLLBACK TO ${name}`);
+        this.db.run(`RELEASE ${name}`);
+        throw err;
+      }
+    } finally {
+      this.savepointDepth--;
+    }
+  }
+
   close(): void {
     this.db.close();
   }

@@ -7,6 +7,16 @@
 - **A killed process no longer leaves the database locked for good** ([#70](https://github.com/davide-desio-eleva/kirograph/issues/70)): the SQLite WASM driver takes its file lock by creating the directory `kirograph.db.lock`, and a process killed while holding it never removes it. Every later open then failed with `Database is locked` until someone ran `kirograph unlock`. A process using the database now leaves a marker in `.kirograph/db-writers/` while it writes. A lock directory older than 5 seconds with no live marker is removed automatically, with a warning. A live holder is waited for by the database busy timeout (120 seconds), so a long sync is not cut short.
 - **A second `sync` waits for a running one instead of failing at once** ([#70](https://github.com/davide-desio-eleva/kirograph/issues/70)): a sync that started while another index or sync held the process lock failed immediately with `KiroGraph is locked by PID`. It now waits up to 120 seconds, the same as a read waits on the database lock.
 
+### Performance
+
+Measured on a 592-file project: a full index went from 26.9 s to 12 s, a sync of 200 changed files from 10.2 s to 6.7 s, and a sync with nothing to do from 9.3 s to 1.9 s. The graph produced is identical.
+
+- **A sync with no changes no longer parses every file**: when git reported nothing (a clean tree, after a pull or a branch switch), the fallback scan parsed all indexed files and only then compared the hash. Unchanged files are now skipped by hash before they are parsed.
+- **Files are written in batches**: an index or sync wrote each file in its own transaction, so every file paid a commit (an fsync and a lock round trip), more than half of a sync. Files are now written 20 at a time, or up to 3,000 rows, in one transaction. Each file is written in a savepoint, so a file that fails does not undo the others, and the write lock is held for a few tens of milliseconds at a time.
+- **The resolver no longer scans every node for each unresolved reference**: that scan found nothing the indexed lookups before it had not already found.
+- **Prepared statements are reused**: the WASM driver prepared and finalized a statement on every query.
+- **The writer marker is refreshed at most once a second** instead of being created and removed for every write. A marker now counts as live only while its process is alive and it was refreshed in the last 30 seconds, so an idle process no longer keeps a dead writer's lock in place.
+
 ## [1.4.6] - 2026-10-14: Fastify routes are detected, SQL false positives on tagged templates are gone
 
 ### Added
