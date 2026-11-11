@@ -1,17 +1,14 @@
 /**
- * Recovery and retry for the database lock that node-sqlite3-wasm takes.
+ * Recovery for the database lock that node-sqlite3-wasm takes.
  *
  * The WASM build locks the file by creating the directory `kirograph.db.lock` and removes it on
  * close. A process killed while it holds the lock (an IDE closing an MCP server or a hook, a
  * crash) never removes it, so every later open failed with "Database is locked" until someone
- * ran `kirograph unlock`. Two changes fix that:
+ * ran `kirograph unlock`. Each process that uses the database leaves a marker in
+ * `.kirograph/db-writers/<pid>` while it runs a write or a transaction. A lock directory older
+ * than `dbLockTiming.staleAfterMs` with no marker from another live process is stale and removed.
  *
- * - Each process that is using the database leaves a marker in `.kirograph/db-writers/<pid>` for
- *   as long as it runs a statement or a transaction. A lock directory is stale when it is older
- *   than `dbLockTiming.staleAfterMs` and no other live process has a marker. Only then it is
- *   removed.
- * A live writer is waited for by the driver itself (`busy_timeout`), so only the stale case
- * needs handling here.
+ * A live writer is waited for by the driver itself (`busy_timeout`), so nothing here waits.
  */
 
 import * as fs from 'fs';
@@ -20,18 +17,11 @@ import { logWarn } from '../errors';
 
 const WRITERS_DIR = 'db-writers';
 
-/** Tunables. Exposed mutable so tests can shorten the waits. */
+/** Tunable. Exposed mutable so tests can change it. */
 export const dbLockTiming = {
   /** A lock directory older than this, with no live marker, is treated as left behind by a dead process. */
   staleAfterMs: 5_000,
-  /** Total time a busy statement or an open waits for a live holder before giving up. */
-  maxWaitMs: 8_000,
 };
-
-/** Sleep without the event loop, for the synchronous database API. */
-function sleepSync(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
 
 function writersDir(dbDir: string): string {
   return path.join(dbDir, WRITERS_DIR);
@@ -87,24 +77,6 @@ export function clearStaleDbLock(dbDir: string, lockPath: string): boolean {
   }
   logWarn(`Removed a stale database lock left by a process that exited (${lockPath}).`);
   return true;
-}
-
-/**
- * Waits until the database lock is free, removing it if it is stale. Throws if a live process
- * keeps it for longer than `dbLockTiming.maxWaitMs`.
- */
-export function waitForDbLock(dbDir: string, lockPath: string): void {
-  const deadline = Date.now() + dbLockTiming.maxWaitMs;
-  while (!clearStaleDbLock(dbDir, lockPath)) {
-    if (Date.now() >= deadline) {
-      throw new Error(
-        `Database is locked by another process (${lockPath} exists).\n` +
-        `Run: kirograph unlock\n` +
-        `Or delete the lock manually: ${lockPath}`,
-      );
-    }
-    sleepSync(50);
-  }
 }
 
 /**

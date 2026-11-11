@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { GraphDatabase } from '../../src/db/database';
-import { dbLockTiming } from '../../src/db/db-lock';
+import { clearStaleDbLock, dbLockTiming } from '../../src/db/db-lock';
 
 const WASM_DRIVER = path.resolve(__dirname, '../../node_modules/node-sqlite3-wasm');
 
@@ -23,12 +23,10 @@ beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'kg-dblock-'));
   fs.mkdirSync(dbDir(), { recursive: true });
   dbLockTiming.staleAfterMs = 5_000;
-  dbLockTiming.maxWaitMs = 300;
 });
 
 afterEach(() => {
   dbLockTiming.staleAfterMs = 5_000;
-  dbLockTiming.maxWaitMs = 8_000;
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -42,14 +40,14 @@ describe('database lock recovery', () => {
     db.close();
   });
 
-  it('refuses to open while a live process holds the lock', () => {
+  it('does not remove a lock while a live process holds it', () => {
     fs.mkdirSync(lockPath());
     fs.utimesSync(lockPath(), agedSeconds(60), agedSeconds(60));
     fs.mkdirSync(writersDir());
     // process.ppid is alive for the whole test run: it stands for a live writer
     fs.writeFileSync(path.join(writersDir(), String(process.ppid)), String(Date.now()));
 
-    expect(() => new GraphDatabase(root)).toThrow(/locked by another process/);
+    expect(clearStaleDbLock(dbDir(), lockPath())).toBe(false);
     expect(fs.existsSync(lockPath())).toBe(true);
   });
 
@@ -70,7 +68,6 @@ describe('database lock recovery', () => {
       holder.on('error', reject);
     });
 
-    dbLockTiming.maxWaitMs = 5_000;
     const started = Date.now();
     db.transaction(() => db.upsertFile(FILE));
     // the holder keeps the lock for 400 ms: the write must have waited for it
@@ -80,6 +77,30 @@ describe('database lock recovery', () => {
     await new Promise<void>(resolve => holder.on('exit', () => resolve()));
     db.close();
   });
+
+  it('opens after a live writer releases a lock held for longer than 8 seconds', async () => {
+    const holder = spawn(process.execPath, ['-e', `
+      const { Database } = require(process.argv[1]);
+      const raw = new Database(process.argv[2]);
+      raw.exec('CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, content_hash TEXT, language TEXT, file_size INTEGER, symbol_count INTEGER, indexed_at INTEGER)');
+      raw.exec('BEGIN IMMEDIATE');
+      console.log('locked');
+      setTimeout(() => { raw.exec('COMMIT'); raw.close(); }, 9000);
+    `, WASM_DRIVER, path.join(dbDir(), 'kirograph.db')]);
+    await new Promise<void>((resolve, reject) => {
+      holder.stdout.on('data', (d: Buffer) => { if (String(d).includes('locked')) resolve(); });
+      holder.on('error', reject);
+    });
+
+    const started = Date.now();
+    const db = new GraphDatabase(root);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(8000);
+    db.transaction(() => db.upsertFile(FILE));
+    expect(db.getFile('a.ts')).not.toBeNull();
+    db.close();
+
+    await new Promise<void>(resolve => holder.on('exit', () => resolve()));
+  }, 30_000);
 
   it('recovers after a writer is killed while it holds the lock', () => {
     // A writer that dies mid-transaction, the way an IDE that kills a hook leaves it

@@ -11,7 +11,7 @@ import type { RouteMountFact } from '../extraction/extractor';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { Database } = require('node-sqlite3-wasm');
-import { BusyRetryDatabase, waitForDbLock } from './db-lock';
+import { BusyRetryDatabase, clearStaleDbLock } from './db-lock';
 
 const CURRENT_SCHEMA_VERSION = 2;
 
@@ -27,16 +27,16 @@ export class GraphDatabase {
 
     // ── Lock check ────────────────────────────────────────────────────────────
     // The WASM driver locks by creating kirograph.db.lock and never removes it when the
-    // process dies. A stale one is cleared here; a live holder is waited for, then reported
-    // as a clean error (the driver would otherwise abort the process with "Aborted()").
+    // process dies. A stale one is cleared here. A live holder is waited for by the driver's
+    // busy_timeout (set first in the PRAGMAs below), so a long sync is not cut short.
     const lockPath = path.join(dbDir, 'kirograph.db.lock');
-    waitForDbLock(dbDir, lockPath);
+    clearStaleDbLock(dbDir, lockPath);
 
     this.db = new BusyRetryDatabase(new Database(dbPath), dbDir, lockPath);
     this.db.exec(`
+      PRAGMA busy_timeout=120000;
       PRAGMA journal_mode=WAL;
       PRAGMA foreign_keys=ON;
-      PRAGMA busy_timeout=120000;
       PRAGMA synchronous=NORMAL;
       PRAGMA cache_size=-64000;
       PRAGMA temp_store=MEMORY;
