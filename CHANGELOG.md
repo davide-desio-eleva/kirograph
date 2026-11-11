@@ -5,6 +5,7 @@
 ### Fixed
 
 - **A killed process no longer leaves the database locked for good** ([#70](https://github.com/davide-desio-eleva/kirograph/issues/70)): the SQLite WASM driver takes its file lock by creating the directory `kirograph.db.lock`, and a process killed while holding it never removes it. Every later open then failed with `Database is locked` until someone ran `kirograph unlock`. A process using the database now leaves a marker in `.kirograph/db-writers/` while it writes. A lock directory older than 5 seconds with no live marker is removed automatically, with a warning. A live holder is waited for by the database busy timeout (120 seconds), so a long sync is not cut short.
+- **A second `sync` waits for a running one instead of failing at once** ([#70](https://github.com/davide-desio-eleva/kirograph/issues/70)): a sync that started while another index or sync held the process lock failed immediately with `KiroGraph is locked by PID`. It now waits up to 120 seconds, the same as a read waits on the database lock.
 
 ## [1.4.6] - 2026-10-14: Fastify routes are detected, SQL false positives on tagged templates are gone
 

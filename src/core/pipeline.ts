@@ -54,7 +54,7 @@ export class IndexPipeline {
     // gates the finally so we never unlink a lock owned by another process.
     let heldByUs = false;
     try {
-      this.lock.acquire();
+      await this.lock.acquireWait();
       heldByUs = true;
     } catch (e) {
       release();
@@ -344,7 +344,7 @@ export class IndexPipeline {
     // gates the finally so we never unlink a lock owned by another process.
     let heldByUs = false;
     try {
-      this.lock.acquire();
+      await this.lock.acquireWait();
       heldByUs = true;
     } catch (e) {
       release();
