@@ -13,7 +13,7 @@ import type { RouteMountFact } from '../extraction/extractor';
 const { Database } = require('node-sqlite3-wasm');
 import { BusyRetryDatabase, clearStaleDbLock } from './db-lock';
 
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 export class GraphDatabase {
   private db: any;
@@ -161,6 +161,14 @@ export class GraphDatabase {
     const versionRow = this.db.get('SELECT version FROM schema_versions ORDER BY version DESC LIMIT 1');
     const currentVersion = versionRow ? versionRow.version : 0;
 
+    if (currentVersion < 3) {
+      // Migration 3: nodes_fts is an external-content table (content_rowid = nodes.rowid), but its
+      // rows used to be inserted without a rowid and deleted by the id column, which is not
+      // indexed, so every delete scanned the whole table. Rows now carry the node's rowid and are
+      // deleted by it. Rebuild once so existing rows line up with their nodes.
+      try { this.db.run("INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')"); } catch { /* no fts table yet */ }
+      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [3, Date.now()]);
+    }
     if (currentVersion < 2) {
       // Migration 2: add complexity metric columns to nodes table.
       for (const col of [
@@ -247,7 +255,7 @@ export class GraphDatabase {
   // ── Nodes ──────────────────────────────────────────────────────────────────
 
   upsertNode(node: Node): void {
-    this.db.run(
+    const inserted = this.db.run(
       `INSERT OR REPLACE INTO nodes
         (id, kind, name, qualified_name, file_path, language,
          start_line, end_line, start_column, end_column,
@@ -271,11 +279,12 @@ export class GraphDatabase {
         node.nestingDepth ?? null,
       ]
     );
-    // Keep FTS in sync
+    // Keep FTS in sync, under the node's own rowid so it can be deleted by rowid (see deleteNodesByFile)
     this.db.run(
-      `INSERT OR REPLACE INTO nodes_fts (id, name, qualified_name, docstring, signature)
-       VALUES (?, ?, ?, ?, ?)`,
-      [node.id, node.name, node.qualifiedName, node.docstring ?? '', node.signature ?? '']
+      `INSERT OR REPLACE INTO nodes_fts (rowid, id, name, qualified_name, docstring, signature)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [(inserted as { lastInsertRowid: number }).lastInsertRowid,
+        node.id, node.name, node.qualifiedName, node.docstring ?? '', node.signature ?? '']
     );
   }
 
@@ -372,7 +381,10 @@ export class GraphDatabase {
     if (ids.length === 0) return;
     const placeholders = ids.map(() => '?').join(',');
     this.db.run(`DELETE FROM edges WHERE source IN (${placeholders}) OR target IN (${placeholders})`, [...ids, ...ids]);
-    this.db.run(`DELETE FROM nodes_fts WHERE id IN (${placeholders})`, ids);
+    // By rowid: the FTS table has no index on id, so deleting by id scanned the whole table for
+    // every file, which made a sync slower the larger the project. Must run before the nodes
+    // are deleted: an external-content table reads the old values from them.
+    this.db.run(`DELETE FROM nodes_fts WHERE rowid IN (SELECT rowid FROM nodes WHERE file_path = ?)`, [filePath]);
     this.db.run(`DELETE FROM nodes WHERE file_path = ?`, [filePath]);
   }
 

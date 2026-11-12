@@ -11,7 +11,8 @@ export function register(program: Command): void {
     .option('--files <files...>', 'Specific files to sync')
     .option('-q, --quiet', 'Suppress progress output')
     .option('--progress', 'Verbose per-file progress output (implies errors are shown inline)')
-    .action(async (projectPath: string | undefined, opts: { files?: string[]; quiet?: boolean; progress?: boolean }) => {
+    .option('--timings', 'Print the time spent in each phase when the sync ends')
+    .action(async (projectPath: string | undefined, opts: { files?: string[]; quiet?: boolean; progress?: boolean; timings?: boolean }) => {
       const KiroGraph = (await import('../../index')).default;
       const target = path.resolve(projectPath ?? process.cwd());
       const cg = await KiroGraph.open(target);
@@ -25,10 +26,36 @@ export function register(program: Command): void {
         progressHandler = renderSyncProgress;
       }
 
+      // --timings: add up the time between phase changes, whatever the progress output is
+      const phaseMs = new Map<string, number>();
+      let phase: string | null = null;
+      let phaseStart = 0;
+      const syncStart = Date.now();
+      if (opts.timings) {
+        const inner = progressHandler;
+        progressHandler = p => {
+          if (p.phase !== phase) {
+            const now = Date.now();
+            if (phase) phaseMs.set(phase, (phaseMs.get(phase) ?? 0) + now - phaseStart);
+            phase = p.phase;
+            phaseStart = now;
+          }
+          inner?.(p);
+        };
+      }
+
       const result = await cg.sync({
         files: opts.files,
         onProgress: progressHandler,
       });
+
+      if (opts.timings) {
+        if (phase) phaseMs.set(phase, (phaseMs.get(phase) ?? 0) + Date.now() - phaseStart);
+        console.log(`\n  Time per phase (total ${Date.now() - syncStart} ms):`);
+        for (const [name, ms] of [...phaseMs].sort((a, b) => b[1] - a[1])) {
+          console.log(`    ${String(ms).padStart(7)} ms  ${name}`);
+        }
+      }
 
       const changed = result.added.length + result.modified.length + result.removed.length;
       if (changed === 0) {

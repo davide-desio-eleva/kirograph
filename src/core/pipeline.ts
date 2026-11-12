@@ -531,11 +531,15 @@ export class IndexPipeline {
 
       batch.flush();
 
-      // Resolve cross-file references
-      onProgress?.({ phase: 'resolving', current: 0, total: 1 });
-      await this.resolver.resolveAll((current, total) => {
-        onProgress?.({ phase: 'resolving', current, total });
-      });
+      // Resolve cross-file references. When no file was added, changed or removed, no node or
+      // reference is new, so resolution has nothing to find: every unresolved reference was
+      // already tried against the same nodes.
+      if (result.added.length + result.modified.length + result.removed.length > 0) {
+        onProgress?.({ phase: 'resolving', current: 0, total: 1 });
+        await this.resolver.resolveAll((current, total) => {
+          onProgress?.({ phase: 'resolving', current, total });
+        });
+      }
 
       await detectFrameworks(this.projectRoot);
 
