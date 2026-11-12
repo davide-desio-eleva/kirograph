@@ -11,6 +11,13 @@ export function register(program: Command): void {
     .action(async (projectPath: string | undefined, opts: { quiet?: boolean }) => {
       const target = path.resolve(projectPath ?? process.cwd());
 
+      // Not dirty and nothing changed: answer without opening the database or loading the library
+      const { quickIsUpToDate } = await import('../../sync/state');
+      if (quickIsUpToDate(target)) {
+        if (!opts.quiet) console.log(`  ${dim}Not dirty, skipped.${reset}`);
+        return;
+      }
+
       // A running MCP server for this project decides and syncs itself (see sync/remote.ts)
       const { requestSync } = await import('../../sync/remote');
       const remote = await requestSync(target, { ifDirty: true });

@@ -3,18 +3,16 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { workspaceFingerprint, writeSyncState, isUpToDate, clearSyncState } from '../../src/sync/state';
-import { createDefaultConfig } from '../../src/config';
+import { workspaceFingerprint, writeSyncState, isUpToDate, clearSyncState, quickIsUpToDate } from '../../src/sync/state';
 
 let root: string;
-const config = createDefaultConfig();
 const git = (...args: string[]) =>
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: root, stdio: 'ignore' });
 const write = (rel: string, text: string) => {
   fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
   fs.writeFileSync(path.join(root, rel), text);
 };
-const fp = () => workspaceFingerprint(root, config);
+const fp = () => workspaceFingerprint(root);
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'kg-state-'));
@@ -23,6 +21,8 @@ beforeEach(() => {
   git('add', '-A');
   git('commit', '-qm', 'init');
   fs.mkdirSync(path.join(root, '.kirograph'));
+  write('.kirograph/kirograph.db', 'db'); // the state is tied to the database file
+  write('.kirograph/config.json', JSON.stringify({ enableSecurity: false, maxFileSize: 100 }));
 });
 
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -54,7 +54,24 @@ describe('workspaceFingerprint', () => {
     const before = fp();
     git('commit', '-q', '--allow-empty', '-m', 'x');
     expect(fp()).not.toBe(before);
-    expect(workspaceFingerprint(root, { ...config, enableSecurity: !config.enableSecurity })).not.toBe(fp());
+    const same = fp();
+    write('.kirograph/config.json', JSON.stringify({ enableSecurity: true, maxFileSize: 100 }));
+    expect(fp()).not.toBe(same);
+  });
+
+  it('ignores the order of keys and the detected frameworks in the configuration', () => {
+    const before = fp();
+    write('.kirograph/config.json', JSON.stringify({ maxFileSize: 100, frameworkHints: ['express'], enableSecurity: false }));
+    expect(fp()).toBe(before);
+  });
+
+  it('reads HEAD from a branch, a packed ref and a detached head, as git reports it', () => {
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+    const onBranch = fp();
+    git('pack-refs', '--all');
+    expect(fp()).toBe(onBranch);
+    git('checkout', '-q', '--detach', sha);
+    expect(fp()).toBe(onBranch);
   });
 
   it('ignores our own files', () => {
@@ -67,7 +84,7 @@ describe('workspaceFingerprint', () => {
   it('is null outside a git repository', () => {
     const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'kg-nogit-'));
     try {
-      expect(workspaceFingerprint(plain, config)).toBeNull();
+      expect(workspaceFingerprint(plain)).toBeNull();
     } finally {
       fs.rmSync(plain, { recursive: true, force: true });
     }
@@ -106,5 +123,38 @@ describe('sync state', () => {
     expect(isUpToDate(root, f)).toBe(false);
     write('.kirograph/sync-state.json', '{not json');
     expect(isUpToDate(root, f)).toBe(false);
+  });
+});
+
+describe('quickIsUpToDate', () => {
+  it('answers from the state, git and the configuration alone', () => {
+    expect(quickIsUpToDate(root)).toBe(false); // no state yet
+    writeSyncState(root, fp()!);
+    expect(quickIsUpToDate(root)).toBe(true);
+    write('a.ts', 'export const a = 9;\n');
+    expect(quickIsUpToDate(root)).toBe(false);
+  });
+
+  it('is false while the dirty marker is set', () => {
+    writeSyncState(root, fp()!);
+    write('.kirograph/dirty', '1');
+    expect(quickIsUpToDate(root)).toBe(false);
+  });
+
+  it('is false when the database file was replaced', () => {
+    writeSyncState(root, fp()!);
+    fs.unlinkSync(path.join(root, '.kirograph', 'kirograph.db'));
+    write('.kirograph/kirograph.db', 'another');
+    expect(quickIsUpToDate(root)).toBe(false);
+  });
+
+  it('is false when there is no database', () => {
+    fs.unlinkSync(path.join(root, '.kirograph', 'kirograph.db'));
+    writeSyncState(root, fp()!);
+    expect(quickIsUpToDate(root)).toBe(false);
+  });
+
+  it('is false for a directory that is not a project', () => {
+    expect(quickIsUpToDate(path.join(root, 'nowhere'))).toBe(false);
   });
 });

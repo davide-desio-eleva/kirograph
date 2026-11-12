@@ -78,7 +78,7 @@ export class IndexPipeline {
     }
     const start = Date.now();
     // Taken before anything is read, so an edit made during the index is seen by the next sync
-    const fingerprint = workspaceFingerprint(this.projectRoot, this.config);
+    const fingerprint = workspaceFingerprint(this.projectRoot);
     const errors: string[] = [];
     let filesIndexed = 0;
     let nodesCreated = 0;
@@ -398,7 +398,7 @@ export class IndexPipeline {
   isUpToDate(): boolean {
     if (!this.hasIndexedFiles()) return false; // never indexed
     if (this.lock.isDirty()) return false;     // see sync()
-    return isUpToDate(this.projectRoot, workspaceFingerprint(this.projectRoot, this.config));
+    return isUpToDate(this.projectRoot, workspaceFingerprint(this.projectRoot));
   }
 
   async sync(opts?: {
@@ -408,7 +408,7 @@ export class IndexPipeline {
     full?: boolean;
   }): Promise<SyncResult> {
     // Taken before anything is read, so an edit made during the sync is seen by the next one
-    const fingerprint = opts?.changedFiles ? null : workspaceFingerprint(this.projectRoot, this.config);
+    const fingerprint = opts?.changedFiles ? null : workspaceFingerprint(this.projectRoot);
     // The dirty marker is an explicit signal (written by the file-save hook, and the only one for
     // an ignored file the fingerprint cannot see), so a sync that finds it is never skipped
     if (!opts?.full && fingerprint && this.hasIndexedFiles() && !this.lock.isDirty()

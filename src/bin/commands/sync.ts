@@ -16,6 +16,19 @@ export function register(program: Command): void {
     .action(async (projectPath: string | undefined, opts: { files?: string[]; quiet?: boolean; progress?: boolean; timings?: boolean; full?: boolean }) => {
       const target = path.resolve(projectPath ?? process.cwd());
 
+      // Nothing changed since the last sync: answer without opening the database or loading the
+      // library (see sync/state.ts)
+      if (!opts.files && !opts.full && !opts.timings) {
+        const { quickIsUpToDate } = await import('../../sync/state');
+        if (quickIsUpToDate(target)) {
+          if (!opts.quiet) {
+            process.stdout.write('\n');
+            console.log(`  ${dim}Nothing to sync — index is up to date.${reset}`);
+          }
+          return;
+        }
+      }
+
       // A running MCP server for this project does the sync itself: it has the database open, and
       // a second process would contend with it for the lock. Needs the plain, default run.
       if (!opts.files && !opts.progress && !opts.timings) {

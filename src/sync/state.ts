@@ -9,9 +9,12 @@
  * The fingerprint covers what git can report cheaply: the HEAD commit, and the status of the
  * working tree. A file that is already modified keeps the same status line when it is edited
  * again, so each reported file also contributes its modification time and size. It also covers
- * the configuration and the KiroGraph version, so a change of either runs a real sync.
+ * the configuration file and the KiroGraph version, so a change of either runs a real sync.
  *
  * It is stored after a sync that finished without errors, and compared at the start of the next.
+ * Nothing here needs the index: `quickIsUpToDate` answers from the state file, git and the
+ * configuration file alone, so a sync that has nothing to do can be answered before the database
+ * is opened or the library loaded.
  * A project outside git has no fingerprint (null): its syncs always run.
  */
 
@@ -19,7 +22,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { execFileSync } from 'child_process';
-import type { KiroGraphConfig } from '../config';
 import { findGitRoots } from './index';
 
 const STATE_FILE = 'sync-state.json';
@@ -34,6 +36,8 @@ const MAX_AGE_MS = 10 * 60_000;
 interface SyncState {
   format: number;
   fingerprint: string;
+  /** Identity of the database file the state was recorded for: a replaced database invalidates it. */
+  db: string | null;
   /** When the sync that stored it ended, epoch ms. */
   at: number;
 }
@@ -58,10 +62,49 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(value) ?? 'null';
 }
 
-/** The configuration that changes what a sync does. Detected frameworks are an output, not an input. */
-function configKey(config: KiroGraphConfig): string {
-  const { frameworkHints: _ignored, ...rest } = config as KiroGraphConfig & { frameworkHints?: unknown };
-  return stableStringify(rest);
+/**
+ * The configuration that changes what a sync does, from the file. Detected frameworks are an
+ * output of an index (written back to the file), not an input.
+ */
+function configKey(projectRoot: string): string {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(projectRoot, '.kirograph', 'config.json'), 'utf8'));
+    if (raw && typeof raw === 'object') delete (raw as Record<string, unknown>).frameworkHints;
+    return stableStringify(raw);
+  } catch {
+    return 'none'; // no file: the defaults apply
+  }
+}
+
+/** The file the database lives in. Its identity (not its content, which every write changes). */
+function dbIdentity(projectRoot: string): string | null {
+  try {
+    const stat = fs.statSync(path.join(projectRoot, '.kirograph', 'kirograph.db'));
+    return `${stat.ino}:${Math.round(stat.birthtimeMs)}`;
+  } catch {
+    return null;
+  }
+}
+
+/** HEAD without starting git, for the ordinary layouts. Null means ask git. */
+function readHead(gitRoot: string): string | null {
+  try {
+    const gitDir = path.join(gitRoot, '.git');
+    if (!fs.statSync(gitDir).isDirectory()) return null; // worktree or submodule: ask git
+    const head = fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf8').trim();
+    if (/^[0-9a-f]{40,64}$/.test(head)) return head; // detached
+    const ref = head.match(/^ref: (.+)$/)?.[1];
+    if (!ref) return null;
+    try {
+      return fs.readFileSync(path.join(gitDir, ref), 'utf8').trim();
+    } catch {
+      const packed = fs.readFileSync(path.join(gitDir, 'packed-refs'), 'utf8');
+      const line = packed.split('\n').find(l => l.endsWith(` ${ref}`));
+      return line ? line.split(' ')[0] : null;
+    }
+  } catch {
+    return null;
+  }
 }
 
 function git(cwd: string, args: string[]): string {
@@ -74,9 +117,9 @@ function git(cwd: string, args: string[]): string {
  * Fingerprint of the workspace, or null when it cannot be computed cheaply (no git repository,
  * or git failed).
  */
-export function workspaceFingerprint(projectRoot: string, config: KiroGraphConfig): string | null {
+export function workspaceFingerprint(projectRoot: string): string | null {
   const hash = crypto.createHash('sha1');
-  hash.update(`format ${STATE_FORMAT}|version ${packageVersion()}|config ${configKey(config)}`);
+  hash.update(`format ${STATE_FORMAT}|version ${packageVersion()}|config ${configKey(projectRoot)}`);
 
   for (const gitRoot of findGitRoots(projectRoot)) {
     if (!fs.existsSync(path.join(gitRoot, '.git'))) return null;
@@ -88,8 +131,10 @@ export function workspaceFingerprint(projectRoot: string, config: KiroGraphConfi
     } catch {
       return null;
     }
-    let head = 'no-head';
-    try { head = git(gitRoot, ['rev-parse', 'HEAD']).trim(); } catch { /* an empty repository has no HEAD */ }
+    let head = readHead(gitRoot) ?? 'no-head';
+    if (head === 'no-head') {
+      try { head = git(gitRoot, ['rev-parse', 'HEAD']).trim(); } catch { /* an empty repository has no HEAD */ }
+    }
     hash.update(`|root ${gitRoot}|head ${head}`);
 
     for (const entry of status.split('\0')) {
@@ -123,7 +168,7 @@ function readState(projectRoot: string): SyncState | null {
 /** Records that the workspace described by `fingerprint` has been synced. */
 export function writeSyncState(projectRoot: string, fingerprint: string): void {
   try {
-    const state: SyncState = { format: STATE_FORMAT, fingerprint, at: Date.now() };
+    const state: SyncState = { format: STATE_FORMAT, fingerprint, db: dbIdentity(projectRoot), at: Date.now() };
     const target = statePath(projectRoot);
     const tmp = `${target}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(state));
@@ -146,5 +191,19 @@ export function isUpToDate(projectRoot: string, fingerprint: string | null): boo
   if (!fingerprint) return false;
   const state = readState(projectRoot);
   if (!state || state.fingerprint !== fingerprint) return false;
+  if (state.db === null || state.db !== dbIdentity(projectRoot)) return false;
   return Date.now() - state.at <= MAX_AGE_MS;
+}
+
+/**
+ * True when a sync would find nothing to do, decided without opening the database or loading the
+ * library: no dirty marker, and the stored state matches the workspace. False whenever in doubt.
+ */
+export function quickIsUpToDate(projectRoot: string): boolean {
+  try {
+    if (fs.existsSync(path.join(projectRoot, '.kirograph', 'dirty'))) return false;
+    return isUpToDate(projectRoot, workspaceFingerprint(projectRoot));
+  } catch {
+    return false;
+  }
 }
