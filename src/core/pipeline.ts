@@ -227,6 +227,9 @@ export class IndexPipeline {
       }
 
       batch.flush();
+      // Parsing is over: release the workers before resolution and embeddings, which need the memory
+      await pool?.close();
+      pool = null;
 
       // Re-process files that have symbolCount=0 but should have symbols (WASM recovery)
       const emptyFiles = this.db.getAllFiles().filter(
