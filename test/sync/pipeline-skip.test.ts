@@ -100,3 +100,19 @@ describe('sync fast path and the dirty marker', () => {
     }
   });
 });
+
+describe('durability setting', () => {
+  it('is relaxed only while a full index runs', async () => {
+    const kg = await KiroGraph.init(root);
+    try {
+      const sync = () => ((kg as any).db.getRawDb().get('PRAGMA synchronous') as { synchronous: number }).synchronous;
+      const before = sync();
+      let during: number | null = null;
+      await kg.indexAll({ onProgress: p => { if (p.phase === 'parsing' && during === null) during = sync(); } });
+      expect(during).toBe(0); // OFF
+      expect(sync()).toBe(before); // restored
+    } finally {
+      kg.close();
+    }
+  });
+});

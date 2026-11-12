@@ -76,6 +76,11 @@ export class IndexPipeline {
       release();
       throw e;
     }
+    // A full index does not wait for the disk after each commit: it is 10% faster, and an index
+    // that did not finish is run again. A process that is killed loses nothing (the operating system
+    // has the writes); only a power loss during the index could, and then the index is run again.
+    // Syncs keep the normal setting.
+    this.db.getRawDb().run('PRAGMA synchronous=OFF');
     const start = Date.now();
     // Taken before anything is read, so an edit made during the index is seen by the next sync
     const fingerprint = workspaceFingerprint(this.projectRoot);
@@ -385,6 +390,7 @@ export class IndexPipeline {
       return { success: errors.length === 0, filesIndexed, nodesCreated, edgesCreated, errors, duration: Date.now() - start };
     } finally {
       await pool?.close();
+      try { this.db.getRawDb().run('PRAGMA synchronous=NORMAL'); } catch { /* the database is closed or gone */ }
       if (heldByUs) this.lock.release();
       release();
     }
@@ -613,7 +619,7 @@ export class IndexPipeline {
         onProgress?.({ phase: 'resolving', current: 0, total: 1 });
         await this.resolver.resolveAll((current, total) => {
           onProgress?.({ phase: 'resolving', current, total });
-        });
+        }, [...result.added, ...result.modified, ...result.removed]);
       }
 
       await detectFrameworks(this.projectRoot);

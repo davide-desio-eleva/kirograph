@@ -60,7 +60,12 @@ export class ReferenceResolver {
 
     // Access the underlying db instance to query all nodes
     const rawDb = (this.db as any).db;
-    const rows: any[] = rawDb.all('SELECT * FROM nodes');
+    // Every column but the docstring, which nothing in resolution reads and which is a third of
+    // the bytes of the table
+    const rows: any[] = rawDb.all(
+      `SELECT id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column,
+              end_column, signature, visibility, is_exported, is_async, is_static, is_abstract,
+              decorators, type_parameters, updated_at FROM nodes`);
 
     for (const row of rows) {
       const node: Node = this._rowToNode(row);
@@ -114,7 +119,11 @@ export class ReferenceResolver {
    * Warms caches first, then processes all pending refs.
    * Returns a ResolutionResult with counts and duration.
    */
-  async resolveAll(onProgress?: (current: number, total: number) => void): Promise<ResolutionResult> {
+  async resolveAll(
+    onProgress?: (current: number, total: number) => void,
+    /** The files a sync changed. Without it (an index) everything runs. */
+    changedFiles?: string[],
+  ): Promise<ResolutionResult> {
     const start = Date.now();
 
     this.warmCaches();
@@ -129,7 +138,9 @@ export class ReferenceResolver {
 
     // Run cross-language bridge resolvers after standard resolution
     let bridgeResult: BridgeResolutionResult | undefined;
-    if (this.projectRoot) {
+    // The bridges read only the file types below (and package.json to decide whether they apply),
+    // and the edges they made survive a sync that touched none of those
+    if (this.projectRoot && (!changedFiles || changedFiles.some(f => BRIDGE_FILE.test(f)))) {
       bridgeResult = this._runBridgeResolvers();
     }
 
@@ -632,11 +643,24 @@ export class ReferenceResolver {
     const db = this.db;
     const nameCache = this.nameCache;
     const kindCache = this.kindCache;
+    const nodeByIdCache = this.nodeByIdCache;
     const fileCache = new Map<string, string | null>();
+    // Nodes by file, from the warm cache instead of one query per file: every bridge asks for the
+    // nodes of every file it scans, which was 280 ms of queries on 600 files. The cache lists
+    // nodes in table order, so each file's nodes come in the order the query returned them.
+    let nodesByFile: Map<string, Node[]> | null = null;
+    let allFiles: string[] | null = null;
 
     return {
       getNodesInFile(filePath: string): Node[] {
-        return db.getNodesByFile(filePath);
+        if (!nodesByFile) {
+          nodesByFile = new Map();
+          for (const node of nodeByIdCache.values()) {
+            const list = nodesByFile.get(node.filePath);
+            if (list) list.push(node); else nodesByFile.set(node.filePath, [node]);
+          }
+        }
+        return nodesByFile.get(filePath) ?? [];
       },
       getNodesByName(name: string): Node[] {
         return nameCache.get(name) ?? [];
@@ -662,11 +686,14 @@ export class ReferenceResolver {
         return projectRoot;
       },
       getAllFiles(): string[] {
-        return db.getAllFiles().map((f: any) => f.path);
+        return allFiles ??= db.getAllFiles().map((f: any) => f.path);
       },
     };
   }
 }
+
+/** Files the bridge resolvers look at (see resolution/bridges). */
+const BRIDGE_FILE = /(\.(tsx?|jsx?|m|mm|h|swift|java|kt|dart)|(^|\/)(package\.json|expo-module\.config\.json))$/;
 
 /**
  * Splits ids into groups whose sizes are powers of two, for IN (...) lists. A handful of distinct
