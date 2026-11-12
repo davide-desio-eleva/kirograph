@@ -14,8 +14,29 @@ export function register(program: Command): void {
     .option('--full', 'Check every file even when nothing seems to have changed')
     .option('--timings', 'Print the time spent in each phase when the sync ends')
     .action(async (projectPath: string | undefined, opts: { files?: string[]; quiet?: boolean; progress?: boolean; timings?: boolean; full?: boolean }) => {
-      const KiroGraph = (await import('../../index')).default;
       const target = path.resolve(projectPath ?? process.cwd());
+
+      // A running MCP server for this project does the sync itself: it has the database open, and
+      // a second process would contend with it for the lock. Needs the plain, default run.
+      if (!opts.files && !opts.progress && !opts.timings) {
+        const { requestSync } = await import('../../sync/remote');
+        const remote = await requestSync(target, { full: opts.full });
+        if (remote?.ok && remote.result) {
+          const r = remote.result as import('../../types').SyncResult;
+          if (!opts.quiet) {
+            if (r.added.length + r.modified.length + r.removed.length === 0) {
+              process.stdout.write('\n');
+              console.log(`  ${dim}Nothing to sync — index is up to date.${reset}`);
+            } else {
+              renderSyncSummary(r);
+            }
+          }
+          if (r.errors.length) console.warn(`  \x1b[33m⚠ ${r.errors.length} warning(s)\x1b[0m`);
+          return;
+        }
+      }
+
+      const KiroGraph = (await import('../../index')).default;
       const cg = await KiroGraph.open(target);
 
       let progressHandler: ((p: import('../../types').IndexProgress) => void) | undefined;

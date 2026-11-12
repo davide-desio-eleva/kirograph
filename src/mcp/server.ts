@@ -9,6 +9,7 @@ import { StdioTransport, ErrorCodes } from './transport';
 import { tools, ToolHandler, LIVE_SEARCH_TOOL_DEFINITION } from './tools';
 import { FEATURE_TOOL_SETS } from './tool-names';
 import { PatternRunner } from '../patterns/runner';
+import { serveSync } from '../sync/remote';
 import type { JsonRpcMessage } from './transport';
 
 const SERVER_INFO = { name: 'kirograph', version: '0.1.0' };
@@ -38,6 +39,7 @@ export class MCPServer {
   private config: any | null = null;
   private enabledTools: typeof tools = [];
   private enabledToolNames = new Set<string>();
+  private stopServingSync: (() => void) | null = null;
 
   constructor(projectPath?: string) {
     // Normalize to absolute path immediately to prevent any path traversal
@@ -63,6 +65,10 @@ export class MCPServer {
     try {
       this.cg = await KiroGraph.open(root);
       this.toolHandler.setDefaultKiroGraph(this.cg);
+      // Hooks that run `kirograph sync` ask this process to do it instead of opening the
+      // database a second time (see sync/remote.ts)
+      const cg = this.cg;
+      this.stopServingSync = await serveSync(root, req => req.ifDirty ? cg.syncIfDirty() : cg.sync({ full: req.full }));
     } catch (err) {
       process.stderr.write(`[KiroGraph MCP] Failed to open ${root}: ${err}\n`);
     }
@@ -194,6 +200,7 @@ export class MCPServer {
   }
 
   private stop(): void {
+    this.stopServingSync?.();
     this.cg?.close();
     this.toolHandler.closeAll();
     process.exit(0);
