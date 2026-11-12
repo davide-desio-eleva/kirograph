@@ -20,7 +20,7 @@ const CURSOR_HOOKS_FILE = 'hooks.json';
 function buildCursorHooks(enableCompression?: boolean): object {
   const hooks: Record<string, Array<{ command: string }>> = {
     stop: [
-      { command: silentCommand('kirograph sync --quiet') },
+      { command: silentCommand('kirograph sync --quiet --background') },
     ],
   };
 

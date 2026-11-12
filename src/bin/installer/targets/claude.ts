@@ -23,7 +23,7 @@ function buildClaudeHooks(): object {
   return {
     hooks: {
       Stop: [
-        { type: 'command', command: silentCommand('kirograph sync --quiet') },
+        { type: 'command', command: silentCommand('kirograph sync --quiet --background') },
       ],
     },
   };

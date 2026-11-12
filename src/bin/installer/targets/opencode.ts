@@ -26,7 +26,7 @@ export const KirographSync = async ({ $ }) => {
   return {
     event: async ({ event }) => {
       if (event.type === "session.idle") {
-        await $\`${silentCommand('kirograph sync --quiet')}\`
+        await $\`${silentCommand('kirograph sync --quiet --background')}\`
       }
     },
   }

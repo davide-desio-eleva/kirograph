@@ -23,7 +23,7 @@ const V2_EXT = '.json';
 const V1_EXT = '.kiro.hook';
 
 // Cross-platform hook commands (see issue #40 — bash syntax breaks on Windows cmd.exe).
-const SYNC_CMD = silentCommand('kirograph sync --quiet');
+const SYNC_CMD = silentCommand('kirograph sync --quiet --background');
 const WATCHMEN_SYNTH_CMD = silentCommand('kirograph mem watchmen synthesize --quiet');
 const WIKI_SYNTH_CMD = silentCommand('kirograph wiki synthesize --quiet');
 const WIKI_LINT_CMD = silentCommand('kirograph wiki lint');

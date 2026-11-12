@@ -34,7 +34,7 @@ function buildDevinHooks(): object {
           hooks: [
             {
               type: 'command',
-              command: silentCommand('kirograph sync --quiet'),
+              command: silentCommand('kirograph sync --quiet --background'),
               timeout: 30,
             },
           ],

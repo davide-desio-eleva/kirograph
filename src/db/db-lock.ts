@@ -29,6 +29,20 @@ export const dbLockTiming = {
   markerFreshMs: 30_000,
   /** Minimum interval between two refreshes of this process's marker. */
   markerTouchMs: 1_000,
+  /**
+   * How long SQLite itself waits for a lock before reporting it busy. After each such wait a lock
+   * left by a process that died is looked for, so a long-running process (an MCP server) recovers
+   * from one that appeared after it opened the database.
+   */
+  busyMs: 5_000,
+  /**
+   * The age at which a lock found while running (not at open) is taken for a dead process's. Much
+   * longer than `staleAfterMs`: a writer from an older KiroGraph leaves no marker, so a live one
+   * looks dead, and its lock must not be taken from under it.
+   */
+  runtimeStaleAfterMs: 60_000,
+  /** How long in all a statement waits for a lock held by a live process before it fails. */
+  maxWaitMs: 120_000,
 };
 
 /** Prepared statements kept per connection. Least recently used is finalized beyond this. */
@@ -73,11 +87,11 @@ export function liveDbWriters(dbDir: string): number[] {
  * Removes the lock directory if no live process holds it. Returns true when the lock is free
  * (absent or just removed), false when a live holder still has it.
  */
-export function clearStaleDbLock(dbDir: string, lockPath: string): boolean {
+export function clearStaleDbLock(dbDir: string, lockPath: string, staleAfterMs = dbLockTiming.staleAfterMs): boolean {
   let stat: fs.Stats;
   try { stat = fs.statSync(lockPath); }
   catch { return true; } // gone already
-  if (Date.now() - stat.mtimeMs < dbLockTiming.staleAfterMs) return false;
+  if (Date.now() - stat.mtimeMs < staleAfterMs) return false;
   const live = liveOtherWriters(dbDir);
   if (live.length > 0) return false;
   try {
@@ -260,8 +274,35 @@ export class BusyRetryDatabase {
     return () => {};
   }
 
+  /**
+   * Runs one operation. A lock that is busy is waited for, and every `busyMs` a lock left behind by
+   * a process that died is cleared: before, only the open looked, and a server that met one later
+   * waited the full two minutes and failed. Inside a transaction there is nothing to retry (the
+   * lock was taken by its first statement), so this applies to statements on their own.
+   */
   private op<T>(fn: () => T): T {
     this.touchMarker();
-    return fn();
+    if (this.explicitTransaction || this.implicitOpen) return fn();
+    let deadline = 0;
+    for (;;) {
+      try {
+        return fn();
+      } catch (err) {
+        if (!/database is locked|SQLITE_BUSY/i.test(String((err as Error)?.message ?? err))) throw err;
+        deadline ||= Date.now() + dbLockTiming.maxWaitMs;
+        if (Date.now() >= deadline) throw err;
+        if (clearStaleDbLock(this.dbDir, this.lockPath, dbLockTiming.runtimeStaleAfterMs) && this.hotJournalPresent()) {
+          // The writer died mid-transaction. Its journal has to be replayed before the file is used,
+          // and this connection already has the file open, so it cannot be done from here.
+          throw new Error(
+            'The database was left half written by a process that was killed. Restart KiroGraph ' +
+            '(close the IDE or the MCP server and open it again): it rolls the journal back when it opens the database.');
+        }
+      }
+    }
+  }
+
+  private hotJournalPresent(): boolean {
+    try { return fs.statSync(path.join(this.dbDir, 'kirograph.db-journal')).size > 0; } catch { return false; }
   }
 }

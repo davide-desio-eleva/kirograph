@@ -121,7 +121,12 @@ export function workspaceFingerprint(projectRoot: string): string | null {
   const hash = crypto.createHash('sha1');
   hash.update(`format ${STATE_FORMAT}|version ${packageVersion()}|config ${configKey(projectRoot)}`);
 
-  for (const gitRoot of findGitRoots(projectRoot)) {
+  // Only a workspace that is itself a repository. A folder that holds several repositories has
+  // files of its own that git does not report (and repositories it does not list as one), and a
+  // fingerprint of the nested ones alone would call a change in those files "nothing changed".
+  const roots = findGitRoots(projectRoot);
+  if (roots.length !== 1 || path.resolve(roots[0]) !== path.resolve(projectRoot)) return null;
+  for (const gitRoot of roots) {
     if (!fs.existsSync(path.join(gitRoot, '.git'))) return null;
     let status: string;
     try {
@@ -176,6 +181,35 @@ export function writeSyncState(projectRoot: string, fingerprint: string): void {
   } catch { /* the state is an optimisation: a sync that cannot store it still worked */ }
 }
 
+/**
+ * True when one of the errors of a sync may not happen again on its own (the database was busy, the
+ * disk failed). The files of the others failed to parse, and will fail the same way until they
+ * change or KiroGraph does, so retrying them on every sync only repeats the failure.
+ */
+export function hasTransientErrors(errors: string[]): boolean {
+  return errors.some(e => /locked|busy|EBUSY|EAGAIN|EMFILE|ENOSPC|EIO|unrecoverable|timed? ?out/i.test(e));
+}
+
+const ERRORS_FILE = 'sync-errors.json';
+const MAX_ERRORS_KEPT = 2000;
+
+/** Keeps the errors of the last sync, so they can be listed after it (an empty list removes the file). */
+export function writeSyncErrors(projectRoot: string, errors: string[]): void {
+  const target = path.join(projectRoot, '.kirograph', ERRORS_FILE);
+  try {
+    if (errors.length === 0) { fs.rmSync(target, { force: true }); return; }
+    fs.writeFileSync(target, JSON.stringify({ at: Date.now(), total: errors.length, errors: errors.slice(0, MAX_ERRORS_KEPT) }));
+  } catch { /* a convenience */ }
+}
+
+export function readSyncErrors(projectRoot: string): { at: number; total: number; errors: string[] } | null {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(projectRoot, '.kirograph', ERRORS_FILE), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 /** Forgets the stored state, so the next sync runs in full. */
 export function clearSyncState(projectRoot: string): void {
   try { fs.unlinkSync(statePath(projectRoot)); } catch { /* not there */ }
@@ -193,6 +227,22 @@ export function isUpToDate(projectRoot: string, fingerprint: string | null): boo
   if (!state || state.fingerprint !== fingerprint) return false;
   if (state.db === null || state.db !== dbIdentity(projectRoot)) return false;
   return Date.now() - state.at <= MAX_AGE_MS;
+}
+
+/**
+ * What `sync-if-dirty` asks: should a sync run? Yes when the dirty marker is set, or when the
+ * workspace is known to have changed. A workspace that cannot be fingerprinted (not a repository
+ * of its own) is not known to have changed, so there only the marker decides, as it always did.
+ */
+export function quickShouldSyncIfDirty(projectRoot: string): boolean {
+  try {
+    if (fs.existsSync(path.join(projectRoot, '.kirograph', 'dirty'))) return true;
+    const fingerprint = workspaceFingerprint(projectRoot);
+    if (!fingerprint) return false;
+    return !isUpToDate(projectRoot, fingerprint);
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -29,11 +29,33 @@ function generateId(): string {
   return crypto.randomUUID();
 }
 
+/**
+ * A session is stale when it was never ended and nothing has happened in it for the timeout. Its
+ * last activity is its newest observation (or its start, if it has none). It used to be judged by
+ * its start alone, so a session that was still being used after two hours was closed under it.
+ */
+const STALE_SESSION_SQL = `ended_at IS NULL
+  AND COALESCE((SELECT MAX(o.created_at) FROM mem_observations o WHERE o.session_id = mem_sessions.id), started_at) < ?
+  AND started_at < ?`;
+
 function hashContent(content: string): string {
   return crypto.createHash('sha256').update(content).digest('hex');
 }
 
 // ── MemoryDatabase ───────────────────────────────────────────────────────────
+
+/**
+ * A full-text query from free text: the words (letters, digits, underscore) in the text, each
+ * quoted, the last one as a prefix. Quoting makes any word safe, so punctuation such as # < | ; =
+ * in the text can no longer be a syntax error (the old filter removed a fixed list of characters
+ * and let the rest through), and the query is bound as a parameter instead of being written into
+ * the SQL. Returns null when there is no word.
+ */
+export function ftsMatchQuery(text: string): string | null {
+  const words = (text.match(/[\p{L}\p{N}_]+/gu) ?? []).filter(w => w !== 'AND' && w !== 'OR' && w !== 'NOT');
+  if (words.length === 0) return null;
+  return words.map((w, i) => `"${w}"${i === words.length - 1 ? '*' : ''}`).join(' ');
+}
 
 export class MemoryDatabase {
   private db: any;
@@ -294,15 +316,8 @@ export class MemoryDatabase {
   searchFTS(query: string, opts: MemSearchOptions = {}): ScoredObservation[] {
     const { limit = 10, kind, sessionId, asOf } = opts;
 
-    // Sanitize for FTS5
-    const safe = query
-      .replace(/\b(AND|OR|NOT)\b/g, ' ')
-      .replace(/['"*()?\-+^~:{}\\\.\/,\[\]]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!safe) return [];
-
-    const ftsQuery = safe + '*';
+    const ftsQuery = ftsMatchQuery(query);
+    if (!ftsQuery) return [];
     const safeLimit = Math.max(1, Math.floor(Number(limit)));
 
     const conditions: string[] = [];
@@ -331,10 +346,10 @@ export class MemoryDatabase {
     const rows = this.db.all(
       `SELECT o.*, rank FROM mem_fts f
        JOIN mem_observations o ON o.id = f.id
-       WHERE mem_fts MATCH '${ftsQuery}' ${where}
+       WHERE mem_fts MATCH ? ${where}
        ORDER BY rank
        LIMIT ${safeLimit}`,
-      params
+      [ftsQuery, ...params]
     );
 
     return rows.map((row: any) => ({
@@ -636,12 +651,17 @@ export class MemoryDatabase {
    * Close stale sessions (started but never ended, older than timeout).
    */
   closeStaleSessionsOlderThan(timeoutMs: number): number {
-    const cutoff = Date.now() - timeoutMs;
     const result = this.db.run(
-      `UPDATE mem_sessions SET ended_at = ? WHERE ended_at IS NULL AND started_at < ?`,
-      [Date.now(), cutoff]
+      `UPDATE mem_sessions SET ended_at = ? WHERE ${STALE_SESSION_SQL}`,
+      [Date.now(), Date.now() - timeoutMs, Date.now() - timeoutMs]
     );
     return result?.changes ?? 0;
+  }
+
+  /** How many sessions closeStaleSessionsOlderThan would close, without closing any. */
+  countStaleSessionsOlderThan(timeoutMs: number): number {
+    const cutoff = Date.now() - timeoutMs;
+    return this.db.get(`SELECT count(*) AS c FROM mem_sessions WHERE ${STALE_SESSION_SQL}`, [cutoff, cutoff])?.c ?? 0;
   }
 
   // ── Privacy ──────────────────────────────────────────────────────────────

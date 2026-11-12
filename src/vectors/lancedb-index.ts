@@ -16,6 +16,7 @@
  */
 
 import * as path from 'path';
+import { requireEngine } from '../shared/engines';
 import { logDebug, logWarn, logError } from '../errors';
 import type { Node } from '../types';
 
@@ -54,7 +55,7 @@ export class LanceDBIndex {
     let lancedb: any;
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      lancedb = require('@lancedb/lancedb');
+      lancedb = requireEngine('@lancedb/lancedb');
     } catch {
       logDebug('LanceDBIndex: @lancedb/lancedb not installed — LanceDB engine unavailable');
       return;

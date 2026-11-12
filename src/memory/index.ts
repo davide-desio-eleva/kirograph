@@ -292,11 +292,18 @@ export class MemoryManager {
     return this.vectorMgr.reembed(batchSize);
   }
 
-  lint(): { staleLinks: number; modelMismatch: boolean; staleSessions: number } {
+  /**
+   * Reports what is out of order. It changes nothing unless `fix` is set: it used to close stale
+   * sessions every time it ran, and judged them by their start, so a lint (without `fix`) ended
+   * a session that was still in use.
+   */
+  lint(opts: { fix?: boolean } = {}): { staleLinks: number; modelMismatch: boolean; staleSessions: number } {
     const staleLinks = this.memDb.findStaleLinks().length;
     const modelMismatch = this.vectorMgr.hasModelMismatch();
     const sessionTimeout = ((this.config as any).memorySessionTimeout ?? 7200) * 1000;
-    const staleSessions = this.memDb.closeStaleSessionsOlderThan(sessionTimeout);
+    const staleSessions = opts.fix
+      ? this.memDb.closeStaleSessionsOlderThan(sessionTimeout)
+      : this.memDb.countStaleSessionsOlderThan(sessionTimeout);
     return { staleLinks, modelMismatch, staleSessions };
   }
 

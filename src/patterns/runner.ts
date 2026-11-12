@@ -3,6 +3,7 @@
  */
 
 import { PatternRule, PatternMatch, SEVERITY_ORDER } from './types';
+import { requireEngine } from '../shared/engines';
 import { logWarn } from '../errors';
 
 // Languages the @ast-grep/napi binary bundles natively (its built-in Lang enum).
@@ -50,7 +51,7 @@ async function getNapi(): Promise<any | null> {
     // Verify it can be resolved synchronously before async import
     require.resolve('@ast-grep/napi');
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    _napi = require('@ast-grep/napi');
+    _napi = requireEngine('@ast-grep/napi');
 
     // Register any installed dynamic language grammars. Must happen before the
     // first parse() call and exactly once per process.
@@ -59,7 +60,7 @@ async function getNapi(): Promise<any | null> {
       try {
         require.resolve(pkgName);
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        registrations[langName] = require(pkgName);
+        registrations[langName] = requireEngine(pkgName);
       } catch {
         // Package not installed — skip silently; language simply won't be supported.
       }

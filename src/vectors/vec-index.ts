@@ -14,6 +14,7 @@
  */
 
 import * as path from 'path';
+import { requireEngine } from '../shared/engines';
 import { logDebug, logWarn, logError } from '../errors';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -52,7 +53,7 @@ export class VecIndex {
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      BetterSQLite = require('better-sqlite3');
+      BetterSQLite = requireEngine('better-sqlite3');
     } catch {
       logDebug('VecIndex: better-sqlite3 not installed — sqlite-vec unavailable');
       return;
@@ -60,7 +61,7 @@ export class VecIndex {
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      sqliteVec = require('sqlite-vec');
+      sqliteVec = requireEngine('sqlite-vec');
     } catch {
       logDebug('VecIndex: sqlite-vec not installed — falling back to in-process cosine search');
       return;

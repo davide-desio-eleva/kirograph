@@ -3,7 +3,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { workspaceFingerprint, writeSyncState, isUpToDate, clearSyncState, quickIsUpToDate } from '../../src/sync/state';
+import {
+  workspaceFingerprint, writeSyncState, isUpToDate, clearSyncState, quickIsUpToDate,
+  hasTransientErrors, writeSyncErrors, readSyncErrors,
+} from '../../src/sync/state';
 
 let root: string;
 const git = (...args: string[]) =>
@@ -156,5 +159,65 @@ describe('quickIsUpToDate', () => {
 
   it('is false for a directory that is not a project', () => {
     expect(quickIsUpToDate(path.join(root, 'nowhere'))).toBe(false);
+  });
+});
+
+describe('a workspace that is not itself a repository', () => {
+  it('has no fingerprint, so a sync is never skipped for it', () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'kg-multi-'));
+    try {
+      for (const name of ['repo-a', 'repo-b']) {
+        fs.mkdirSync(path.join(workspace, name));
+        execFileSync('git', ['init', '-q'], { cwd: path.join(workspace, name) });
+      }
+      fs.writeFileSync(path.join(workspace, 'loose.tf'), 'resource "x" "y" {}\n'); // a file git does not know about
+      expect(workspaceFingerprint(workspace)).toBeNull();
+    } finally { fs.rmSync(workspace, { recursive: true, force: true }); }
+  });
+
+  it('has none for a folder inside a repository either', () => {
+    fs.mkdirSync(path.join(root, 'sub'));
+    expect(workspaceFingerprint(path.join(root, 'sub'))).toBeNull();
+  });
+});
+
+describe('errors of a sync', () => {
+  it('tells a failure that may pass on its own from one that will repeat', () => {
+    expect(hasTransientErrors(['a.yaml: resolved is not a function', 'b.sh: Aborted(). Build with -sASSERTIONS'])).toBe(false);
+    expect(hasTransientErrors(['a.ts: Database is locked'])).toBe(true);
+    expect(hasTransientErrors(['x: EBUSY: resource busy'])).toBe(true);
+    expect(hasTransientErrors(['WASM runtime unrecoverable after crash — aborting sync'])).toBe(true);
+    expect(hasTransientErrors([])).toBe(false);
+  });
+
+  it('keeps the errors of the last sync to list them, and forgets them when there are none', () => {
+    writeSyncErrors(root, ['a.yaml: bad', 'b.sh: worse']);
+    expect(readSyncErrors(root)).toMatchObject({ total: 2, errors: ['a.yaml: bad', 'b.sh: worse'] });
+    writeSyncErrors(root, []);
+    expect(readSyncErrors(root)).toBeNull();
+  });
+});
+
+describe('quickShouldSyncIfDirty', () => {
+  it('syncs for the dirty marker, or a workspace known to have changed', async () => {
+    const { quickShouldSyncIfDirty } = await import('../../src/sync/state');
+    writeSyncState(root, fp()!);
+    expect(quickShouldSyncIfDirty(root)).toBe(false);
+    write('.kirograph/dirty', '1');
+    expect(quickShouldSyncIfDirty(root)).toBe(true);
+    fs.unlinkSync(path.join(root, '.kirograph', 'dirty'));
+    write('a.ts', 'export const a = 7;\n');
+    expect(quickShouldSyncIfDirty(root)).toBe(true);
+  });
+
+  it('leaves a workspace that cannot be fingerprinted to the marker alone', async () => {
+    const { quickShouldSyncIfDirty } = await import('../../src/sync/state');
+    const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'kg-plain-'));
+    try {
+      fs.mkdirSync(path.join(plain, '.kirograph'));
+      expect(quickShouldSyncIfDirty(plain)).toBe(false);
+      fs.writeFileSync(path.join(plain, '.kirograph', 'dirty'), '1');
+      expect(quickShouldSyncIfDirty(plain)).toBe(true);
+    } finally { fs.rmSync(plain, { recursive: true, force: true }); }
   });
 });

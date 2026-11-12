@@ -17,6 +17,7 @@
  */
 
 import * as path from 'path';
+import { requireEngine } from '../shared/engines';
 import { logDebug, logWarn, logError } from '../errors';
 import type { Node } from '../types';
 
@@ -59,7 +60,7 @@ export class PGliteIndex {
     let vector: any;
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const mod = require('@electric-sql/pglite');
+      const mod = requireEngine('@electric-sql/pglite');
       PGlite = mod.PGlite;
     } catch {
       logDebug('PGliteIndex: @electric-sql/pglite not installed — PGlite engine unavailable');
@@ -68,7 +69,7 @@ export class PGliteIndex {
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const vectorMod = require('@electric-sql/pglite/vector');
+      const vectorMod = requireEngine('@electric-sql/pglite/vector');
       vector = vectorMod.vector ?? vectorMod;
     } catch {
       logDebug('PGliteIndex: @electric-sql/pglite/vector not available — PGlite engine unavailable');

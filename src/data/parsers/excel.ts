@@ -7,6 +7,7 @@
  */
 
 import type { DataFormatParser, ParsedRow } from '../types';
+import { requireEngine } from '../../shared/engines';
 
 const BATCH_SIZE = 10_000;
 
@@ -17,7 +18,7 @@ function tryLoadXlsx(): boolean {
   if (xlsxChecked) return xlsxModule !== null;
   xlsxChecked = true;
   try {
-    xlsxModule = require('xlsx');
+    xlsxModule = requireEngine('xlsx');
     return true;
   } catch {
     return false;

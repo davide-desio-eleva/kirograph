@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import * as path from 'path';
+import * as fs from 'fs';
 import { dim, reset } from '../ui';
 import { warnFallback, formatSyncCounts } from './utils';
 
@@ -8,13 +9,22 @@ export function register(program: Command): void {
     .command('sync-if-dirty [projectPath]')
     .description('Sync only if a dirty marker is present')
     .option('-q, --quiet', 'Suppress output')
-    .action(async (projectPath: string | undefined, opts: { quiet?: boolean }) => {
+    .option('--background', 'When there is something to sync, start it in a separate process and return at once')
+    .action(async (projectPath: string | undefined, opts: { quiet?: boolean; background?: boolean }) => {
       const target = path.resolve(projectPath ?? process.cwd());
 
-      // Not dirty and nothing changed: answer without opening the database or loading the library
-      const { quickIsUpToDate } = await import('../../sync/state');
-      if (quickIsUpToDate(target)) {
+      // Not dirty and nothing known to have changed: answer without opening the database or
+      // loading the library
+      if (!fs.existsSync(path.join(target, '.kirograph'))) return;
+      const { quickShouldSyncIfDirty } = await import('../../sync/state');
+      if (!quickShouldSyncIfDirty(target)) {
         if (!opts.quiet) console.log(`  ${dim}Not dirty, skipped.${reset}`);
+        return;
+      }
+
+      if (opts.background) {
+        const { startBackgroundSync } = await import('./background');
+        startBackgroundSync(target);
         return;
       }
 

@@ -24,7 +24,7 @@ import { VectorManager } from '../vectors/index';
 import { ArchitectureAnalyzer } from '../architecture/index';
 import type { KiroGraphConfig } from '../config';
 import type { IndexResult, IndexProgress, SyncResult } from '../types';
-import { workspaceFingerprint, isUpToDate, writeSyncState } from '../sync/state';
+import { workspaceFingerprint, isUpToDate, writeSyncState, writeSyncErrors, hasTransientErrors } from '../sync/state';
 import { LockManager } from './lock-manager';
 import { WriteBatch } from './write-batch';
 import { Mutex } from '../utils';
@@ -386,7 +386,10 @@ export class IndexPipeline {
       }
 
       this.lock.clearDirty();
-      if (fingerprint && errors.length === 0) writeSyncState(this.projectRoot, fingerprint);
+      // Files that fail to parse fail the same way until they change, so they do not keep the
+      // fingerprint from being recorded; an error that may pass on its own (a busy database) does
+      writeSyncErrors(this.projectRoot, errors);
+      if (fingerprint && !hasTransientErrors(errors)) writeSyncState(this.projectRoot, fingerprint);
       return { success: errors.length === 0, filesIndexed, nodesCreated, edgesCreated, errors, duration: Date.now() - start };
     } finally {
       await pool?.close();
@@ -398,6 +401,18 @@ export class IndexPipeline {
 
   private hasIndexedFiles(): boolean {
     return this.db.getRawDb().get('SELECT 1 AS x FROM files LIMIT 1') != null;
+  }
+
+  /**
+   * True when the workspace is known to have changed since the last sync: the dirty marker is set,
+   * or its fingerprint differs. False when that cannot be known (no fingerprint): sync-if-dirty
+   * then leaves it to the marker.
+   */
+  hasKnownChanges(): boolean {
+    if (this.lock.isDirty()) return true;
+    const fingerprint = workspaceFingerprint(this.projectRoot);
+    if (!fingerprint) return false;
+    return !this.hasIndexedFiles() || !isUpToDate(this.projectRoot, fingerprint);
   }
 
   /** True when nothing has changed since the last sync that ended without errors. */
@@ -734,7 +749,8 @@ export class IndexPipeline {
 
       this.lock.clearDirty();
       // A sync with errors is not recorded: the files that failed are tried again next time
-      if (fingerprint && result.errors.length === 0) writeSyncState(this.projectRoot, fingerprint);
+      writeSyncErrors(this.projectRoot, result.errors);
+      if (fingerprint && !hasTransientErrors(result.errors)) writeSyncState(this.projectRoot, fingerprint);
       result.duration = Date.now() - start;
       return result;
     } finally {

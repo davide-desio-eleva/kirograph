@@ -101,7 +101,7 @@
     "@orama/orama": "^3.1.18",
     "@orama/plugin-data-persistence": "^3.1.18",
     "@qdrant/qdrant-js": "^1.17.0",
-    "better-sqlite3": "^11.10.0",
+    "better-sqlite3": ">=11.10.0 <14",
     "qdrant-local": "^0.0.0-alpha.10",
     "sqlite-vec": "^0.1.9",
     "turboquant-js": "^0.2.0",

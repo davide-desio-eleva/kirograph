@@ -309,11 +309,11 @@ export async function handleMemory(toolName: string, args: Record<string, unknow
       const db = cg.getDatabase(); db.applyMemorySchema();
       const mem = new MemoryManager(config, db.getRawDb());
       mem.initialize();
-      const result = mem.lint();
+      const result = mem.lint({ fix: args.fix === true });
       const lines = ['Memory Lint Results:'];
       lines.push(`  Stale links:    ${result.staleLinks}`);
       lines.push(`  Model mismatch: ${result.modelMismatch ? 'yes' : 'no'}`);
-      lines.push(`  Stale sessions: ${result.staleSessions} (auto-closed)`);
+      lines.push(`  Stale sessions: ${result.staleSessions}${args.fix ? ' (closed)' : result.staleSessions > 0 ? ' (pass fix: true to close them)' : ''}`);
       if (args.fix && result.staleLinks > 0) {
         const removed = mem.removeStaleLinks();
         lines.push(`\n✓ Removed ${removed} stale link(s)`);

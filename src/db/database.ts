@@ -11,7 +11,7 @@ import type { RouteMountFact } from '../extraction/extractor';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { Database } = require('node-sqlite3-wasm');
-import { BusyRetryDatabase, clearStaleDbLock } from './db-lock';
+import { BusyRetryDatabase, clearStaleDbLock, dbLockTiming } from './db-lock';
 import { recoverHotJournal } from './journal-recovery';
 
 const CURRENT_SCHEMA_VERSION = 4;
@@ -43,7 +43,7 @@ export class GraphDatabase {
 
     this.db = new BusyRetryDatabase(new Database(dbPath), dbDir, lockPath);
     this.db.exec(`
-      PRAGMA busy_timeout=120000;
+      PRAGMA busy_timeout=${dbLockTiming.busyMs};
       PRAGMA journal_mode=WAL;
       PRAGMA foreign_keys=ON;
       PRAGMA synchronous=NORMAL;

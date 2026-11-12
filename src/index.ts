@@ -144,7 +144,7 @@ export default class KiroGraph {
    * not run that hook, so a sync gated on it never saw them.
    */
   async syncIfDirty(): Promise<SyncResult | null> {
-    if (!this.isDirty() && !this.hasPendingChanges()) return null;
+    if (!this.pipeline.hasKnownChanges()) return null;
     return this.sync();
   }
 
