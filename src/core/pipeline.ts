@@ -15,7 +15,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { GraphDatabase } from '../db/database';
 import { scanDirectory, hashContent, getChangedFiles, shouldIncludeFile } from '../sync/index';
-import { extractFile } from '../extraction/extractor';
+import { extractFile, type ExtractedFile } from '../extraction/extractor';
+import { ExtractionPool } from '../extraction/worker-pool';
 import { clearParserCache, initGrammars, hasWasmGrammar } from '../extraction/grammars';
 import { detectFrameworks } from '../frameworks/index';
 import { ReferenceResolver } from '../resolution/index';
@@ -29,6 +30,8 @@ import { WriteBatch } from './write-batch';
 import { Mutex } from '../utils';
 
 const FILE_IO_BATCH_SIZE = 10;
+/** Below this many files starting worker threads costs more than parsing in-process saves. */
+const PARALLEL_MIN_FILES = 100;
 
 export class IndexPipeline {
   private readonly mutex = new Mutex();
@@ -88,6 +91,7 @@ export class IndexPipeline {
     // Track consecutive WASM crashes per language. Only poison after threshold is exceeded.
     const crashCounts = new Map<string, number>();
     const POISON_THRESHOLD = 3;
+    let pool: ExtractionPool | null = null;
 
     try {
       const files = await scanDirectory(this.projectRoot, this.config, opts?.signal);
@@ -103,10 +107,37 @@ export class IndexPipeline {
         }
       }
 
+      const extractOpts = { enableComplexity: !!(this.config as any).enableComplexity, maxFileSize: this.config.maxFileSize };
+
+      // Parsing runs on worker threads, a few files ahead of the loop that writes them. The loop
+      // takes the results in file order, so the graph is the same as when parsing in-process.
+      if (files.length >= PARALLEL_MIN_FILES) pool = ExtractionPool.create();
+      const parsing = new Map<number, Promise<ExtractedFile | null>>();
+      const lookahead = (pool?.size ?? 0) * 4;
+      const startParsing = async (from: number): Promise<void> => {
+        if (!pool) return;
+        const { detectLanguage } = await import('../extraction/languages');
+        for (let j = from; j < Math.min(files.length, from + lookahead); j++) {
+          if (parsing.has(j)) continue;
+          const f = files[j];
+          const content = contentMap.get(f);
+          if (!content || content.length > this.config.maxFileSize) continue;
+          if (poisonedLanguages.has(detectLanguage(f))) continue;
+          if (!opts?.force) {
+            const known = this.db.getFile(path.relative(this.projectRoot, f).replace(/\\/g, '/'));
+            if (known && hashContent(content) === known.contentHash) continue;
+          }
+          const job = pool.run(f, this.projectRoot, content, extractOpts);
+          job.catch(() => { /* taken up by the loop, which parses the file itself */ });
+          parsing.set(j, job);
+        }
+      };
+
       const batch = new WriteBatch(this.db);
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         opts?.onProgress?.({ phase: 'parsing', current: i + 1, total: files.length, currentFile: file });
+        await startParsing(i);
 
         try {
           const content = contentMap.get(file);
@@ -125,7 +156,15 @@ export class IndexPipeline {
           const lang = detectLanguage(file);
           if (poisonedLanguages.has(lang)) continue;
 
-          const extracted = await extractFile(file, this.projectRoot, content, { enableComplexity: !!(this.config as any).enableComplexity, maxFileSize: this.config.maxFileSize });
+          let extracted: ExtractedFile | null;
+          const ahead = parsing.get(i);
+          parsing.delete(i);
+          try {
+            extracted = ahead ? await ahead : await extractFile(file, this.projectRoot, content, extractOpts);
+          } catch {
+            // The worker failed: parse it here, where a failure is handled as it always was
+            extracted = await extractFile(file, this.projectRoot, content, extractOpts);
+          }
           if (!extracted) continue;
 
           await this.deleteEmbeddingsOfFile(extracted.filePath);
@@ -342,6 +381,7 @@ export class IndexPipeline {
       if (fingerprint && errors.length === 0) writeSyncState(this.projectRoot, fingerprint);
       return { success: errors.length === 0, filesIndexed, nodesCreated, edgesCreated, errors, duration: Date.now() - start };
     } finally {
+      await pool?.close();
       if (heldByUs) this.lock.release();
       release();
     }
