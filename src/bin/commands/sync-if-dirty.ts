@@ -27,7 +27,7 @@ export function register(program: Command): void {
 
       const KiroGraph = (await import('../../index')).default;
       if (!KiroGraph.isInitialized(target)) { process.exit(0); }
-      const cg = await KiroGraph.open(target);
+      const cg = await KiroGraph.open(target, undefined, { deferVectors: true });
       const result = await cg.syncIfDirty();
       if (!opts.quiet) {
         if (result) {

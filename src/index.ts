@@ -95,7 +95,14 @@ export default class KiroGraph {
   static async open(
     projectRoot: string,
     onModelProgress?: (file: string, loaded: number, total: number, done: boolean) => void,
-    opts?: { skipVectors?: boolean },
+    opts?: {
+      skipVectors?: boolean;
+      /**
+       * Do not load the embedding model until a method that needs it runs. A sync that finds
+       * nothing to do never does, and loading the model takes most of a second.
+       */
+      deferVectors?: boolean;
+    },
   ): Promise<KiroGraph> {
     const resolved = path.resolve(projectRoot);
     validateProjectPath(resolved);
@@ -105,7 +112,9 @@ export default class KiroGraph {
     const cfg = await loadConfig(resolved);
     const db = new GraphDatabase(resolved);
     const kg = new KiroGraph(resolved, db, cfg);
-    if (!opts?.skipVectors) {
+    if (opts?.deferVectors && !opts.skipVectors) {
+      kg.deferredVectors = { onModelProgress };
+    } else if (!opts?.skipVectors) {
       try {
         await kg.vectors.initialize(onModelProgress);
       } catch (e) {
@@ -178,7 +187,21 @@ export default class KiroGraph {
     return this.pipeline.indexAll(opts);
   }
 
+  /** Set by open({ deferVectors }) until the embedding model has been loaded. */
+  private deferredVectors: { onModelProgress?: (file: string, loaded: number, total: number, done: boolean) => void } | null = null;
+
+  private async ensureVectors(): Promise<void> {
+    const deferred = this.deferredVectors;
+    if (!deferred) return;
+    this.deferredVectors = null;
+    await this.vectors.initialize(deferred.onModelProgress);
+  }
+
   async sync(changedFilesOrOpts?: string[] | { files?: string[]; onProgress?: (p: IndexProgress) => void; full?: boolean }): Promise<SyncResult> {
+    const explicit = Array.isArray(changedFilesOrOpts) || changedFilesOrOpts?.files !== undefined;
+    const full = !Array.isArray(changedFilesOrOpts) && changedFilesOrOpts?.full === true;
+    // A sync that will find nothing to do does not need the embedding model
+    if (this.deferredVectors && (explicit || full || this.hasPendingChanges())) await this.ensureVectors();
     if (Array.isArray(changedFilesOrOpts)) {
       return this.pipeline.sync({ changedFiles: changedFilesOrOpts });
     }

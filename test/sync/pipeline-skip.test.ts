@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -59,6 +59,42 @@ describe('sync fast path', () => {
       expect(kg.hasPendingChanges()).toBe(true);
       expect(await kg.syncIfDirty()).not.toBeNull();
       expect(await kg.syncIfDirty()).toBeNull();
+    } finally {
+      kg.close();
+    }
+  });
+});
+
+describe('sync fast path and the dirty marker', () => {
+  it('is not taken while the dirty marker is set, and the sync clears it', async () => {
+    const kg = await KiroGraph.init(root);
+    try {
+      await kg.indexAll();
+      expect((await kg.sync()).skipped).toBe(true);
+      kg.markDirty();
+      expect(kg.hasPendingChanges()).toBe(true);
+      expect((await kg.sync()).skipped).toBeUndefined();
+      expect(kg.isDirty()).toBe(false);
+      expect((await kg.sync()).skipped).toBe(true);
+    } finally {
+      kg.close();
+    }
+  });
+
+  it('does not load the embedding model for a sync that finds nothing to do', async () => {
+    // As the CLI does: init once, then every command opens the saved configuration
+    (await KiroGraph.init(root)).close();
+    const kg0 = await KiroGraph.open(root);
+    await kg0.indexAll();
+    kg0.close();
+    const kg = await KiroGraph.open(root, undefined, { deferVectors: true });
+    try {
+      const init = vi.spyOn(kg.vectors, 'initialize');
+      expect((await kg.sync()).skipped).toBe(true);
+      expect(init).not.toHaveBeenCalled();
+      fs.writeFileSync(path.join(root, 'src', 'a.ts'), 'export function a() { return 3; }\n');
+      expect((await kg.sync()).skipped).toBeUndefined();
+      expect(init).toHaveBeenCalledTimes(1);
     } finally {
       kg.close();
     }

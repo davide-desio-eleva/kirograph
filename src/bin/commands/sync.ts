@@ -37,7 +37,7 @@ export function register(program: Command): void {
       }
 
       const KiroGraph = (await import('../../index')).default;
-      const cg = await KiroGraph.open(target);
+      const cg = await KiroGraph.open(target, undefined, { deferVectors: true });
 
       let progressHandler: ((p: import('../../types').IndexProgress) => void) | undefined;
       if (opts.quiet) {
