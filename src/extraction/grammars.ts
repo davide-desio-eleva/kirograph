@@ -6,6 +6,7 @@
 
 import * as path from 'path';
 import type { Language } from '../types';
+import { shimLibc } from './libc-shims';
 
 // ── Module-level singletons ───────────────────────────────────────────────────
 
@@ -83,7 +84,11 @@ export async function initGrammars(): Promise<void> {
   parserInitPromise = (async () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const TreeSitter = require('web-tree-sitter');
-    await TreeSitter.Parser.init();
+    // web-tree-sitter uses the object passed here as its runtime module, which lets shimLibc add the
+    // C library functions that the bash and yaml grammars need and the runtime lacks.
+    const runtime: any = {};
+    await TreeSitter.Parser.init(runtime);
+    shimLibc(runtime);
     parserLib = TreeSitter;
   })();
   return parserInitPromise;
