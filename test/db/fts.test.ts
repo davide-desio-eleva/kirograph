@@ -109,7 +109,7 @@ describe('FTS migration', () => {
     raw.exec("INSERT INTO nodes_fts(nodes_fts) VALUES('delete-all')");
     raw.exec(`INSERT INTO nodes_fts (rowid, id, name, qualified_name, docstring, signature)
               SELECT rowid + 1000, id, name, qualified_name, COALESCE(docstring, ''), COALESCE(signature, '') FROM nodes`);
-    raw.run('DELETE FROM schema_versions WHERE version = 3');
+    raw.run('DELETE FROM schema_versions WHERE version >= 3');
     const broken = ftsState();
     expect(broken.indexedWrongly).toBeGreaterThan(0);
     expect(broken.integrity).not.toBe('ok');
@@ -120,7 +120,7 @@ describe('FTS migration', () => {
     const s = ftsState();
     expect(s.indexedWrongly).toBe(0);
     expect(s.integrity).toBe('ok');
-    expect(db.getRawDb().get('SELECT max(version) v FROM schema_versions').v).toBe(3);
+    expect(db.getRawDb().get('SELECT max(version) v FROM schema_versions').v).toBe(4);
   });
 });
 

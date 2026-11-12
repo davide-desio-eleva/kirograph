@@ -64,6 +64,11 @@ function liveOtherWriters(dbDir: string): number[] {
   return live;
 }
 
+/** Pids of other live processes that have the database open (they hold a fresh writer marker). */
+export function liveDbWriters(dbDir: string): number[] {
+  return liveOtherWriters(dbDir);
+}
+
 /**
  * Removes the lock directory if no live process holds it. Returns true when the lock is free
  * (absent or just removed), false when a live holder still has it.

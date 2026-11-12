@@ -12,8 +12,9 @@ import type { RouteMountFact } from '../extraction/extractor';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { Database } = require('node-sqlite3-wasm');
 import { BusyRetryDatabase, clearStaleDbLock } from './db-lock';
+import { recoverHotJournal } from './journal-recovery';
 
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 
 /** Parameters per multi-row statement. SQLite allows more; a smaller statement is cheaper to parse. */
 const MAX_PARAMS_PER_STATEMENT = 1000;
@@ -35,7 +36,10 @@ export class GraphDatabase {
     // process dies. A stale one is cleared here. A live holder is waited for by the driver's
     // busy_timeout (set first in the PRAGMAs below), so a long sync is not cut short.
     const lockPath = path.join(dbDir, 'kirograph.db.lock');
-    clearStaleDbLock(dbDir, lockPath);
+    const lockFree = clearStaleDbLock(dbDir, lockPath);
+    // A process killed mid-write leaves a hot journal that the driver can never roll back by
+    // itself (see journal-recovery.ts); without this the open waits for the busy timeout and fails
+    if (lockFree) recoverHotJournal(dbPath, lockPath);
 
     this.db = new BusyRetryDatabase(new Database(dbPath), dbDir, lockPath);
     this.db.exec(`
@@ -166,6 +170,22 @@ export class GraphDatabase {
     const versionRow = this.db.get('SELECT version FROM schema_versions ORDER BY version DESC LIMIT 1');
     const currentVersion = versionRow ? versionRow.version : 0;
 
+    if (currentVersion < 4) {
+      // Migration 4: edges had no unique key, so INSERT OR IGNORE ignored nothing and every pass
+      // that adds the same edge (the security analysis adds declared_in, depends_on and
+      // has_vulnerability on each run) added it again: a real project had 218,849 rows for 654
+      // distinct edges, and the table and its five indexes were 70% of the file. Remove the
+      // copies (the first of each stays) and make the key unique. line and column can be NULL, and
+      // NULLs are distinct in an index, so they enter the key as -1.
+      this.transaction(() => {
+        this.db.run(`DELETE FROM edges WHERE id NOT IN (
+          SELECT MIN(id) FROM edges GROUP BY source, target, kind, COALESCE(line, -1), COALESCE("column", -1))`);
+        this.db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_unique
+          ON edges (source, target, kind, COALESCE(line, -1), COALESCE("column", -1))`);
+        this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [4, Date.now()]);
+      });
+      this.reclaimSpace();
+    }
     if (currentVersion < 3) {
       // Migration 3: nodes_fts is an external-content table (content_rowid = nodes.rowid), but its
       // rows used to be inserted without a rowid and deleted by the id column, which is not
@@ -219,6 +239,20 @@ export class GraphDatabase {
     } catch {
       // Column already exists — nothing to do.
     }
+  }
+
+  /**
+   * Gives back the pages a large delete freed, when they are a good part of the file. VACUUM
+   * rewrites the whole file, so it is not done for a few pages. A failure is ignored: the file is
+   * only bigger than it needs to be.
+   */
+  private reclaimSpace(): void {
+    try {
+      const pageSize = this.db.get('PRAGMA page_size').page_size as number;
+      const free = this.db.get('PRAGMA freelist_count').freelist_count as number;
+      const total = this.db.get('PRAGMA page_count').page_count as number;
+      if (free * pageSize >= 16 * 1024 * 1024 && free / total >= 0.25) this.db.run('VACUUM');
+    } catch { /* not worth failing an open for */ }
   }
 
   // ── Files ──────────────────────────────────────────────────────────────────
