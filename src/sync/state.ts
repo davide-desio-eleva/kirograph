@@ -24,7 +24,6 @@ import { findGitRoots } from './index';
 
 const STATE_FILE = 'sync-state.json';
 const STATE_FORMAT = 1;
-const DAY_MS = 86_400_000;
 /**
  * How long a stored state is trusted. Git does not report files it ignores, and KiroGraph indexes
  * some of them (it has its own exclude patterns, not .gitignore), so a change to such a file is
@@ -140,16 +139,12 @@ export function clearSyncState(projectRoot: string): void {
 /**
  * True when `fingerprint` is the one stored by the last sync, so a sync would find nothing.
  *
- * The stored state is trusted for `MAX_AGE_MS`. With security enabled that limit can only be
- * shorter than the vulnerability data's own (`securityEnrichMaxAgeDays`, 7 by default), so data
- * that ages while no file changes is refreshed by the real sync that follows.
+ * The stored state is trusted for `MAX_AGE_MS`, so the phases that run on every real sync (the
+ * architecture and security analyses) still run at least that often.
  */
-export function isUpToDate(projectRoot: string, config: KiroGraphConfig, fingerprint: string | null): boolean {
+export function isUpToDate(projectRoot: string, fingerprint: string | null): boolean {
   if (!fingerprint) return false;
   const state = readState(projectRoot);
   if (!state || state.fingerprint !== fingerprint) return false;
-  const maxAge = config.enableSecurity
-    ? Math.min(MAX_AGE_MS, (config.securityEnrichMaxAgeDays ?? 7) * DAY_MS)
-    : MAX_AGE_MS;
-  return Date.now() - state.at <= maxAge;
+  return Date.now() - state.at <= MAX_AGE_MS;
 }

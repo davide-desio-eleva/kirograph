@@ -394,7 +394,7 @@ export class IndexPipeline {
   /** True when nothing has changed since the last sync that ended without errors. */
   isUpToDate(): boolean {
     if (!this.hasIndexedFiles()) return false; // never indexed
-    return isUpToDate(this.projectRoot, this.config, workspaceFingerprint(this.projectRoot, this.config));
+    return isUpToDate(this.projectRoot, workspaceFingerprint(this.projectRoot, this.config));
   }
 
   async sync(opts?: {
@@ -406,7 +406,7 @@ export class IndexPipeline {
     // Taken before anything is read, so an edit made during the sync is seen by the next one
     const fingerprint = opts?.changedFiles ? null : workspaceFingerprint(this.projectRoot, this.config);
     if (!opts?.full && fingerprint && this.hasIndexedFiles()
-        && isUpToDate(this.projectRoot, this.config, fingerprint)) {
+        && isUpToDate(this.projectRoot, fingerprint)) {
       return {
         added: [], modified: [], removed: [],
         nodesCreated: 0, nodesUpdated: 0, nodesRemoved: 0,

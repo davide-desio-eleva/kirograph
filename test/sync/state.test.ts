@@ -77,16 +77,16 @@ describe('workspaceFingerprint', () => {
 describe('sync state', () => {
   it('is up to date only for the fingerprint that was stored', () => {
     const f = fp()!;
-    expect(isUpToDate(root, config, f)).toBe(false); // nothing stored yet
+    expect(isUpToDate(root, f)).toBe(false); // nothing stored yet
     writeSyncState(root, f);
-    expect(isUpToDate(root, config, f)).toBe(true);
+    expect(isUpToDate(root, f)).toBe(true);
     write('a.ts', 'changed\n');
-    expect(isUpToDate(root, config, fp())).toBe(false);
+    expect(isUpToDate(root, fp())).toBe(false);
   });
 
   it('is never up to date without a fingerprint', () => {
     writeSyncState(root, 'abc');
-    expect(isUpToDate(root, config, null)).toBe(false);
+    expect(isUpToDate(root, null)).toBe(false);
   });
 
   it('expires', () => {
@@ -96,15 +96,15 @@ describe('sync state', () => {
     const state = JSON.parse(fs.readFileSync(file, 'utf8'));
     state.at = Date.now() - 11 * 60_000;
     fs.writeFileSync(file, JSON.stringify(state));
-    expect(isUpToDate(root, config, f)).toBe(false);
+    expect(isUpToDate(root, f)).toBe(false);
   });
 
   it('is forgotten by clearSyncState, and a corrupt file counts as none', () => {
     const f = fp()!;
     writeSyncState(root, f);
     clearSyncState(root);
-    expect(isUpToDate(root, config, f)).toBe(false);
+    expect(isUpToDate(root, f)).toBe(false);
     write('.kirograph/sync-state.json', '{not json');
-    expect(isUpToDate(root, config, f)).toBe(false);
+    expect(isUpToDate(root, f)).toBe(false);
   });
 });
