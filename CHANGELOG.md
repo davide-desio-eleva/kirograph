@@ -8,6 +8,7 @@
 - **A second `sync` waits for a running one instead of failing at once** ([#70](https://github.com/davide-desio-eleva/kirograph/issues/70)): a sync that started while another index or sync held the process lock failed immediately with `KiroGraph is locked by PID`. It now waits up to 120 seconds, the same as a read waits on the database lock.
 
 - **Bash and YAML files are parsed again**: both grammars failed on every index and sync with `resolved is not a function`, because the WASM runtime lacked a few C library functions they import. They are now provided, and the files are indexed.
+- **Lua files are parsed the same way every time**: the Lua scanner reads memory it has not initialised, so once the WASM heap had been used a parse could fail on comments and lose the first function of a file. Which files were affected depended on what had been parsed before them, so two indexes of the same project could differ. The grammar's `malloc` now returns zeroed memory (the import is renamed in the module's binary at load time; 7 of the 36 grammars import it).
 - **Deleting nodes no longer leaves full-text entries behind**: the security cleanup deleted nodes before their `nodes_fts` rows, and `deleteFile` left the edges of the file's nodes. Both now remove the full-text entries first, and the edges with the nodes.
 - **A new directory's files are synced**: `git status` was read without `-uall`, so a new directory was one entry that is not a source file. Paths are also read NUL-separated, so names with spaces or non-ASCII characters are no longer quoted.
 

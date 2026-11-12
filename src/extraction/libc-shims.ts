@@ -15,15 +15,80 @@
 
 type RuntimeModule = {
   _malloc: (size: number) => number;
+  HEAPU8: Uint8Array;
   _free: (ptr: number) => void;
   loadWebAssemblyModule: (...args: any[]) => any;
 };
+
+/**
+ * Name a grammar's `malloc` import is changed to, so that it is resolved through the scope
+ * `shimLibc` passes rather than to the runtime's own function. Same length as "malloc".
+ */
+const ZEROED_MALLOC = 'zalloc';
+
+/**
+ * Makes the grammar's `malloc` return zeroed memory.
+ *
+ * The Lua scanner allocates its state with malloc and reads it before setting it. On a heap that
+ * has never been used that is zeros; once memory has been freed and reused it is whatever was
+ * there, and the parse then fails on comments (an ERROR tree, the first function of the file
+ * lost). The second Lua file parsed in a process was the first affected, and which files were
+ * depended on what had been parsed before them.
+ *
+ * The runtime binds a grammar's `malloc` to its own before the scope is consulted, so it cannot
+ * be replaced from outside. The import is renamed in the module's binary instead (to a name of
+ * the same length, so no offset changes), and the new name is provided by `shimLibc`. Only the
+ * import section is touched. A binary that does not parse as expected is returned unchanged.
+ */
+export function zeroMallocInBinary(binary: Uint8Array): Uint8Array {
+  let pos = 8; // magic and version
+  const leb = (): number => {
+    let result = 0, shift = 0, byte: number;
+    do { byte = binary[pos++]; result += (byte & 0x7f) * 2 ** shift; shift += 7; } while (byte & 0x80);
+    return result;
+  };
+  const limits = () => { const flags = leb(); leb(); if (flags & 1) leb(); };
+  try {
+    while (pos < binary.length) {
+      const id = binary[pos++];
+      const size = leb();
+      const end = pos + size;
+      if (id !== 2) { pos = end; continue; }
+      const patched = Uint8Array.from(binary);
+      for (let count = leb(); count > 0; count--) {
+        const moduleLen = leb();
+        pos += moduleLen; // module name
+        const nameLen = leb();
+        const nameAt = pos;
+        pos += nameLen;
+        if (nameLen === 6 && String.fromCharCode(...binary.subarray(nameAt, nameAt + 6)) === 'malloc') {
+          for (let i = 0; i < 6; i++) patched[nameAt + i] = ZEROED_MALLOC.charCodeAt(i);
+        }
+        const kind = binary[pos++];
+        if (kind === 0) leb();                    // function: type index
+        else if (kind === 1) { pos++; limits(); } // table: reference type, limits
+        else if (kind === 2) limits();            // memory
+        else if (kind === 3) pos += 2;            // global: value type, mutability
+        else if (kind === 4) { pos++; leb(); }    // tag: attribute, type index
+        else return binary;
+      }
+      return pos === end ? patched : binary;
+    }
+  } catch { /* fall through */ }
+  return binary;
+}
 
 /** The symbols a grammar may need, keyed by the name it imports. */
 function libcShims(mod: RuntimeModule): Record<string, (...args: any[]) => any> {
   return {
     // ctype: the C locale, ASCII letters only
     isalpha: (c: number) => ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) ? 1 : 0),
+    // malloc that returns zeroed memory: see zeroedMalloc
+    [ZEROED_MALLOC]: (size: number) => {
+      const ptr = mod._malloc(size);
+      if (ptr) mod.HEAPU8.fill(0, ptr, ptr + size);
+      return ptr;
+    },
     // operator new / delete, scalar and array forms
     _Znwm: (size: number) => mod._malloc(size),
     _Znam: (size: number) => mod._malloc(size),

@@ -6,7 +6,8 @@
 
 import * as path from 'path';
 import type { Language } from '../types';
-import { shimLibc } from './libc-shims';
+import * as fs from 'fs';
+import { shimLibc, zeroMallocInBinary } from './libc-shims';
 
 // ── Module-level singletons ───────────────────────────────────────────────────
 
@@ -154,7 +155,7 @@ export async function loadGrammarsForLanguages(languages: Language[]): Promise<v
         if (!wasmPath) { resolve(); return; }
         try {
           await initGrammars();
-          const langObj = await parserLib.Language.load(wasmPath);
+          const langObj = await parserLib.Language.load(zeroMallocInBinary(fs.readFileSync(wasmPath)));
           loadedGrammars.set(lang, langObj);
         } catch {
           // Silently skip — no WASM or load failure
