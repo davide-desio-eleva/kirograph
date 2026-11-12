@@ -117,7 +117,7 @@ function scanDirectoryWalk(
  * Finds all git roots at or under `root` (including root itself).
  * Returns paths sorted shallowest-first so parent roots are processed before children.
  */
-function findGitRoots(root: string): string[] {
+export function findGitRoots(root: string): string[] {
   const roots: string[] = [];
 
   const walk = (dir: string) => {
@@ -223,16 +223,20 @@ export async function getChangedFiles(
 
   for (const gitRoot of gitRoots) {
     try {
-      const output = execFileSync('git', ['status', '--porcelain', '--no-renames'], {
+      // -uall lists the files of an untracked directory one by one: without it a new directory is
+      // one entry that is not a source file, so the files created inside it were never indexed.
+      // -z separates entries with NUL and does not quote names with spaces or non-ASCII characters.
+      const output = execFileSync('git', ['status', '--porcelain', '--no-renames', '-uall', '-z'], {
         cwd: gitRoot,
         encoding: 'utf8',
         timeout: 10_000,
+        maxBuffer: 1 << 28,
         stdio: ['ignore', 'pipe', 'ignore'],
       });
 
-      for (const line of output.split('\n').filter(Boolean)) {
+      for (const line of output.split('\0').filter(Boolean)) {
         const statusCode = line.slice(0, 2);
-        const relPath = line.slice(3).trim();
+        const relPath = line.slice(3);
         const absPath = path.join(gitRoot, relPath);
         if (detectLanguage(absPath) === 'unknown') continue;
         if (statusCode === '??') {

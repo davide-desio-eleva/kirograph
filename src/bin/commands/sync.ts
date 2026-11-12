@@ -11,8 +11,9 @@ export function register(program: Command): void {
     .option('--files <files...>', 'Specific files to sync')
     .option('-q, --quiet', 'Suppress progress output')
     .option('--progress', 'Verbose per-file progress output (implies errors are shown inline)')
+    .option('--full', 'Check every file even when nothing seems to have changed')
     .option('--timings', 'Print the time spent in each phase when the sync ends')
-    .action(async (projectPath: string | undefined, opts: { files?: string[]; quiet?: boolean; progress?: boolean; timings?: boolean }) => {
+    .action(async (projectPath: string | undefined, opts: { files?: string[]; quiet?: boolean; progress?: boolean; timings?: boolean; full?: boolean }) => {
       const KiroGraph = (await import('../../index')).default;
       const target = path.resolve(projectPath ?? process.cwd());
       const cg = await KiroGraph.open(target);
@@ -47,6 +48,7 @@ export function register(program: Command): void {
       const result = await cg.sync({
         files: opts.files,
         onProgress: progressHandler,
+        full: opts.full,
       });
 
       if (opts.timings) {

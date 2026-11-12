@@ -7,8 +7,13 @@
 - **A killed process no longer leaves the database locked for good** ([#70](https://github.com/davide-desio-eleva/kirograph/issues/70)): the SQLite WASM driver takes its file lock by creating the directory `kirograph.db.lock`, and a process killed while holding it never removes it. Every later open then failed with `Database is locked` until someone ran `kirograph unlock`. A process using the database now leaves a marker in `.kirograph/db-writers/` while it writes. A lock directory older than 5 seconds with no live marker is removed automatically, with a warning. A live holder is waited for by the database busy timeout (120 seconds), so a long sync is not cut short.
 - **A second `sync` waits for a running one instead of failing at once** ([#70](https://github.com/davide-desio-eleva/kirograph/issues/70)): a sync that started while another index or sync held the process lock failed immediately with `KiroGraph is locked by PID`. It now waits up to 120 seconds, the same as a read waits on the database lock.
 
+- **Bash and YAML files are parsed again**: both grammars failed on every index and sync with `resolved is not a function`, because the WASM runtime lacked a few C library functions they import. They are now provided, and the files are indexed.
+- **Deleting nodes no longer leaves full-text entries behind**: the security cleanup deleted nodes before their `nodes_fts` rows, and `deleteFile` left the edges of the file's nodes. Both now remove the full-text entries first, and the edges with the nodes.
+- **A new directory's files are synced**: `git status` was read without `-uall`, so a new directory was one entry that is not a source file. Paths are also read NUL-separated, so names with spaces or non-ASCII characters are no longer quoted.
+
 ### Added
 
+- **`kirograph sync --full`** runs a sync in full even when nothing seems to have changed.
 - **`kirograph sync --timings`** prints the time spent in each phase when the sync ends, so a slow sync on a real project shows which phase is slow.
 
 ### Performance
@@ -20,6 +25,9 @@ Measured on a 592-file project: a full index went from 26.9 s to 12 s, a sync of
 - **Deleting a file's symbols no longer scans the whole full-text index**: `nodes_fts` is an external-content table, but its rows were inserted without the node's rowid and deleted by the `id` column, which is not indexed, so each changed file cost a scan of the whole table: about 5 ms per file on a 17,000-node project, and more the larger the project. Rows now carry the node's rowid and are deleted by it. A one-time migration rebuilds the index on the first open (a second or two on a project of that size), which also repairs entries that older versions left out of line.
 - **A sync that changed nothing skips reference resolution**: no node or reference is new, so there is nothing to find. It cost about half a second on a project of 17,000 nodes, and more on a larger one.
 - **The resolver no longer scans every node for each unresolved reference**: that scan found nothing the indexed lookups before it had not already found.
+- **A sync with nothing changed answers from a fingerprint**: the HEAD commit, the git status and the modification time and size of each changed file are stored after a sync without errors (`.kirograph/sync-state.json`). If the next sync finds the same fingerprint it returns at once, about 0.2 s instead of 1.4 s. The stored state is trusted for 10 minutes, because git does not report ignored files that KiroGraph may index. `sync-if-dirty` now also runs when the fingerprint changed, not only when the dirty marker is set, so edits made by an agent (which do not run the file-save hook) are seen. Outside a git repository every sync runs.
+- **Rows are inserted in groups**: nodes, edges and unresolved references are written with multi-row statements, and the resolver batches its writes. A full index is 5 to 10% faster.
+- **Embeddings are not looked up when disabled**: the nodes of every file were read to find embeddings to delete, even with embeddings off.
 - **Prepared statements are reused**: the WASM driver prepared and finalized a statement on every query.
 - **The writer marker is refreshed at most once a second** instead of being created and removed for every write. A marker now counts as live only while its process is alive and it was refreshed in the last 30 seconds, so an idle process no longer keeps a dead writer's lock in place.
 

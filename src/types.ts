@@ -168,6 +168,8 @@ export interface SyncResult {
   filesScanned: number;
   errors: string[];
   duration: number;
+  /** True when nothing had changed since the last sync, so no file was looked at. */
+  skipped?: boolean;
 }
 
 // ── Error Classes (re-exported from src/errors.ts for backward compatibility) ──

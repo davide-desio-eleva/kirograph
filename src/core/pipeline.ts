@@ -23,6 +23,7 @@ import { VectorManager } from '../vectors/index';
 import { ArchitectureAnalyzer } from '../architecture/index';
 import type { KiroGraphConfig } from '../config';
 import type { IndexResult, IndexProgress, SyncResult } from '../types';
+import { workspaceFingerprint, isUpToDate, writeSyncState } from '../sync/state';
 import { LockManager } from './lock-manager';
 import { WriteBatch } from './write-batch';
 import { Mutex } from '../utils';
@@ -73,6 +74,8 @@ export class IndexPipeline {
       throw e;
     }
     const start = Date.now();
+    // Taken before anything is read, so an edit made during the index is seen by the next sync
+    const fingerprint = workspaceFingerprint(this.projectRoot, this.config);
     const errors: string[] = [];
     let filesIndexed = 0;
     let nodesCreated = 0;
@@ -336,6 +339,7 @@ export class IndexPipeline {
       }
 
       this.lock.clearDirty();
+      if (fingerprint && errors.length === 0) writeSyncState(this.projectRoot, fingerprint);
       return { success: errors.length === 0, filesIndexed, nodesCreated, edgesCreated, errors, duration: Date.now() - start };
     } finally {
       if (heldByUs) this.lock.release();
@@ -343,10 +347,34 @@ export class IndexPipeline {
     }
   }
 
+  private hasIndexedFiles(): boolean {
+    return this.db.getRawDb().get('SELECT 1 AS x FROM files LIMIT 1') != null;
+  }
+
+  /** True when nothing has changed since the last sync that ended without errors. */
+  isUpToDate(): boolean {
+    if (!this.hasIndexedFiles()) return false; // never indexed
+    return isUpToDate(this.projectRoot, this.config, workspaceFingerprint(this.projectRoot, this.config));
+  }
+
   async sync(opts?: {
     changedFiles?: string[];
     onProgress?: (p: IndexProgress) => void;
+    /** Run in full even when nothing seems to have changed. */
+    full?: boolean;
   }): Promise<SyncResult> {
+    // Taken before anything is read, so an edit made during the sync is seen by the next one
+    const fingerprint = opts?.changedFiles ? null : workspaceFingerprint(this.projectRoot, this.config);
+    if (!opts?.full && fingerprint && this.hasIndexedFiles()
+        && isUpToDate(this.projectRoot, this.config, fingerprint)) {
+      return {
+        added: [], modified: [], removed: [],
+        nodesCreated: 0, nodesUpdated: 0, nodesRemoved: 0,
+        edgesCreated: 0, edgesRemoved: 0,
+        filesScanned: 0, errors: [], duration: 0, skipped: true,
+      };
+    }
+
     const release = await this.mutex.acquire();
     // Acquire the file lock inside a guard: if it throws (another live PID
     // holds it), release the in-process mutex before rethrowing. Otherwise the
@@ -649,6 +677,8 @@ export class IndexPipeline {
       }
 
       this.lock.clearDirty();
+      // A sync with errors is not recorded: the files that failed are tried again next time
+      if (fingerprint && result.errors.length === 0) writeSyncState(this.projectRoot, fingerprint);
       result.duration = Date.now() - start;
       return result;
     } finally {

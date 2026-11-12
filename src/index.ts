@@ -129,8 +129,13 @@ export default class KiroGraph {
   isDirty(): boolean { return this.lock.isDirty(); }
   isIndexLocked(): boolean { return this.lock.isLocked(); }
 
+  /**
+   * Syncs when the dirty marker is set or the workspace has changed since the last sync. The
+   * marker alone is not enough: it is written by a hook on file save, and an agent's own edits do
+   * not run that hook, so a sync gated on it never saw them.
+   */
   async syncIfDirty(): Promise<SyncResult | null> {
-    if (!this.isDirty()) return null;
+    if (!this.isDirty() && !this.hasPendingChanges()) return null;
     return this.sync();
   }
 
@@ -173,15 +178,19 @@ export default class KiroGraph {
     return this.pipeline.indexAll(opts);
   }
 
-  async sync(changedFilesOrOpts?: string[] | { files?: string[]; onProgress?: (p: IndexProgress) => void }): Promise<SyncResult> {
+  async sync(changedFilesOrOpts?: string[] | { files?: string[]; onProgress?: (p: IndexProgress) => void; full?: boolean }): Promise<SyncResult> {
     if (Array.isArray(changedFilesOrOpts)) {
       return this.pipeline.sync({ changedFiles: changedFilesOrOpts });
     }
     return this.pipeline.sync({
       changedFiles: changedFilesOrOpts?.files,
       onProgress: changedFilesOrOpts?.onProgress,
+      full: changedFilesOrOpts?.full,
     });
   }
+
+  /** True when files have changed since the last sync, so a sync would have work to do. */
+  hasPendingChanges(): boolean { return !this.pipeline.isUpToDate(); }
 
   // ── Symbol search ──────────────────────────────────────────────────────────
 
