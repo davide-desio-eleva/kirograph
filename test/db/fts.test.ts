@@ -123,3 +123,55 @@ describe('FTS migration', () => {
     expect(db.getRawDb().get('SELECT max(version) v FROM schema_versions').v).toBe(3);
   });
 });
+
+describe('other paths that delete nodes', () => {
+  it('deleteFile removes the FTS entries and the edges of the file, and nothing else', () => {
+    writeFile('a.ts', 4);
+    writeFile('b.ts', 4);
+    db.insertEdge({ source: 'function:b.ts:0', target: 'function:a.ts:1', kind: 'calls' });
+    db.insertEdge({ source: 'function:b.ts:1', target: 'function:b.ts:2', kind: 'calls' });
+
+    db.transaction(() => db.deleteFile('a.ts'));
+
+    expect(matchRowids('fn_a_ts_1')).toHaveLength(0);
+    expect(matchRowids('fn_b_ts_1')).toHaveLength(1);
+    const raw = db.getRawDb();
+    expect(raw.get("SELECT count(*) c FROM edges WHERE target = 'function:a.ts:1'").c).toBe(0); // no dangling edge
+    expect(raw.get("SELECT count(*) c FROM edges WHERE source = 'function:b.ts:1'").c).toBe(1); // unrelated edge kept
+    const s = ftsState();
+    expect(s.indexedWrongly).toBe(0);
+    expect(s.integrity).toBe('ok');
+  });
+
+  it('the security cleanup removes an orphaned dependency from the FTS index too', async () => {
+    const { DependencyGraphIntegrator } = await import('../../src/security/integrator');
+    db.applySecuritySchema();
+    writeFile('a.ts', 3);
+    const dep = (id: string, name: string): Node => ({
+      id, kind: 'dependency', name, qualifiedName: `npm:${name}`, filePath: '', language: 'typescript',
+      startLine: 0, endLine: 0, startColumn: 0, endColumn: 0, updatedAt: 1,
+    });
+    db.transaction(() => {
+      db.upsertNode(dep('dep:npm:leftpadder', 'leftpadder'));
+      db.upsertNode(dep('dep:npm:keeper', 'keeper'));
+    });
+    const raw = db.getRawDb();
+    for (const [id, name] of [['dep:npm:leftpadder', 'leftpadder'], ['dep:npm:keeper', 'keeper']]) {
+      raw.run(`INSERT INTO sec_dependencies (node_id, ecosystem, package_name, declared_constraint, source_manifests)
+               VALUES (?, 'npm', ?, '*', ?)`, [id, name, JSON.stringify([path.join(root, 'package.json')])]);
+    }
+    fs.writeFileSync(path.join(root, 'package.json'), '{}'); // the manifest exists, so only the edge decides
+    // 'keeper' is still declared, 'leftpadder' no longer is
+    raw.run("INSERT INTO edges (source, target, kind) VALUES ('dep:npm:keeper', 'manifest:package.json', 'declared_in')");
+    expect(matchRowids('leftpadder')).toHaveLength(1);
+
+    const result = await new DependencyGraphIntegrator(db, root).cleanup();
+
+    expect(result.nodesRemoved).toBe(1);
+    expect(matchRowids('leftpadder')).toHaveLength(0);
+    expect(matchRowids('keeper')).toHaveLength(1);
+    const s = ftsState();
+    expect(s.indexedWrongly).toBe(0);
+    expect(s.integrity).toBe('ok');
+  });
+});

@@ -686,11 +686,14 @@ export class DependencyGraphIntegrator {
       // Remove from sec_dependencies (explicit delete before nodes for clarity)
       rawDb.run('DELETE FROM sec_dependencies WHERE node_id = ?', [nodeId]);
 
+      // Remove from the full-text index first, by rowid. It is an external-content table: it reads
+      // the node's old text to remove its tokens, so the node must still exist. Deleting the node
+      // first left entries behind (tens of thousands after a few syncs) and, by id, scanned the
+      // whole table.
+      rawDb.run('DELETE FROM nodes_fts WHERE rowid = (SELECT rowid FROM nodes WHERE id = ?)', [nodeId]);
+
       // Remove from nodes table
       rawDb.run('DELETE FROM nodes WHERE id = ?', [nodeId]);
-
-      // Clean up FTS entries
-      rawDb.run('DELETE FROM nodes_fts WHERE id = ?', [nodeId]);
 
       nodesRemoved++;
     }

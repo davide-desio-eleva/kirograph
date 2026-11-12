@@ -236,8 +236,9 @@ export class GraphDatabase {
   }
 
   deleteFile(filePath: string): void {
-    // Cascade deletes nodes (and their edges via FK)
-    this.db.run('DELETE FROM nodes WHERE file_path = ?', [filePath]);
+    // The edges table has no foreign keys, so nothing cascades: deleteNodesByFile removes the
+    // file's edges and full-text entries along with its nodes.
+    this.deleteNodesByFile(filePath);
     this.db.run('DELETE FROM files WHERE path = ?', [filePath]);
   }
 
