@@ -32,6 +32,17 @@ const FILE_IO_BATCH_SIZE = 10;
 export class IndexPipeline {
   private readonly mutex = new Mutex();
 
+  /**
+   * Removes the embeddings of a file's nodes before the file is rewritten. Only with embeddings
+   * enabled: otherwise there are none, and reading every file's nodes to find out cost about a
+   * tenth of an index.
+   */
+  private async deleteEmbeddingsOfFile(filePath: string): Promise<void> {
+    if (this.config.enableEmbeddings !== true) return;
+    const oldNodes = this.db.getNodesByFile(filePath);
+    if (oldNodes.length > 0) await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
+  }
+
   constructor(
     private readonly db: GraphDatabase,
     private readonly vectors: VectorManager,
@@ -114,8 +125,7 @@ export class IndexPipeline {
           const extracted = await extractFile(file, this.projectRoot, content, { enableComplexity: !!(this.config as any).enableComplexity, maxFileSize: this.config.maxFileSize });
           if (!extracted) continue;
 
-          const oldNodes = this.db.getNodesByFile(extracted.filePath);
-          if (oldNodes.length > 0) await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
+          await this.deleteEmbeddingsOfFile(extracted.filePath);
 
           // Written with the other files of its batch, in one transaction (see WriteBatch)
           batch.add(() => {
@@ -129,12 +139,10 @@ export class IndexPipeline {
               symbolCount: extracted.nodes.length,
               indexedAt: Date.now(),
             });
-            for (const node of extracted.nodes) { this.db.upsertNode(node); nodesCreated++; }
-            for (const edge of extracted.edges) { this.db.insertEdge(edge); edgesCreated++; }
+            this.db.upsertNodes(extracted.nodes); nodesCreated += extracted.nodes.length;
+            this.db.insertEdges(extracted.edges); edgesCreated += extracted.edges.length;
             for (const mount of extracted.routeMounts ?? []) this.db.insertRouteMount(extracted.filePath, mount);
-            for (const ref of extracted.unresolvedRefs) {
-              this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column, ref.metadata);
-            }
+            this.db.insertUnresolvedRefs(extracted.filePath, extracted.unresolvedRefs);
             filesIndexed++;
           }, writeErr => {
             errors.push(`${file}: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`);
@@ -192,8 +200,7 @@ export class IndexPipeline {
             const extracted = await extractFile(absPath, this.projectRoot, undefined, { enableComplexity: !!(this.config as any).enableComplexity });
             if (!extracted || extracted.nodes.length === 0) continue;
 
-            const oldNodes = this.db.getNodesByFile(extracted.filePath);
-            if (oldNodes.length > 0) await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
+            await this.deleteEmbeddingsOfFile(extracted.filePath);
 
             this.db.transaction(() => {
               this.db.deleteNodesByFile(extracted.filePath);
@@ -206,12 +213,10 @@ export class IndexPipeline {
                 symbolCount: extracted.nodes.length,
                 indexedAt: Date.now(),
               });
-              for (const node of extracted.nodes) { this.db.upsertNode(node); nodesCreated++; }
-              for (const edge of extracted.edges) { this.db.insertEdge(edge); edgesCreated++; }
+              this.db.upsertNodes(extracted.nodes); nodesCreated += extracted.nodes.length;
+              this.db.insertEdges(extracted.edges); edgesCreated += extracted.edges.length;
               for (const mount of extracted.routeMounts ?? []) this.db.insertRouteMount(extracted.filePath, mount);
-              for (const ref of extracted.unresolvedRefs) {
-                this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column, ref.metadata);
-              }
+              this.db.insertUnresolvedRefs(extracted.filePath, extracted.unresolvedRefs);
             });
             filesIndexed++;
           } catch {
@@ -368,11 +373,9 @@ export class IndexPipeline {
 
     try {
       const removeFile = async (rel: string) => {
-        const oldNodes = this.db.getNodesByFile(rel);
-        const oldEdgeCount = this.db.getEdgesForNodes(oldNodes.map(n => n.id)).length;
-        result.nodesRemoved += oldNodes.length;
-        result.edgesRemoved += oldEdgeCount;
-        await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
+        result.nodesRemoved += this.db.countNodesByFile(rel);
+        result.edgesRemoved += this.db.countEdgesTouchingFile(rel);
+        await this.deleteEmbeddingsOfFile(rel);
         this.db.deleteFile(rel);
         this.db.deleteUnresolvedRefsByFile(rel);
         // Clean up pattern matches for removed files (only if patterns are enabled)
@@ -465,13 +468,13 @@ export class IndexPipeline {
           const isNew = !existing;
           if (!isNew && existing!.contentHash === extracted.contentHash) continue;
 
-          const oldNodes = this.db.getNodesByFile(extracted.filePath);
-          const oldEdgeCount = this.db.getEdgesForNodes(oldNodes.map(n => n.id)).length;
-          await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
+          const oldNodeCount = this.db.countNodesByFile(extracted.filePath);
+          const oldEdgeCount = this.db.countEdgesTouchingFile(extracted.filePath);
+          await this.deleteEmbeddingsOfFile(extracted.filePath);
 
           // Written with the other files of its batch, in one transaction (see WriteBatch)
           batch.add(() => {
-            result.nodesRemoved += oldNodes.length;
+            result.nodesRemoved += oldNodeCount;
             result.edgesRemoved += oldEdgeCount;
             this.db.deleteNodesByFile(extracted.filePath);
             this.db.deleteUnresolvedRefsByFile(extracted.filePath);
@@ -483,12 +486,10 @@ export class IndexPipeline {
               symbolCount: extracted.nodes.length,
               indexedAt: Date.now(),
             });
-            for (const node of extracted.nodes) { this.db.upsertNode(node); result.nodesCreated++; }
-            for (const edge of extracted.edges) { this.db.insertEdge(edge); result.edgesCreated++; }
+            this.db.upsertNodes(extracted.nodes); result.nodesCreated += extracted.nodes.length;
+            this.db.insertEdges(extracted.edges); result.edgesCreated += extracted.edges.length;
             for (const mount of extracted.routeMounts ?? []) this.db.insertRouteMount(extracted.filePath, mount);
-            for (const ref of extracted.unresolvedRefs) {
-              this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column, ref.metadata);
-            }
+            this.db.insertUnresolvedRefs(extracted.filePath, extracted.unresolvedRefs);
             this.resolver.invalidateFile(extracted.filePath);
             if (isNew) result.added.push(extracted.filePath);
             else { result.modified.push(extracted.filePath); result.nodesUpdated += extracted.nodes.length; }

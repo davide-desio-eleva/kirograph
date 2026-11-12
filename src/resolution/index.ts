@@ -167,6 +167,12 @@ export class ReferenceResolver {
     for (let batchStart = 0; batchStart < refs.length; batchStart += BATCH_SIZE) {
       const batchEnd = Math.min(batchStart + BATCH_SIZE, refs.length);
 
+      // Edges to add, refs to delete, and strategy lists to record are collected and written at
+      // the end of the batch, in a few statements instead of one per reference.
+      const batchEdges: Edge[] = [];
+      const resolvedIds: number[] = [];
+      const strategiesToRecord = new Map<string, number[]>(); // strategies JSON -> ref ids
+
       // Wrap each batch in a transaction — dramatically reduces write amplification
       rawDb.run('BEGIN');
       try {
@@ -256,19 +262,29 @@ export class ReferenceResolver {
               column: column ?? undefined,
               metadata: refMetadata ? JSON.parse(refMetadata) : undefined,
             };
-            this.db.insertEdge(edge);
-            rawDb.run('DELETE FROM unresolved_refs WHERE id = ?', [refId]);
+            batchEdges.push(edge);
+            resolvedIds.push(refId);
             resolved++;
           } else {
+            // Nothing to write when the same list is already recorded: a reference that stays
+            // unresolved is tried again on every resolution and ends up with the same list.
             const strategiesJson = JSON.stringify(attemptedStrategies);
-            try {
-              rawDb.run(
-                'UPDATE unresolved_refs SET attempted_strategies = ? WHERE id = ?',
-                [strategiesJson, refId]
-              );
-            } catch {
-              logWarn(`ReferenceResolver: failed to record attempted strategies for ref ${refId}`);
+            if (ref.attempted_strategies !== strategiesJson) {
+              const ids = strategiesToRecord.get(strategiesJson);
+              if (ids) ids.push(refId); else strategiesToRecord.set(strategiesJson, [refId]);
             }
+          }
+        }
+        this.db.insertEdges(batchEdges);
+        for (const group of idGroups(resolvedIds)) {
+          rawDb.run(`DELETE FROM unresolved_refs WHERE id IN (${group.map(() => '?').join(',')})`, group);
+        }
+        for (const [strategiesJson, ids] of strategiesToRecord) {
+          for (const group of idGroups(ids)) {
+            rawDb.run(
+              `UPDATE unresolved_refs SET attempted_strategies = ? WHERE id IN (${group.map(() => '?').join(',')})`,
+              [strategiesJson, ...group],
+            );
           }
         }
         rawDb.run('COMMIT');
@@ -650,6 +666,22 @@ export class ReferenceResolver {
       },
     };
   }
+}
+
+/**
+ * Splits ids into groups whose sizes are powers of two, for IN (...) lists. A handful of distinct
+ * statements is all that is ever prepared, so they stay in the statement cache.
+ */
+function idGroups(ids: number[]): number[][] {
+  const sizes = [512, 256, 128, 64, 32, 16, 8, 4, 2, 1];
+  const groups: number[][] = [];
+  let i = 0;
+  while (i < ids.length) {
+    const size = sizes.find(n => n <= ids.length - i)!;
+    groups.push(ids.slice(i, i + size));
+    i += size;
+  }
+  return groups;
 }
 
 /** Key of the scope that stands for a whole file (a plugin the resolver could not match by name). */

@@ -15,6 +15,11 @@ import { BusyRetryDatabase, clearStaleDbLock } from './db-lock';
 
 const CURRENT_SCHEMA_VERSION = 3;
 
+/** Parameters per multi-row statement. SQLite allows more; a smaller statement is cheaper to parse. */
+const MAX_PARAMS_PER_STATEMENT = 1000;
+/** Rows per statement, largest first. Powers of two keep the number of distinct statements small. */
+const GROUP_SIZES = [128, 64, 32, 16, 8, 4, 2, 1];
+
 export class GraphDatabase {
   private db: any;
   private projectRoot: string;
@@ -255,30 +260,82 @@ export class GraphDatabase {
 
   // ── Nodes ──────────────────────────────────────────────────────────────────
 
+  /** Column list of the nodes table, in the order of `nodeParams`. */
+  private static readonly NODE_COLUMNS =
+    `(id, kind, name, qualified_name, file_path, language,
+       start_line, end_line, start_column, end_column,
+       docstring, signature, visibility,
+       is_exported, is_async, is_static, is_abstract,
+       decorators, type_parameters, updated_at,
+       complexity_cyclomatic, complexity_cognitive, complexity_halstead,
+       maintainability_index, nesting_depth)`;
+  private static readonly NODE_ROW = '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)';
+
+  private nodeParams(node: Node): unknown[] {
+    return [
+      node.id, node.kind, node.name, node.qualifiedName, node.filePath, node.language,
+      node.startLine, node.endLine, node.startColumn, node.endColumn,
+      node.docstring ?? null, node.signature ?? null, node.visibility ?? null,
+      node.isExported ? 1 : 0, node.isAsync ? 1 : 0,
+      node.isStatic ? 1 : 0, node.isAbstract ? 1 : 0,
+      node.decorators ? JSON.stringify(node.decorators) : null,
+      node.typeParameters ? JSON.stringify(node.typeParameters) : null,
+      node.updatedAt,
+      node.complexityCyclomatic ?? null, node.complexityCognitive ?? null,
+      node.complexityHalstead ?? null, node.maintainabilityIndex ?? null,
+      node.nestingDepth ?? null,
+    ];
+  }
+
+  /**
+   * Inserts many rows with few statements. Calls into the WASM driver cost far more than the rows
+   * themselves (about 20 µs a call against 5 µs a row), so rows go in groups. Group sizes are
+   * powers of two: only a handful of distinct statements are ever prepared, and they stay cached.
+   */
+  private multiInsert(head: string, rowSql: string, rows: unknown[][]): void {
+    if (rows.length === 0) return;
+    const maxRows = Math.max(1, Math.floor(MAX_PARAMS_PER_STATEMENT / rows[0].length));
+    const sizes = GROUP_SIZES.filter(s => s <= maxRows);
+    let i = 0;
+    while (i < rows.length) {
+      const size = sizes.find(s => s <= rows.length - i)!;
+      const params: unknown[] = [];
+      for (let k = 0; k < size; k++) for (const v of rows[i + k]) params.push(v);
+      this.db.run(`${head} VALUES ${Array(size).fill(rowSql).join(',')}`, params);
+      i += size;
+    }
+  }
+
+  /**
+   * Same result as calling `upsertNode` for each node, in a few statements. When the same id
+   * appears twice the later node wins, as INSERT OR REPLACE did row by row.
+   */
+  upsertNodes(nodes: Node[]): void {
+    if (nodes.length === 0) return;
+    const byId = new Map<string, Node>();
+    for (const n of nodes) byId.set(n.id, n);
+    const unique = [...byId.values()];
+    this.multiInsert(`INSERT OR REPLACE INTO nodes ${GraphDatabase.NODE_COLUMNS}`, GraphDatabase.NODE_ROW,
+      unique.map(n => this.nodeParams(n)));
+    // Full-text index: one statement per group of ids, each node under its own rowid
+    const ids = unique.map(n => n.id);
+    let i = 0;
+    while (i < ids.length) {
+      const size = GROUP_SIZES.find(s => s <= ids.length - i)!;
+      this.db.run(
+        `INSERT OR REPLACE INTO nodes_fts (rowid, id, name, qualified_name, docstring, signature)
+         SELECT rowid, id, name, qualified_name, COALESCE(docstring, ''), COALESCE(signature, '')
+         FROM nodes WHERE id IN (${Array(size).fill('?').join(',')})`,
+        ids.slice(i, i + size),
+      );
+      i += size;
+    }
+  }
+
   upsertNode(node: Node): void {
     const inserted = this.db.run(
-      `INSERT OR REPLACE INTO nodes
-        (id, kind, name, qualified_name, file_path, language,
-         start_line, end_line, start_column, end_column,
-         docstring, signature, visibility,
-         is_exported, is_async, is_static, is_abstract,
-         decorators, type_parameters, updated_at,
-         complexity_cyclomatic, complexity_cognitive, complexity_halstead,
-         maintainability_index, nesting_depth)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [
-        node.id, node.kind, node.name, node.qualifiedName, node.filePath, node.language,
-        node.startLine, node.endLine, node.startColumn, node.endColumn,
-        node.docstring ?? null, node.signature ?? null, node.visibility ?? null,
-        node.isExported ? 1 : 0, node.isAsync ? 1 : 0,
-        node.isStatic ? 1 : 0, node.isAbstract ? 1 : 0,
-        node.decorators ? JSON.stringify(node.decorators) : null,
-        node.typeParameters ? JSON.stringify(node.typeParameters) : null,
-        node.updatedAt,
-        node.complexityCyclomatic ?? null, node.complexityCognitive ?? null,
-        node.complexityHalstead ?? null, node.maintainabilityIndex ?? null,
-        node.nestingDepth ?? null,
-      ]
+      `INSERT OR REPLACE INTO nodes ${GraphDatabase.NODE_COLUMNS} VALUES ${GraphDatabase.NODE_ROW}`,
+      this.nodeParams(node),
     );
     // Keep FTS in sync, under the node's own rowid so it can be deleted by rowid (see deleteNodesByFile)
     this.db.run(
@@ -292,6 +349,21 @@ export class GraphDatabase {
   getNode(id: string): Node | null {
     const row = this.db.get('SELECT * FROM nodes WHERE id = ?', [id]);
     return row ? this.rowToNode(row) : null;
+  }
+
+  /** Number of nodes in a file, without loading them. */
+  countNodesByFile(filePath: string): number {
+    return this.db.get('SELECT count(*) AS c FROM nodes WHERE file_path = ?', [filePath]).c;
+  }
+
+  /** Number of edges that start or end at a node of the file: what getEdgesForNodes would return. */
+  countEdgesTouchingFile(filePath: string): number {
+    return this.db.get(
+      `SELECT count(*) AS c FROM edges
+       WHERE source IN (SELECT id FROM nodes WHERE file_path = ?)
+          OR target IN (SELECT id FROM nodes WHERE file_path = ?)`,
+      [filePath, filePath],
+    ).c;
   }
 
   getNodesByFile(filePath: string): Node[] {
@@ -429,6 +501,16 @@ export class GraphDatabase {
     );
   }
 
+  /** Same result as calling `insertEdge` for each edge, in a few statements. */
+  insertEdges(edges: Edge[]): void {
+    this.multiInsert(
+      'INSERT OR IGNORE INTO edges (source, target, kind, metadata, line, column, confidence, confidence_score)',
+      '(?, ?, ?, ?, ?, ?, ?, ?)',
+      edges.map(e => [e.source, e.target, e.kind, e.metadata ? JSON.stringify(e.metadata) : null,
+        e.line ?? null, e.column ?? null, e.confidence ?? 'extracted', e.confidenceScore ?? 1.0]),
+    );
+  }
+
   getCallers(nodeId: string, limit = 30): Node[] {
     return this.db.all(
       `SELECT n.* FROM nodes n
@@ -519,6 +601,16 @@ export class GraphDatabase {
       `INSERT INTO unresolved_refs (source_id, ref_name, ref_kind, file_path, line, column, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [sourceId, refName, refKind, filePath, line ?? null, column ?? null, metadata ? JSON.stringify(metadata) : null]
+    );
+  }
+
+  /** Same result as calling `insertUnresolvedRef` for each reference, in a few statements. */
+  insertUnresolvedRefs(filePath: string, refs: Array<{ sourceId: string; refName: string; refKind: string; line?: number; column?: number; metadata?: Record<string, unknown> }>): void {
+    this.multiInsert(
+      'INSERT INTO unresolved_refs (source_id, ref_name, ref_kind, file_path, line, column, metadata)',
+      '(?, ?, ?, ?, ?, ?, ?)',
+      refs.map(r => [r.sourceId, r.refName, r.refKind, filePath, r.line ?? null, r.column ?? null,
+        r.metadata ? JSON.stringify(r.metadata) : null]),
     );
   }
 
