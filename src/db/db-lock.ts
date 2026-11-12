@@ -98,6 +98,12 @@ export class BusyRetryDatabase {
   private markerFile: string | undefined;
   private lastTouch = 0;
 
+  // Write coalescing (see coalesce())
+  private coalescing = 0;
+  private explicitTransaction = false;
+  private implicitOpen = false;
+  private flushTimer: ReturnType<typeof setImmediate> | null = null;
+
   constructor(
     private readonly raw: any,
     private readonly dbDir: string,
@@ -147,8 +153,19 @@ export class BusyRetryDatabase {
 
   // Writes and reads both refresh the marker: the driver takes the directory lock for reads too,
   // so a process killed during a read can leave it behind.
-  run(sql: string, values?: unknown): unknown { return this.op(() => this.reusing(sql, stmt => stmt.run(values))); }
-  exec(...args: unknown[]): unknown { return this.op(() => this.raw.exec(...args)); }
+  run(sql: string, values?: unknown): unknown {
+    this.beforeStatement(sql);
+    const result = this.op(() => this.reusing(sql, stmt => stmt.run(values)));
+    this.afterStatement(sql);
+    return result;
+  }
+  exec(...args: unknown[]): unknown {
+    const sql = typeof args[0] === 'string' ? args[0] : '';
+    this.beforeStatement(sql);
+    const result = this.op(() => this.raw.exec(...args));
+    this.afterStatement(sql);
+    return result;
+  }
   get(sql: string, values?: unknown): any { return this.op(() => this.reusing(sql, stmt => stmt.get(values))); }
   all(sql: string, values?: unknown): any[] { return this.op(() => this.reusing(sql, stmt => stmt.all(values))); }
 
@@ -169,7 +186,57 @@ export class BusyRetryDatabase {
     }
   }
 
+  /**
+   * Runs `fn` with write coalescing: the writes it makes outside a transaction share one that is
+   * committed when the event loop next turns (that is, as soon as the code waits for I/O such as a
+   * network call) and when `fn` ends. Without it every write is its own transaction, and each
+   * commit costs about 10 ms (a journal file created, synced and deleted), so a phase that makes
+   * thousands of small writes took minutes.
+   *
+   * The transaction never spans a wait for I/O, so the database lock is not held while waiting
+   * on a network, and nothing outside this process sees a half-written state. Explicit
+   * transactions work as usual: a BEGIN commits the shared one first. Meant for code that makes
+   * many writes in a row and does not need each one durable before the next.
+   */
+  async coalesce<T>(fn: () => Promise<T>): Promise<T> {
+    this.coalescing++;
+    try {
+      return await fn();
+    } finally {
+      if (--this.coalescing === 0) this.flushCoalesced();
+    }
+  }
+
+  private flushCoalesced(): void {
+    if (this.flushTimer) { clearImmediate(this.flushTimer); this.flushTimer = null; }
+    if (!this.implicitOpen) return;
+    this.implicitOpen = false;
+    this.raw.exec('COMMIT');
+  }
+
+  private beforeStatement(sql: string): void {
+    if (/^\s*BEGIN\b/i.test(sql) || /^\s*(PRAGMA|VACUUM|ATTACH|DETACH)\b/i.test(sql)) {
+      this.flushCoalesced(); // these cannot run inside the shared transaction, or must start their own
+      return;
+    }
+    if (this.coalescing > 0 && !this.explicitTransaction && !this.implicitOpen
+        && /^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER)\b/i.test(sql)) {
+      this.touchMarker();
+      this.raw.exec('BEGIN');
+      this.implicitOpen = true;
+      this.flushTimer = setImmediate(() => { this.flushTimer = null; this.flushCoalesced(); });
+    }
+  }
+
+  private afterStatement(sql: string): void {
+    if (/^\s*BEGIN\b/i.test(sql)) this.explicitTransaction = true;
+    else if (/^\s*(COMMIT|END)\b/i.test(sql) || (/^\s*ROLLBACK\b/i.test(sql) && !/^\s*ROLLBACK\s+TO\b/i.test(sql))) {
+      this.explicitTransaction = false;
+    }
+  }
+
   close(): void {
+    this.flushCoalesced();
     for (const stmt of this.statements.values()) this.finalizeQuietly(stmt);
     this.statements.clear();
     this.raw.close();

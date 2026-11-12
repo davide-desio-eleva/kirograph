@@ -305,9 +305,9 @@ export class IndexPipeline {
           logWarn('enableSecurity requires enableArchitecture — auto-enabling architecture analysis for this run');
         }
         opts?.onProgress?.({ phase: 'architecture', current: 0, total: 1 });
-        await this.arch.analyze(msg =>
+        await this.db.getRawDb().coalesce(() => this.arch.analyze(msg =>
           opts?.onProgress?.({ phase: 'architecture', current: 0, total: 1, meta: { msg } })
-        );
+        ));
         opts?.onProgress?.({ phase: 'architecture', current: 1, total: 1 });
       }
 
@@ -318,9 +318,9 @@ export class IndexPipeline {
           this.db.applySecuritySchema();
           const secPipeline = new SecurityPipeline(this.db, this.config, this.projectRoot);
           opts?.onProgress?.({ phase: 'security', current: 0, total: 1 });
-          await secPipeline.run((phase, current, total) =>
+          await this.db.getRawDb().coalesce(() => secPipeline.run((phase, current, total) =>
             opts?.onProgress?.({ phase: 'security', current, total, meta: { secPhase: phase } })
-          );
+          ));
           opts?.onProgress?.({ phase: 'security', current: 1, total: 1 });
         } catch { /* security analysis is non-critical */ }
       }
@@ -331,10 +331,10 @@ export class IndexPipeline {
           const { DocsIndexer } = await import('../docs/indexer');
           this.db.applyDocsSchema();
           const docsIndexer = new DocsIndexer(this.db.getRawDb(), this.config, this.projectRoot);
-          await docsIndexer.indexAll({
+          await this.db.getRawDb().coalesce(() => docsIndexer.indexAll({
             force: opts?.force,
             onProgress: msg => opts?.onProgress?.({ phase: 'docs', current: 0, total: 1, meta: { msg } }),
-          });
+          }));
         } catch { /* docs indexing is non-critical */ }
       }
 
@@ -344,9 +344,9 @@ export class IndexPipeline {
           const { DataIndexer } = await import('../data/indexer');
           this.db.applyDataSchema();
           const dataIndexer = new DataIndexer(this.db.getRawDb(), this.config, this.projectRoot);
-          await dataIndexer.indexAll({
+          await this.db.getRawDb().coalesce(() => dataIndexer.indexAll({
             onProgress: msg => opts?.onProgress?.({ phase: 'data', current: 0, total: 1, meta: { msg } }),
-          });
+          }));
 
           // Assign data files to 'data' architecture layer if architecture is enabled
           if (this.config.enableArchitecture) {
@@ -639,9 +639,9 @@ export class IndexPipeline {
           logWarn('enableSecurity requires enableArchitecture — auto-enabling architecture analysis for this run');
         }
         onProgress?.({ phase: 'architecture', current: 0, total: 1 });
-        await this.arch.analyze(msg =>
+        await this.db.getRawDb().coalesce(() => this.arch.analyze(msg =>
           onProgress?.({ phase: 'architecture', current: 0, total: 1, meta: { msg } })
-        );
+        ));
         onProgress?.({ phase: 'architecture', current: 1, total: 1 });
       }
 
@@ -652,9 +652,13 @@ export class IndexPipeline {
           this.db.applySecuritySchema();
           const secPipeline = new SecurityPipeline(this.db, this.config, this.projectRoot);
           onProgress?.({ phase: 'security', current: 0, total: 1 });
-          await secPipeline.run((phase, current, total) =>
-            onProgress?.({ phase: 'security', current, total, meta: { secPhase: phase } })
-          );
+          // Only what the changes since the last complete run require: see security/incremental.ts
+          const graphChanged = result.added.length + result.modified.length + result.removed.length > 0;
+          await this.db.getRawDb().coalesce(() => secPipeline.run(
+            (phase, current, total) =>
+              onProgress?.({ phase: 'security', current, total, meta: { secPhase: phase } }),
+            { incremental: { graphChanged } },
+          ));
           onProgress?.({ phase: 'security', current: 1, total: 1 });
         } catch { /* security analysis is non-critical */ }
       }
@@ -665,9 +669,9 @@ export class IndexPipeline {
           const { DocsIndexer } = await import('../docs/indexer');
           this.db.applyDocsSchema();
           const docsIndexer = new DocsIndexer(this.db.getRawDb(), this.config, this.projectRoot);
-          await docsIndexer.indexAll({
+          await this.db.getRawDb().coalesce(() => docsIndexer.indexAll({
             onProgress: msg => onProgress?.({ phase: 'docs', current: 0, total: 1, meta: { msg } }),
-          });
+          }));
         } catch { /* docs indexing is non-critical */ }
       }
 
@@ -677,9 +681,9 @@ export class IndexPipeline {
           const { DataIndexer } = await import('../data/indexer');
           this.db.applyDataSchema();
           const dataIndexer = new DataIndexer(this.db.getRawDb(), this.config, this.projectRoot);
-          await dataIndexer.indexAll({
+          await this.db.getRawDb().coalesce(() => dataIndexer.indexAll({
             onProgress: msg => onProgress?.({ phase: 'data', current: 0, total: 1, meta: { msg } }),
-          });
+          }));
 
           // Assign data files to 'data' architecture layer if architecture is enabled
           if (this.config.enableArchitecture) {

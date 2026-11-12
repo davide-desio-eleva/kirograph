@@ -21,6 +21,7 @@ import { VulnerabilityDatabaseClient } from './vuln/client';
 import { OsvAdapter } from './vuln/osv-adapter';
 import { ReachabilityAnalyzer } from './reachability';
 import { logWarn } from '../errors';
+import { planSecurityRun, securityConfigKey, writeSecurityState, readSecurityState, type SecurityPlan } from './incremental';
 
 /**
  * SecurityPipeline orchestrates the full security analysis workflow.
@@ -44,8 +45,18 @@ export class SecurityPipeline {
    */
   async run(
     onProgress?: (phase: string, current: number, total: number) => void,
+    /**
+     * Without it every phase runs. With it only what the changes since the last complete run
+     * require does (see incremental.ts): a sync that changed source files, and nothing in the
+     * manifests, does not parse them or query the vulnerability databases again.
+     */
+    opts?: { incremental?: { graphChanged: boolean } },
   ): Promise<SecurityResult> {
     const start = Date.now();
+    const plan: SecurityPlan | null = opts?.incremental
+      ? planSecurityRun(this.projectRoot, this.config, opts.incremental.graphChanged)
+      : null;
+    const previous = readSecurityState(this.projectRoot);
 
     const result: SecurityResult = {
       manifestsDiscovered: 0,
@@ -57,17 +68,24 @@ export class SecurityPipeline {
       duration: 0,
     };
 
+    if (plan?.skip) {
+      result.duration = Date.now() - start;
+      return result;
+    }
+
     // ── Phase 1: Manifest Parsing ─────────────────────────────────────────────
     onProgress?.('manifest-parsing', 0, 4);
 
-    const parser = new ManifestParser(this.db, this.projectRoot, {
-      include: this.config.include,
-      exclude: this.config.exclude,
-    });
-    const parseResult = await parser.parseAll();
+    if (!plan || plan.manifests) {
+      const parser = new ManifestParser(this.db, this.projectRoot, {
+        include: this.config.include,
+        exclude: this.config.exclude,
+      });
+      const parseResult = await parser.parseAll();
 
-    result.manifestsDiscovered = parseResult.manifestsParsed;
-    result.dependenciesCreated = parseResult.dependenciesCreated;
+      result.manifestsDiscovered = parseResult.manifestsParsed;
+      result.dependenciesCreated = parseResult.dependenciesCreated;
+    }
 
     onProgress?.('manifest-parsing', 1, 4);
 
@@ -75,14 +93,15 @@ export class SecurityPipeline {
     onProgress?.('dependency-integration', 1, 4);
 
     const integrator = new DependencyGraphIntegrator(this.db, this.projectRoot);
-    await integrator.integrate();
-    await integrator.resolveTransitives(10);
-    await integrator.cleanup();
+    if (!plan || plan.graph) await integrator.integrate();
+    if (!plan || plan.manifests) await integrator.resolveTransitives(10);
+    if (!plan || plan.graph) await integrator.cleanup();
 
     onProgress?.('dependency-integration', 2, 4);
 
     // ── Phase 3: Vulnerability Enrichment (conditional) ───────────────────────
-    if (this.config.securityAutoEnrich) {
+    let enriched = false;
+    if (this.config.securityAutoEnrich && (!plan || plan.enrich)) {
       onProgress?.('vulnerability-enrichment', 2, 4);
 
       const adapters = this.createVulnAdapters();
@@ -90,6 +109,8 @@ export class SecurityPipeline {
       const enrichResult = await vulnClient.enrichAll();
 
       result.vulnerabilitiesFound = enrichResult.vulnerabilitiesFound;
+      // Recorded only when every query worked: a refresh that failed is tried again next time
+      enriched = enrichResult.errors.length === 0;
 
       onProgress?.('vulnerability-enrichment', 3, 4);
     } else {
@@ -125,6 +146,16 @@ export class SecurityPipeline {
     }
 
     onProgress?.('reachability-analysis', 4, 4);
+
+    // Remember what this run saw, so the next one can skip what did not change
+    if (opts?.incremental || !plan) {
+      writeSecurityState(this.projectRoot, {
+        manifests: plan?.signature ?? planSecurityRun(this.projectRoot, this.config, true).signature,
+        config: securityConfigKey(this.config),
+        // Without auto-enrichment there is no vulnerability data to age
+        enrichedAt: enriched || !this.config.securityAutoEnrich ? Date.now() : (previous?.enrichedAt ?? 0),
+      });
+    }
 
     result.duration = Date.now() - start;
     return result;
