@@ -30,6 +30,12 @@
 
 ### Added
 
+- **Symbols and references for Terraform, YAML, shell and JSON configuration** ([#76](https://github.com/davide-desio-eleva/kirograph/issues/76)): these files were indexed with few or useless symbols (every Terraform block was a "namespace" named `resource` or `variable`, YAML and JSON gave none, a shell script gave its functions but no calls).
+  - **Terraform**: blocks are named by address (`aws_s3_bucket.logs`, `var.region`, `module.vpc`, `local.name`, `output.arn`). Expressions reference what they use; a module call references the variables of the local module it calls, input by input; a `terraform_remote_state` references the backend that writes the same state `key`; a `.tfvars` value references its variable.
+  - **YAML**: Helm `values.yaml` keys (`values.image.tag`) referenced from the chart's templates by `.Values.*`, `define` blocks referenced by `include` (`_helpers.tpl` is now read), chart dependencies; Kubernetes objects (`Deployment/web`); GitHub Actions jobs, their `needs` and the actions they use; docker-compose services and `depends_on`; the top-level keys of other YAML.
+  - **Shell**: the files a script sources, and calls to its functions, also to functions of a sourced file.
+  - **JSON configuration** (`package.json`, `tsconfig*.json`, `*.config.json`, `appsettings*.json`, files in `config/` or `.vscode/`, …): keys three levels deep, `package.json` scripts as functions that reference the scripts they run. Other JSON is not indexed.
+  - These references resolve by exact qualified name, scoped to the Terraform module (its directory) or the Helm chart, so names that repeat across modules (`var.region`) are never linked across them.
 - **`kirograph sync --full`** runs a sync in full even when nothing seems to have changed.
 - **`kirograph sync --timings`** prints the time spent in each phase when the sync ends, so a slow sync on a real project shows which phase is slow.
 

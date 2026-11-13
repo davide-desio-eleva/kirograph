@@ -12,11 +12,13 @@ import { detectLanguage, isSupportedLanguage } from './languages';
 import { initGrammars, getParser, hasWasmGrammar } from './grammars';
 import { extractNotebook } from './notebook';
 import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
+import { extractHcl, extractYaml, extractHelmTemplate, augmentBash, extractJsonConfig } from './infra';
 
 export interface UnresolvedRef {
   sourceId: string;
   refName: string;
-  refKind: 'function' | 'import' | 'extends' | 'implements';
+  /** `reference` and `qualified_call` resolve by exact qualified name only (see infra.ts). */
+  refKind: 'function' | 'import' | 'extends' | 'implements' | 'reference' | 'qualified_call';
   line: number;
   column: number;
   /** Call-site facts the detectors need later, e.g. how the first argument was built. */
@@ -113,6 +115,17 @@ export async function extractFile(filePath: string, projectRoot: string, content
     return extractNotebook(filePath, projectRoot, source);
   }
 
+  // JSON configuration: read without a grammar
+  if (language === 'json') {
+    const relJson = path.relative(projectRoot, filePath).replace(/\\/g, '/');
+    return {
+      filePath: relJson, language,
+      contentHash: crypto.createHash('sha256').update(source).digest('hex'),
+      fileSize: Buffer.byteLength(source, 'utf8'),
+      ...extractJsonConfig(source, relJson, Date.now()),
+    };
+  }
+
   const contentHash = crypto.createHash('sha256').update(source).digest('hex');
   const fileSize = Buffer.byteLength(source, 'utf8');
   const relPath = path.relative(projectRoot, filePath).replace(/\\/g, '/');
@@ -144,16 +157,9 @@ export async function extractFile(filePath: string, projectRoot: string, content
     // Skip Go template files disguised as YAML (e.g. Helm templates).
     // tree-sitter-yaml crashes with "memory access out of bounds" on {{ }} syntax.
     // These files produce valid YAML only after Helm renders them — raw they're not parseable.
+    // They are read for their .Values uses, includes and defines instead (infra.ts).
     if (language === 'yaml' && source.includes('{{')) {
-      return {
-        filePath: relPath,
-        language,
-        contentHash,
-        fileSize,
-        nodes: [],
-        edges: [],
-        unresolvedRefs: [],
-      };
+      return { filePath: relPath, language, contentHash, fileSize, ...extractHelmTemplate(source, relPath, Date.now()) };
     }
 
     // Wrap parser.parse() to catch WASM runtime crashes (e.g. memory access out of bounds
@@ -187,7 +193,18 @@ export async function extractFile(filePath: string, projectRoot: string, content
     const unresolvedRefs: UnresolvedRef[] = [];
     const now = Date.now();
 
-    walkTree(tree.rootNode, source, relPath, language, nodes, edges, unresolvedRefs, now);
+    if (language === 'hcl') {
+      // Terraform: named by address (aws_s3_bucket.logs, var.region), see infra.ts
+      const hcl = extractHcl(tree.rootNode, source, relPath, now);
+      nodes.push(...hcl.nodes); edges.push(...hcl.edges); unresolvedRefs.push(...hcl.unresolvedRefs);
+    } else if (language === 'yaml') {
+      const yaml = extractYaml(tree.rootNode, source, relPath, now);
+      nodes.push(...yaml.nodes); edges.push(...yaml.edges); unresolvedRefs.push(...yaml.unresolvedRefs);
+    } else {
+      walkTree(tree.rootNode, source, relPath, language, nodes, edges, unresolvedRefs, now);
+      // Shell: the files a script sources, and the calls to its functions
+      if (language === 'bash') augmentBash(tree.rootNode, source, relPath, now, { nodes, edges, unresolvedRefs });
+    }
 
     let routeMounts: RouteMountFact[] | undefined;
     if (JS_TS_LANGUAGES.has(language)) {

@@ -204,7 +204,11 @@ export class ReferenceResolver {
           const attemptedStrategies: string[] = [];
           let targetId: string | null = null;
 
-          if (refKind === 'import') {
+          if (refKind === 'reference' || refKind === 'qualified_call') {
+            // Infrastructure references (infra.ts): the exact qualified name, nothing looser
+            attemptedStrategies.push('qualified');
+            targetId = this.qualifiedNameCache.get(refName)?.id ?? null;
+          } else if (refKind === 'import') {
             attemptedStrategies.push('import-path');
             targetId = this._resolveImportPath(refName, filePath);
           } else if (refKind === 'extends' || refKind === 'implements') {
@@ -261,7 +265,8 @@ export class ReferenceResolver {
           }
 
           if (targetId) {
-            const edgeKind = refKind === 'import' ? 'imports'
+            const edgeKind = refKind === 'reference' ? 'references'
+              : refKind === 'import' ? 'imports'
               : refKind === 'extends' ? 'extends'
               : refKind === 'implements' ? 'implements'
               : 'calls';

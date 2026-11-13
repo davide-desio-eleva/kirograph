@@ -3,6 +3,7 @@
  */
 
 import type { Language } from '../types';
+import { isJsonConfigFile } from './json-config-files';
 
 export const EXTENSION_MAP: Record<string, Language> = {
   '.ts': 'typescript',
@@ -60,6 +61,8 @@ export const EXTENSION_MAP: Record<string, Language> = {
   '.yml': 'yaml',
   '.tf': 'hcl',
   '.tfvars': 'hcl',
+  // Helm helpers (_helpers.tpl): read for their define blocks, like the chart's templates
+  '.tpl': 'yaml',
   '.css': 'css',
   '.scss': 'scss',
   '.sass': 'scss',
@@ -128,6 +131,7 @@ export const GRAMMAR_MAP: Record<Language, string> = {
   objc: 'tree-sitter-objc',
   yaml: 'tree-sitter-yaml',
   hcl: 'tree-sitter-hcl',
+  json: '',
   css: 'tree-sitter-css',
   scss: 'tree-sitter-scss',
   html: 'tree-sitter-html',
@@ -153,6 +157,8 @@ export const GRAMMAR_MAP: Record<Language, string> = {
 };
 
 export function detectLanguage(filePath: string): Language {
+  // Only the JSON files that configure something (see isJsonConfigFile); other JSON is data
+  if (isJsonConfigFile(filePath)) return 'json';
   const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
   return EXTENSION_MAP[ext] ?? 'unknown';
 }

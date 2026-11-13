@@ -52,6 +52,8 @@ export const GRAMMAR_FILE_MAP: Record<Language, string> = {
   vue: 'tree-sitter-vue',
   objc: 'tree-sitter-objc',
   yaml: 'tree-sitter-yaml',
+  // JSON configuration files are read by extractJsonConfig (infra.ts), without a grammar
+  json: '',
   // HCL (Terraform) is bundled in src/extraction/wasm/ (not in tree-sitter-wasms)
   hcl: 'tree-sitter-hcl',
   // CSS is in tree-sitter-wasms; SCSS is bundled in src/extraction/wasm/

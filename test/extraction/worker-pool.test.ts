@@ -43,7 +43,7 @@ describe('ExtractionPool', () => {
       const content = fs.readFileSync(sample);
       const results = await Promise.all([
         ...Array.from({ length: 12 }, () => pool.run(sample, root, content, {})),
-        pool.run(path.join(root, 'package.json'), root, Buffer.from('{}'), {}),
+        pool.run(path.join(root, 'notes.txt'), root, Buffer.from('notes'), {}),
       ]);
       expect(results.slice(0, 12).every(r => r && r.nodes.length > 0)).toBe(true);
       expect(results[12]).toBeNull();
