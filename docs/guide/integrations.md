@@ -41,7 +41,7 @@ Up to three hooks are installed (`.kiro.hook` extension):
 
 | Hook file | Event | Type | Behavior |
 |-----------|-------|------|----------|
-| `kirograph-sync-if-dirty.kiro.hook` | `agentStop` | `runCommand` | Runs `kirograph sync --quiet` when the agent stops. Skips unchanged files via content hashing. |
+| `kirograph-sync-if-dirty.kiro.hook` | `agentStop` | `runCommand` | Runs `kirograph sync --quiet --background` when the agent stops: returns at once and syncs in a separate process when something changed, so the hook's time limit (60 s in Kiro) can never stop a sync halfway. |
 | `kirograph-compress-hint.kiro.hook` | `preToolUse` (shell) | `askAgent` | Reminds the agent to use `kirograph_exec` for commands that benefit from token compression. Only installed when shell compression is enabled. |
 | `kirograph-mem-capture.kiro.hook` | `agentStop` | `askAgent` | Prompts the agent to store important observations in memory at the end of each session. Only installed when memory is enabled. |
 
@@ -63,9 +63,9 @@ A custom agent for Kiro CLI with session-boundary sync hooks:
 
 | Event | Action |
 |-------|--------|
-| `agentSpawn` | `kirograph sync-if-dirty --quiet` (catches edits made between sessions) |
-| `userPromptSubmit` | `kirograph sync-if-dirty --quiet` (keeps graph fresh within a session) |
-| `stop` | `kirograph sync-if-dirty --quiet` (deferred flush, mirrors IDE `agentStop`) |
+| `agentSpawn` | `kirograph sync-if-dirty --quiet --background` (catches edits made between sessions) |
+| `userPromptSubmit` | `kirograph sync-if-dirty --quiet --background` (keeps graph fresh within a session) |
+| `stop` | `kirograph sync-if-dirty --quiet --background` (deferred flush, mirrors IDE `agentStop`) |
 
 Use it with:
 
@@ -166,7 +166,7 @@ kirograph install --target <name>
 
 ### Auto-Sync Hooks
 
-For tools that support lifecycle hooks, the installer writes auto-sync hooks that run `kirograph sync` when the agent finishes:
+For tools that support lifecycle hooks, the installer writes auto-sync hooks that run `kirograph sync --quiet --background` when the agent finishes. `--background` returns at once and runs the sync in a separate process (skipped when nothing changed or a sync is already running), so a hook time limit cannot cut a sync short. Hooks written by an older version run the sync in the foreground: run `kirograph install` again to update them.
 
 | Tool | Hook file | Event | Behavior |
 |------|-----------|-------|----------|

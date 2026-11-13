@@ -1,6 +1,14 @@
 # Changelog
 
-## [1.4.7] - 2026-11-10: a database lock left by a killed process no longer blocks every command
+## [1.5.0] - 2026-11-13: fast syncs on large workspaces, a killed process no longer breaks the database, symbols for Terraform, Helm, shell and JSON
+
+### Upgrade notes
+
+- **Stop every KiroGraph process of 1.4.6 or older before upgrading** (MCP servers in the IDE and CLI, running syncs). They do not write the writer markers this version relies on, and it cannot tell their database lock from a dead process's.
+- **Run `kirograph install` again** to update hooks already installed: the new ones use `--background`, so a hook's time limit can no longer kill a sync halfway.
+- **The first open of an existing database runs two migrations**: it rebuilds the symbol full-text index, and removes duplicate edges, then gives the space back when that frees a quarter of the file or more. On a large database this can take a while once. Memory is not touched.
+- **What is indexed changes slightly**: JSON configuration files and Helm `_helpers.tpl` are now indexed, and files git ignores are no longer indexed as documentation or data.
+- Optional packages (semantic engines, data parsers, pattern matching) now install to `~/.kirograph/engines`. Packages an older installer put in the project are still found, and can be removed from it.
 
 ### Fixed
 

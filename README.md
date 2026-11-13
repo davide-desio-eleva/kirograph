@@ -23,7 +23,7 @@ The result is fewer tool calls, less context used, and faster responses on compl
 | Feature | Description |
 |---------|-------------|
 | <h4>Graph & Analysis (KiroGraph-Core)</h4> | |
-| 🕸️ **Semantic Graph** | tree-sitter AST parsing across 33+ languages — functions, classes, call edges, type hierarchies, all in SQLite |
+| 🕸️ **Semantic Graph** | tree-sitter AST parsing across 33+ languages — functions, classes, call edges, type hierarchies, all in SQLite. Infrastructure too: Terraform resources, modules, variables and remote states; Helm values and templates; Kubernetes objects; GitHub Actions jobs; shell scripts and JSON configuration |
 | 🎯 **Context Building** | One tool call returns entry points, related symbols, and code snippets for any task description |
 | 💥 **Impact Analysis** | Blast-radius traversal before making changes — know what breaks at any depth |
 | 🧬 **Type Hierarchy** | Traverse inheritance chains — base types, derived types, implementations |
