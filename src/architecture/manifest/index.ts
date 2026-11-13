@@ -8,6 +8,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ManifestParser, ArchPackage } from '../types';
+import type { KiroGraphConfig } from '../../config';
+import { listWorkspaceFiles } from '../../sync/files';
 import { npmParser } from './npm';
 import { goParser } from './go';
 import { cargoParser } from './cargo';
@@ -74,7 +76,7 @@ export interface ManifestScanOptions {
  * are processed (aligning with the code graph scope).
  */
 export async function parseAllManifests(projectRoot: string, scanOptions?: ManifestScanOptions): Promise<ArchPackage[]> {
-  let manifestPaths = _findManifests(projectRoot);
+  let manifestPaths = findManifestPaths(projectRoot, scanOptions?.exclude);
 
   // Filter by include/exclude if provided
   if (scanOptions?.include && scanOptions.include.length > 0) {
@@ -111,26 +113,19 @@ export async function parseAllManifests(projectRoot: string, scanOptions?: Manif
   return all;
 }
 
-function _findManifests(dir: string, results: string[] = []): string[] {
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return results;
+/**
+ * Absolute paths of the manifest files of the workspace `dir`, from the shared workspace file list
+ * (sync/files.ts: git's list of each repository, so no walk of .git, node_modules or ignored
+ * folders), less those under a folder in SKIP_DIRS.
+ */
+export function findManifestPaths(dir: string, exclude: string[] = []): string[] {
+  const results: string[] = [];
+  for (const rel of listWorkspaceFiles(dir, { exclude } as unknown as KiroGraphConfig)) {
+    const parts = rel.split('/');
+    const name = parts[parts.length - 1];
+    if (!MANIFEST_FILENAMES.has(name) && !name.endsWith('.csproj')) continue;
+    if (parts.slice(0, -1).some(p => SKIP_DIRS.has(p))) continue;
+    results.push(path.join(dir, rel));
   }
-
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      if (!SKIP_DIRS.has(entry.name)) {
-        _findManifests(path.join(dir, entry.name), results);
-      }
-    } else if (entry.isFile()) {
-      // Check exact filename or extension match
-      if (MANIFEST_FILENAMES.has(entry.name) || entry.name.endsWith('.csproj')) {
-        results.push(path.join(dir, entry.name));
-      }
-    }
-  }
-
   return results;
 }

@@ -71,6 +71,8 @@ export default class KiroGraph {
     this.arch = new ArchitectureAnalyzer(db, config, projectRoot);
     this.lock = new LockManager(projectRoot);
     this.pipeline = new IndexPipeline(db, this.vectors, this.resolver, this.arch, this.lock, config, projectRoot);
+    // With deferred vectors, the pipeline loads the model at the first point that needs it
+    this.pipeline.setVectorLoader(() => this.ensureVectors());
     this.searcher = new Searcher(db);
   }
 
@@ -156,7 +158,9 @@ export default class KiroGraph {
   async getPendingSyncCount(): Promise<number> {
     try {
       const { getChangedFiles, scanDirectory } = await import('./sync/index');
-      const gitChanged = await getChangedFiles(this.projectRoot, this.config);
+      const { readGitHeads } = await import('./sync/git-head');
+      // Commits since the last sync count too (a pull brings changes git status does not show)
+      const gitChanged = await getChangedFiles(this.projectRoot, this.config, readGitHeads(this.projectRoot));
       const hasGitChanges =
         gitChanged.added.length > 0 ||
         gitChanged.modified.length > 0 ||
@@ -198,10 +202,8 @@ export default class KiroGraph {
   }
 
   async sync(changedFilesOrOpts?: string[] | { files?: string[]; onProgress?: (p: IndexProgress) => void; full?: boolean }): Promise<SyncResult> {
-    const explicit = Array.isArray(changedFilesOrOpts) || changedFilesOrOpts?.files !== undefined;
-    const full = !Array.isArray(changedFilesOrOpts) && changedFilesOrOpts?.full === true;
-    // A sync that will find nothing to do does not need the embedding model
-    if (this.deferredVectors && (explicit || full || this.hasPendingChanges())) await this.ensureVectors();
+    // The embedding model is not loaded here: the pipeline loads it when a file changed or an
+    // embedding is missing (setVectorLoader), so a sync that changes nothing never does
     if (Array.isArray(changedFilesOrOpts)) {
       return this.pipeline.sync({ changedFiles: changedFilesOrOpts });
     }

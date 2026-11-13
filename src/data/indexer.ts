@@ -8,11 +8,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import picomatch from 'picomatch';
 import type { KiroGraphConfig } from '../config';
 import type { DataSet, DataColumn, DataIndexResult, ParsedRow } from './types';
 import { getDataParser } from './parsers/index';
 import { ColumnProfiler } from './profiler';
+import { listWorkspaceFiles, matcherFor } from '../sync/files';
 
 /**
  * Generate a dataset ID from a file path.
@@ -191,37 +191,12 @@ export class DataIndexer {
   // ── Private ─────────────────────────────────────────────────────────────────
 
   private scanDataFiles(): string[] {
-    const includePatterns = (this.config as any).dataInclude ?? [];
-    const excludePatterns = (this.config as any).dataExclude ?? [];
-    const includeMatchers = includePatterns.map((p: string) => picomatch(p));
-    const excludeMatchers = excludePatterns.map((p: string) => picomatch(p));
-    const results: string[] = [];
-
-    const walk = (dir: string) => {
-      let entries: fs.Dirent[];
-      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-
-      for (const entry of entries) {
-        const full = path.join(dir, entry.name);
-        const rel = path.relative(this.projectRoot, full).replace(/\\/g, '/');
-
-        if (entry.isDirectory()) {
-          if (excludeMatchers.some((m: any) => m(rel + '/'))) continue;
-          walk(full);
-        } else if (entry.isFile()) {
-          if (excludeMatchers.some((m: any) => m(rel))) continue;
-          if (includeMatchers.some((m: any) => m(rel))) {
-            // Verify a parser exists for this format
-            if (getDataParser(rel)) {
-              results.push(rel);
-            }
-          }
-        }
-      }
-    };
-
-    walk(this.projectRoot);
-    return results;
+    // From the shared workspace list (sync/files.ts): no walk of .git, node_modules or ignored files
+    const included = matcherFor((this.config as any).dataInclude ?? []);
+    const excluded = matcherFor((this.config as any).dataExclude ?? []);
+    return listWorkspaceFiles(this.projectRoot, this.config)
+      .filter(rel => included(rel) && !excluded(rel) && !!getDataParser(rel)
+        && fs.existsSync(path.join(this.projectRoot, rel)));
   }
 
   private removeDeletedDatasets(currentFiles: string[]): void {

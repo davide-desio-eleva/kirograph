@@ -12,13 +12,31 @@ import { execFileSync } from 'child_process';
 import picomatch from 'picomatch';
 import type { KiroGraphConfig } from '../config';
 import { detectLanguage } from '../extraction/languages';
+import { currentHead, diffCommits, headKey, repositoryPrefix } from './git-head';
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 /**
  * Returns picomatch matchers for all exclude patterns plus .kirographignore root file lines.
  */
+/**
+ * Matchers compiled once per configuration object. `shouldIncludeFile` runs for every file of every
+ * scan, and compiling each pattern on every call cost more than the matching.
+ */
+const excludeCache = new WeakMap<KiroGraphConfig, { key: string; matchers: ((s: string) => boolean)[] }>();
+const includeCache = new WeakMap<KiroGraphConfig, { key: string; matcher: ((s: string) => boolean) | null }>();
+
 function buildExcludeMatchers(config: KiroGraphConfig): ((s: string) => boolean)[] {
+  // Keyed by the patterns too: a caller may change the list of the same object
+  const key = config.exclude.join('\0');
+  const cached = excludeCache.get(config);
+  if (cached && cached.key === key) return cached.matchers;
+  const matchers = compileExcludeMatchers(config);
+  excludeCache.set(config, { key, matchers });
+  return matchers;
+}
+
+function compileExcludeMatchers(config: KiroGraphConfig): ((s: string) => boolean)[] {
   const patterns = [...config.exclude];
 
   return patterns.map(p => {
@@ -34,6 +52,15 @@ function buildExcludeMatchers(config: KiroGraphConfig): ((s: string) => boolean)
  * Returns a combined picomatch matcher or null if no include patterns.
  */
 function buildIncludeMatcher(config: KiroGraphConfig): ((s: string) => boolean) | null {
+  const key = (config.include ?? []).join('\0');
+  const cached = includeCache.get(config);
+  if (cached && cached.key === key) return cached.matcher;
+  const matcher = compileIncludeMatcher(config);
+  includeCache.set(config, { key, matcher });
+  return matcher;
+}
+
+function compileIncludeMatcher(config: KiroGraphConfig): ((s: string) => boolean) | null {
   if (!config.include || config.include.length === 0) return null;
   const matchers = config.include.map(p => {
     try {
@@ -117,6 +144,8 @@ function scanDirectoryWalk(
  * Finds all git roots at or under `root` (including root itself).
  * Returns paths sorted shallowest-first so parent roots are processed before children.
  */
+const ROOT_WALK_SKIP = new Set(['node_modules', '.kirograph']);
+
 export function findGitRoots(root: string): string[] {
   const roots: string[] = [];
 
@@ -128,7 +157,8 @@ export function findGitRoots(root: string): string[] {
     let entries: fs.Dirent[];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const entry of entries) {
-      if (entry.isDirectory()) walk(path.join(dir, entry.name));
+      // Installed dependencies hold no repository of the project, and can hold most of its files
+      if (entry.isDirectory() && !ROOT_WALK_SKIP.has(entry.name)) walk(path.join(dir, entry.name));
     }
   };
 
@@ -206,51 +236,88 @@ export async function scanDirectory(
   return allFiles;
 }
 
+export interface ChangedFiles {
+  added: string[];
+  modified: string[];
+  removed: string[];
+  /** The HEAD of each repository when this ran, by `headKey`: to record after the sync. */
+  heads: Record<string, string>;
+  /**
+   * True when the lists cover the commits made since `knownHeads` too: every repository had a
+   * recorded head, and git could diff it. When false, a change may have come with a commit the
+   * lists do not show, and only a full scan is sure to find it.
+   */
+  complete: boolean;
+}
+
 /**
- * Classifies git-changed files into added / modified / removed across all nested git roots.
- * Returns absolute paths. Returns empty arrays if git is unavailable.
- * Excludes paths whose detected language is 'unknown'.
+ * Classifies changed files into added / modified / removed across all nested git roots: the
+ * uncommitted changes (`git status`), and the files changed by commits since `knownHeads`.
+ * Returns absolute paths. Excludes paths whose detected language is 'unknown'.
  */
 export async function getChangedFiles(
   root: string,
-  config: KiroGraphConfig
-): Promise<{ added: string[]; modified: string[]; removed: string[] }> {
-  const added: string[] = [];
-  const modified: string[] = [];
-  const removed: string[] = [];
+  config: KiroGraphConfig,
+  knownHeads: Record<string, string> = {},
+): Promise<ChangedFiles> {
+  const added = new Set<string>();
+  const touched = new Set<string>();
+  const heads: Record<string, string> = {};
+  let complete = true;
 
-  const gitRoots = findGitRoots(root);
-
-  for (const gitRoot of gitRoots) {
+  for (const gitRoot of findGitRoots(root)) {
     try {
       // -uall lists the files of an untracked directory one by one: without it a new directory is
       // one entry that is not a source file, so the files created inside it were never indexed.
       // -z separates entries with NUL and does not quote names with spaces or non-ASCII characters.
-      const output = execFileSync('git', ['status', '--porcelain', '--no-renames', '-uall', '-z'], {
+      // A workspace inside a repository: only its own files, with the prefix taken off their paths
+      const prefix = repositoryPrefix(gitRoot);
+      const output = execFileSync('git', ['status', '--porcelain', '--no-renames', '-uall', '-z', ...(prefix ? ['--', '.'] : [])], {
         cwd: gitRoot,
         encoding: 'utf8',
         timeout: 10_000,
         maxBuffer: 1 << 28,
         stdio: ['ignore', 'pipe', 'ignore'],
       });
-
       for (const line of output.split('\0').filter(Boolean)) {
-        const statusCode = line.slice(0, 2);
-        const relPath = line.slice(3);
-        const absPath = path.join(gitRoot, relPath);
-        if (detectLanguage(absPath) === 'unknown') continue;
-        if (statusCode === '??') {
-          added.push(absPath);
-        } else if (statusCode[0] === 'D' || statusCode[1] === 'D') {
-          removed.push(absPath);
-        } else {
-          modified.push(absPath);
+        let rel = line.slice(3);
+        if (prefix) {
+          if (!rel.startsWith(prefix)) continue;
+          rel = rel.slice(prefix.length);
         }
+        const absPath = path.join(gitRoot, rel);
+        if (detectLanguage(absPath) === 'unknown') continue;
+        touched.add(absPath);
+        if (line.startsWith('??')) added.add(absPath);
       }
     } catch {
-      // git unavailable for this root — skip
+      // git unavailable for this root: nothing it reports can be trusted
+      complete = false;
+      continue;
+    }
+
+    const key = headKey(root, gitRoot);
+    const head = currentHead(gitRoot);
+    if (head) heads[key] = head;
+    const known = knownHeads[key];
+    if (!head || !known) { if (head !== null || known) complete = false; continue; }
+    if (known === head) continue;
+    const diff = diffCommits(gitRoot, known, head);
+    if (!diff) { complete = false; continue; }
+    for (const { status, rel } of diff) {
+      const absPath = path.join(gitRoot, rel);
+      if (detectLanguage(absPath) === 'unknown') continue;
+      touched.add(absPath);
+      if (status === 'A') added.add(absPath);
     }
   }
 
-  return { added, modified, removed };
+  // What a file is now decides: one deleted by a commit and created again is there
+  const result: ChangedFiles = { added: [], modified: [], removed: [], heads, complete };
+  for (const absPath of touched) {
+    if (!fs.existsSync(absPath)) result.removed.push(absPath);
+    else if (added.has(absPath)) result.added.push(absPath);
+    else result.modified.push(absPath);
+  }
+  return result;
 }

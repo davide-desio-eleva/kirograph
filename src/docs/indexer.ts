@@ -8,15 +8,31 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import picomatch from 'picomatch';
 import type { KiroGraphConfig } from '../config';
 import type { DocSection, ParsedSection, DocIndexResult } from './types';
 import { generateSectionId, slugify } from './section-id';
 import { parseDocFile } from './formats/index';
 import { linkSection } from './linker';
 import { DocsVectorManager } from './vectors';
+import { listWorkspaceFiles, matcherFor } from '../sync/files';
 
 // ── Public API ────────────────────────────────────────────────────────────────
+
+/** The file hash recorded in a section's tags by flattenSections, or null. */
+function storedFileHash(tags: string | null): string | null {
+  if (!tags) return null;
+  try {
+    const parsed = JSON.parse(tags);
+    for (const tag of Array.isArray(parsed) ? parsed : [parsed]) {
+      let value: any = tag;
+      if (typeof tag === 'string') {
+        try { value = JSON.parse(tag); } catch { continue; } // a plain tag
+      }
+      if (value && typeof value._fileHash === 'string') return value._fileHash;
+    }
+  } catch { /* not ours */ }
+  return null;
+}
 
 export class DocsIndexer {
   private readonly db: any; // raw sqlite db handle
@@ -68,22 +84,8 @@ export class DocsIndexer {
         opts?.onProgress?.('docs: embedding sections');
         const kirographDir = path.join(this.projectRoot, '.kirograph');
         const vectorMgr = new DocsVectorManager(this.config, this.db, kirographDir);
-        const allSections = this.db.all('SELECT * FROM doc_sections ORDER BY file_path, position') as any[];
-        const sections: DocSection[] = allSections.map((row: any) => ({
-          id: row.id,
-          filePath: row.file_path,
-          title: row.title,
-          level: row.level,
-          parentId: row.parent_id ?? null,
-          summary: row.summary ?? null,
-          byteStart: row.byte_start,
-          byteEnd: row.byte_end,
-          contentHash: row.content_hash,
-          tags: row.tags ? JSON.parse(row.tags) : [],
-          position: row.position,
-          updatedAt: row.updated_at,
-        }));
-        await vectorMgr.embedBatch(sections);
+        // Only new and rewritten sections: the others already have their vector
+        await vectorMgr.embedPending();
       } catch { /* embedding is non-critical */ }
     }
 
@@ -106,28 +108,14 @@ export class DocsIndexer {
 
     // Check if file has changed (skip if hash matches and not forced)
     if (!force) {
-      const existing = this.db.get(
-        'SELECT content_hash FROM doc_sections WHERE file_path = ? LIMIT 1',
-        [relPath]
-      );
-      // If any section exists with same file and we can verify the file hasn't changed
-      if (existing) {
-        const allSections = this.db.all(
-          'SELECT content_hash FROM doc_sections WHERE file_path = ?',
-          [relPath]
-        );
-        // Use a file-level hash stored as a tag on the first section
-        const firstSection = this.db.get(
-          "SELECT tags FROM doc_sections WHERE file_path = ? AND parent_id IS NULL LIMIT 1",
-          [relPath]
-        );
-        if (firstSection?.tags) {
-          try {
-            const tags = JSON.parse(firstSection.tags);
-            if (tags._fileHash === fileHash) return null; // unchanged
-          } catch { /* proceed with re-index */ }
-        }
-      }
+      // The file hash is a tag of the first root section: `["{\"_fileHash\":\"…\"}"]` (see
+      // flattenSections). It was read as a property of the array, never matched, and so every
+      // documentation file was parsed, rewritten and linked to code again on every sync.
+      const roots = this.db.all(
+        'SELECT tags FROM doc_sections WHERE file_path = ? AND parent_id IS NULL',
+        [relPath],
+      ) as Array<{ tags: string | null }>;
+      if (roots.some(row => storedFileHash(row.tags) === fileHash)) return null; // unchanged
     }
 
     // Parse the file
@@ -227,35 +215,11 @@ export class DocsIndexer {
    * Scan the project for documentation files matching include/exclude patterns.
    */
   private scanDocFiles(): string[] {
-    const includeMatchers = this.config.docsInclude.map(p => picomatch(p));
-    const excludeMatchers = this.config.docsExclude.map(p => picomatch(p));
-    const results: string[] = [];
-
-    const walk = (dir: string) => {
-      let entries: fs.Dirent[];
-      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-
-      for (const entry of entries) {
-        const full = path.join(dir, entry.name);
-        const rel = path.relative(this.projectRoot, full).replace(/\\/g, '/');
-
-        if (entry.isDirectory()) {
-          // Skip excluded directories early
-          if (excludeMatchers.some(m => m(rel + '/'))) continue;
-          walk(full);
-        } else if (entry.isFile()) {
-          // Check exclude first
-          if (excludeMatchers.some(m => m(rel))) continue;
-          // Check include
-          if (includeMatchers.some(m => m(rel))) {
-            results.push(rel);
-          }
-        }
-      }
-    };
-
-    walk(this.projectRoot);
-    return results;
+    // From the shared workspace list (sync/files.ts): no walk of .git, node_modules or ignored files
+    const included = matcherFor(this.config.docsInclude);
+    const excluded = matcherFor(this.config.docsExclude);
+    return listWorkspaceFiles(this.projectRoot, this.config)
+      .filter(rel => included(rel) && !excluded(rel) && fs.existsSync(path.join(this.projectRoot, rel)));
   }
 
   /**
@@ -349,9 +313,11 @@ export class DocsIndexer {
     for (const filePath of indexedFiles) {
       if (!currentSet.has(filePath)) {
         const count = this.db.get('SELECT COUNT(*) as cnt FROM doc_sections WHERE file_path = ?', [filePath])?.cnt ?? 0;
-        this.db.run('DELETE FROM doc_sections WHERE file_path = ?', [filePath]);
+        // The sections last: the other deletes find the rows to remove through them
         this.db.run('DELETE FROM doc_sections_fts WHERE id IN (SELECT id FROM doc_sections WHERE file_path = ?)', [filePath]);
         this.db.run('DELETE FROM doc_code_refs WHERE section_id IN (SELECT id FROM doc_sections WHERE file_path = ?)', [filePath]);
+        this.db.run('DELETE FROM doc_vectors WHERE section_id IN (SELECT id FROM doc_sections WHERE file_path = ?)', [filePath]);
+        this.db.run('DELETE FROM doc_sections WHERE file_path = ?', [filePath]);
         removed += count;
       }
     }

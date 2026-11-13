@@ -23,6 +23,9 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { execFileSync } from 'child_process';
 import { findGitRoots } from './index';
+import { currentHead, repositoryPrefix } from './git-head';
+import { listFilesOutsideRepos } from './files';
+import { createDefaultConfig } from '../config';
 
 const STATE_FILE = 'sync-state.json';
 const STATE_FORMAT = 1;
@@ -86,27 +89,6 @@ function dbIdentity(projectRoot: string): string | null {
   }
 }
 
-/** HEAD without starting git, for the ordinary layouts. Null means ask git. */
-function readHead(gitRoot: string): string | null {
-  try {
-    const gitDir = path.join(gitRoot, '.git');
-    if (!fs.statSync(gitDir).isDirectory()) return null; // worktree or submodule: ask git
-    const head = fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf8').trim();
-    if (/^[0-9a-f]{40,64}$/.test(head)) return head; // detached
-    const ref = head.match(/^ref: (.+)$/)?.[1];
-    if (!ref) return null;
-    try {
-      return fs.readFileSync(path.join(gitDir, ref), 'utf8').trim();
-    } catch {
-      const packed = fs.readFileSync(path.join(gitDir, 'packed-refs'), 'utf8');
-      const line = packed.split('\n').find(l => l.endsWith(` ${ref}`));
-      return line ? line.split(' ')[0] : null;
-    }
-  } catch {
-    return null;
-  }
-}
-
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, {
     cwd, encoding: 'utf8', timeout: 10_000, maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'ignore'],
@@ -116,37 +98,40 @@ function git(cwd: string, args: string[]): string {
 /**
  * Fingerprint of the workspace, or null when it cannot be computed cheaply (no git repository,
  * or git failed).
+ *
+ * A workspace that holds several repositories is fingerprinted repository by repository, plus the
+ * files outside them (path, size, modification time), which git reports nothing about. A workspace
+ * that is a folder inside a repository covers that folder only.
  */
 export function workspaceFingerprint(projectRoot: string): string | null {
   const hash = crypto.createHash('sha1');
   hash.update(`format ${STATE_FORMAT}|version ${packageVersion()}|config ${configKey(projectRoot)}`);
 
-  // Only a workspace that is itself a repository. A folder that holds several repositories has
-  // files of its own that git does not report (and repositories it does not list as one), and a
-  // fingerprint of the nested ones alone would call a change in those files "nothing changed".
+  // The list itself: a repository cloned into the workspace, or removed from it, is a change
   const roots = findGitRoots(projectRoot);
-  if (roots.length !== 1 || path.resolve(roots[0]) !== path.resolve(projectRoot)) return null;
   for (const gitRoot of roots) {
-    if (!fs.existsSync(path.join(gitRoot, '.git'))) return null;
+    const prefix = repositoryPrefix(gitRoot);
     let status: string;
     try {
       // -uall lists the files of an untracked directory one by one. Without it a new directory
       // shows as one entry, and a file edited inside it would leave the status unchanged.
-      status = git(gitRoot, ['status', '--porcelain', '--no-renames', '-uall', '-z']);
+      status = git(gitRoot, ['status', '--porcelain', '--no-renames', '-uall', '-z', ...(prefix ? ['--', '.'] : [])]);
     } catch {
-      return null;
+      return null; // not a repository, or git failed
     }
-    let head = readHead(gitRoot) ?? 'no-head';
-    if (head === 'no-head') {
-      try { head = git(gitRoot, ['rev-parse', 'HEAD']).trim(); } catch { /* an empty repository has no HEAD */ }
-    }
-    hash.update(`|root ${gitRoot}|head ${head}`);
+    const head = currentHead(gitRoot) ?? 'no-head'; // an empty repository has no HEAD
+    hash.update(`|root ${path.relative(projectRoot, gitRoot) || '.'}|head ${head}`);
 
     for (const entry of status.split('\0')) {
       if (!entry) continue;
-      const rel = entry.slice(3);
+      let rel = entry.slice(3);
+      if (prefix) {
+        if (!rel.startsWith(prefix)) continue;
+        rel = rel.slice(prefix.length);
+      }
       // Our own files: writing the state must not change the state
-      if (rel === '.kirograph' || rel.startsWith('.kirograph/')) continue;
+      const own = path.relative(path.join(projectRoot, '.kirograph'), path.join(gitRoot, rel));
+      if (own === '' || (!own.startsWith('..') && !path.isAbsolute(own))) continue;
       hash.update(`\n${entry}`);
       try {
         const stat = fs.statSync(path.join(gitRoot, rel));
@@ -154,7 +139,26 @@ export function workspaceFingerprint(projectRoot: string): string | null {
       } catch { /* deleted: the status line says so */ }
     }
   }
+
+  // The files outside the repositories, when the workspace is a folder that holds them: git
+  // reports nothing about these, and the documentation and data phases read them
+  for (const rel of listFilesOutsideRepos(projectRoot, { exclude: excludePatterns(projectRoot) } as never).sort()) {
+    if (rel === '.kirograph' || rel.startsWith('.kirograph/')) continue;
+    try {
+      const stat = fs.statSync(path.join(projectRoot, rel));
+      hash.update(`\noutside ${rel}:${stat.mtimeMs}:${stat.size}`);
+    } catch { /* removed since the walk */ }
+  }
   return hash.digest('hex');
+}
+
+/** The exclude patterns of the configuration file, or the default ones. */
+function excludePatterns(projectRoot: string): string[] {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(projectRoot, '.kirograph', 'config.json'), 'utf8'));
+    if (Array.isArray(raw?.exclude)) return raw.exclude.filter((p: unknown) => typeof p === 'string');
+  } catch { /* no file: the defaults apply */ }
+  return createDefaultConfig().exclude;
 }
 
 function statePath(projectRoot: string): string {

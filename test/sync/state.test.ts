@@ -163,21 +163,61 @@ describe('quickIsUpToDate', () => {
 });
 
 describe('a workspace that is not itself a repository', () => {
-  it('has no fingerprint, so a sync is never skipped for it', () => {
+  it('is fingerprinted repository by repository, with the files outside them', () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'kg-multi-'));
+    const run = (cwd: string, ...args: string[]) =>
+      execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd, stdio: 'ignore' });
     try {
       for (const name of ['repo-a', 'repo-b']) {
-        fs.mkdirSync(path.join(workspace, name));
-        execFileSync('git', ['init', '-q'], { cwd: path.join(workspace, name) });
+        const dir = path.join(workspace, name);
+        fs.mkdirSync(dir);
+        fs.writeFileSync(path.join(dir, 'main.tf'), 'resource "x" "y" {}\n');
+        run(dir, 'init', '-q'); run(dir, 'add', '-A'); run(dir, 'commit', '-qm', 'init');
       }
-      fs.writeFileSync(path.join(workspace, 'loose.tf'), 'resource "x" "y" {}\n'); // a file git does not know about
-      expect(workspaceFingerprint(workspace)).toBeNull();
+      fs.writeFileSync(path.join(workspace, 'README.md'), '# all\n'); // outside the repositories
+      fs.mkdirSync(path.join(workspace, '.kirograph'));
+      fs.writeFileSync(path.join(workspace, '.kirograph', 'config.json'), '{}');
+      const first = workspaceFingerprint(workspace);
+      expect(first).not.toBeNull();
+      expect(workspaceFingerprint(workspace)).toBe(first);
+
+      // Our own files do not count
+      fs.writeFileSync(path.join(workspace, '.kirograph', 'sync-state.json'), '{}');
+      expect(workspaceFingerprint(workspace)).toBe(first);
+
+      // A change inside a repository
+      fs.writeFileSync(path.join(workspace, 'repo-a', 'main.tf'), 'resource "x" "z" {}\n');
+      const second = workspaceFingerprint(workspace);
+      expect(second).not.toBe(first);
+
+      // A commit in a repository, with a clean tree after it
+      run(path.join(workspace, 'repo-a'), 'commit', '-qam', 'z');
+      const third = workspaceFingerprint(workspace);
+      expect(third).not.toBe(second);
+
+      // A file outside the repositories
+      fs.writeFileSync(path.join(workspace, 'README.md'), '# all of them\n');
+      const fourth = workspaceFingerprint(workspace);
+      expect(fourth).not.toBe(third);
+
+      // A repository cloned into the workspace
+      fs.mkdirSync(path.join(workspace, 'repo-c'));
+      run(path.join(workspace, 'repo-c'), 'init', '-q');
+      expect(workspaceFingerprint(workspace)).not.toBe(fourth);
     } finally { fs.rmSync(workspace, { recursive: true, force: true }); }
   });
 
-  it('has none for a folder inside a repository either', () => {
-    fs.mkdirSync(path.join(root, 'sub'));
-    expect(workspaceFingerprint(path.join(root, 'sub'))).toBeNull();
+  it('covers only its own folder when it is a folder inside a repository', () => {
+    write('sub/b.ts', 'export const b = 1;\n');
+    git('add', '-A');
+    git('commit', '-qm', 'sub');
+    const sub = path.join(root, 'sub');
+    const first = workspaceFingerprint(sub);
+    expect(first).not.toBeNull();
+    write('a.ts', 'export const a = 2;\n'); // outside the folder
+    expect(workspaceFingerprint(sub)).toBe(first);
+    write('sub/b.ts', 'export const b = 2;\n');
+    expect(workspaceFingerprint(sub)).not.toBe(first);
   });
 });
 
