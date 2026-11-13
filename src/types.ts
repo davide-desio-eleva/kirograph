@@ -19,7 +19,7 @@ export type Language =
   | 'java' | 'c' | 'cpp' | 'csharp' | 'php' | 'ruby' | 'swift' | 'kotlin'
   | 'dart' | 'svelte' | 'pascal' | 'liquid' | 'elixir'
   | 'scala' | 'lua' | 'zig' | 'bash' | 'ocaml' | 'elm' | 'solidity' | 'vue' | 'objc'
-  | 'yaml' | 'hcl' | 'css' | 'scss' | 'html'
+  | 'yaml' | 'hcl' | 'css' | 'scss' | 'html' | 'json'
   | 'jupyter'
   | 'rescript' | 'sql' | 'r' | 'julia' | 'powershell' | 'perl' | 'astro' | 'gdscript' | 'nix' | 'verilog'
   | 'haskell'
@@ -168,6 +168,8 @@ export interface SyncResult {
   filesScanned: number;
   errors: string[];
   duration: number;
+  /** True when nothing had changed since the last sync, so no file was looked at. */
+  skipped?: boolean;
 }
 
 // ── Error Classes (re-exported from src/errors.ts for backward compatibility) ──

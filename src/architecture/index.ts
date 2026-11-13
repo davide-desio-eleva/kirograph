@@ -19,6 +19,7 @@ import type {
 } from './types';
 import { parseAllManifests } from './manifest/index';
 import { detectAllLayers, buildArchLayers, type FileLayerAssignment } from './layers/index';
+import { architectureSignature, readArchitectureState, writeArchitectureState } from './incremental';
 
 export class ArchitectureAnalyzer {
   constructor(
@@ -26,6 +27,31 @@ export class ArchitectureAnalyzer {
     private readonly config: KiroGraphConfig,
     private readonly projectRoot: string,
   ) {}
+
+  /**
+   * Runs the analysis unless its inputs are the same as at the last run: the graph did not change
+   * (`graphChanged` false), and neither did the manifests or the configuration (see
+   * incremental.ts). Returns whether it ran. With `graphChanged` true it always runs.
+   */
+  async analyzeIfChanged(graphChanged: boolean, onProgress?: (msg: string) => void): Promise<boolean> {
+    const signature = architectureSignature(this.projectRoot, this.config);
+    if (!graphChanged && readArchitectureState(this.projectRoot) === signature && this.hasResults()) {
+      onProgress?.('architecture: unchanged since the last analysis');
+      return false;
+    }
+    await this.analyze(onProgress);
+    writeArchitectureState(this.projectRoot, signature);
+    return true;
+  }
+
+  /** True when the tables hold a previous analysis (one that found no package at all reruns). */
+  private hasResults(): boolean {
+    try {
+      return !!this.db.getRawDb().get('SELECT 1 AS present FROM arch_packages LIMIT 1');
+    } catch {
+      return false;
+    }
+  }
 
   async analyze(onProgress?: (msg: string) => void): Promise<ArchitectureResult> {
     const log = (msg: string) => onProgress?.(msg);

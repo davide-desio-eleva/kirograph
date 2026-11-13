@@ -59,7 +59,7 @@ export function silentCommand(baseCommand: string): string {
     : `${baseCommand} >/dev/null 2>&1 || true`;
 }
 
-export const KIROGRAPH_SYNC_CMD = silentCommand('kirograph sync-if-dirty --quiet');
+export const KIROGRAPH_SYNC_CMD = silentCommand('kirograph sync-if-dirty --quiet --background');
 export const KIROGRAPH_TOOLS = KIROGRAPH_TOOL_NAMES;
 export const KIROGRAPH_SCOPED_TOOLS = KIROGRAPH_TOOL_NAMES.map(name => `@kirograph/${name}`);
 

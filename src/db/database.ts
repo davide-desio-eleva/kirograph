@@ -11,8 +11,15 @@ import type { RouteMountFact } from '../extraction/extractor';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { Database } = require('node-sqlite3-wasm');
+import { BusyRetryDatabase, clearStaleDbLock, dbLockTiming } from './db-lock';
+import { recoverHotJournal } from './journal-recovery';
 
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 4;
+
+/** Parameters per multi-row statement. SQLite allows more; a smaller statement is cheaper to parse. */
+const MAX_PARAMS_PER_STATEMENT = 1000;
+/** Rows per statement, largest first. Powers of two keep the number of distinct statements small. */
+const GROUP_SIZES = [128, 64, 32, 16, 8, 4, 2, 1];
 
 export class GraphDatabase {
   private db: any;
@@ -24,24 +31,21 @@ export class GraphDatabase {
     fs.mkdirSync(dbDir, { recursive: true });
     const dbPath = path.join(dbDir, 'kirograph.db');
 
-    // ── Pre-flight lock check ─────────────────────────────────────────────────
-    // node-sqlite3-wasm calls process.abort() when the DB is locked, producing
-    // a cryptic "Aborted()" with no context. Detect the lock file early and
-    // throw a clean error instead so the global handler can surface it clearly.
+    // ── Lock check ────────────────────────────────────────────────────────────
+    // The WASM driver locks by creating kirograph.db.lock and never removes it when the
+    // process dies. A stale one is cleared here. A live holder is waited for by the driver's
+    // busy_timeout (set first in the PRAGMAs below), so a long sync is not cut short.
     const lockPath = path.join(dbDir, 'kirograph.db.lock');
-    if (fs.existsSync(lockPath)) {
-      throw new Error(
-        `Database is locked by another process (${lockPath} exists).\n` +
-        `Run: kirograph unlock\n` +
-        `Or delete the lock manually: ${lockPath}`
-      );
-    }
+    const lockFree = clearStaleDbLock(dbDir, lockPath);
+    // A process killed mid-write leaves a hot journal that the driver can never roll back by
+    // itself (see journal-recovery.ts); without this the open waits for the busy timeout and fails
+    if (lockFree) recoverHotJournal(dbPath, lockPath);
 
-    this.db = new Database(dbPath);
+    this.db = new BusyRetryDatabase(new Database(dbPath), dbDir, lockPath);
     this.db.exec(`
+      PRAGMA busy_timeout=${dbLockTiming.busyMs};
       PRAGMA journal_mode=WAL;
       PRAGMA foreign_keys=ON;
-      PRAGMA busy_timeout=120000;
       PRAGMA synchronous=NORMAL;
       PRAGMA cache_size=-64000;
       PRAGMA temp_store=MEMORY;
@@ -166,6 +170,30 @@ export class GraphDatabase {
     const versionRow = this.db.get('SELECT version FROM schema_versions ORDER BY version DESC LIMIT 1');
     const currentVersion = versionRow ? versionRow.version : 0;
 
+    if (currentVersion < 4) {
+      // Migration 4: edges had no unique key, so INSERT OR IGNORE ignored nothing and every pass
+      // that adds the same edge (the security analysis adds declared_in, depends_on and
+      // has_vulnerability on each run) added it again: a real project had 218,849 rows for 654
+      // distinct edges, and the table and its five indexes were 70% of the file. Remove the
+      // copies (the first of each stays) and make the key unique. line and column can be NULL, and
+      // NULLs are distinct in an index, so they enter the key as -1.
+      this.transaction(() => {
+        this.db.run(`DELETE FROM edges WHERE id NOT IN (
+          SELECT MIN(id) FROM edges GROUP BY source, target, kind, COALESCE(line, -1), COALESCE("column", -1))`);
+        this.db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_unique
+          ON edges (source, target, kind, COALESCE(line, -1), COALESCE("column", -1))`);
+        this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [4, Date.now()]);
+      });
+      this.reclaimSpace();
+    }
+    if (currentVersion < 3) {
+      // Migration 3: nodes_fts is an external-content table (content_rowid = nodes.rowid), but its
+      // rows used to be inserted without a rowid and deleted by the id column, which is not
+      // indexed, so every delete scanned the whole table. Rows now carry the node's rowid and are
+      // deleted by it. Rebuild once so existing rows line up with their nodes.
+      try { this.db.run("INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')"); } catch { /* no fts table yet */ }
+      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [3, Date.now()]);
+    }
     if (currentVersion < 2) {
       // Migration 2: add complexity metric columns to nodes table.
       for (const col of [
@@ -213,6 +241,20 @@ export class GraphDatabase {
     }
   }
 
+  /**
+   * Gives back the pages a large delete freed, when they are a good part of the file. VACUUM
+   * rewrites the whole file, so it is not done for a few pages. A failure is ignored: the file is
+   * only bigger than it needs to be.
+   */
+  private reclaimSpace(): void {
+    try {
+      const pageSize = this.db.get('PRAGMA page_size').page_size as number;
+      const free = this.db.get('PRAGMA freelist_count').freelist_count as number;
+      const total = this.db.get('PRAGMA page_count').page_count as number;
+      if (free * pageSize >= 16 * 1024 * 1024 && free / total >= 0.25) this.db.run('VACUUM');
+    } catch { /* not worth failing an open for */ }
+  }
+
   // ── Files ──────────────────────────────────────────────────────────────────
 
   upsertFile(record: FileRecord): void {
@@ -233,8 +275,9 @@ export class GraphDatabase {
   }
 
   deleteFile(filePath: string): void {
-    // Cascade deletes nodes (and their edges via FK)
-    this.db.run('DELETE FROM nodes WHERE file_path = ?', [filePath]);
+    // The edges table has no foreign keys, so nothing cascades: deleteNodesByFile removes the
+    // file's edges and full-text entries along with its nodes.
+    this.deleteNodesByFile(filePath);
     this.db.run('DELETE FROM files WHERE path = ?', [filePath]);
   }
 
@@ -251,42 +294,110 @@ export class GraphDatabase {
 
   // ── Nodes ──────────────────────────────────────────────────────────────────
 
+  /** Column list of the nodes table, in the order of `nodeParams`. */
+  private static readonly NODE_COLUMNS =
+    `(id, kind, name, qualified_name, file_path, language,
+       start_line, end_line, start_column, end_column,
+       docstring, signature, visibility,
+       is_exported, is_async, is_static, is_abstract,
+       decorators, type_parameters, updated_at,
+       complexity_cyclomatic, complexity_cognitive, complexity_halstead,
+       maintainability_index, nesting_depth)`;
+  private static readonly NODE_ROW = '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)';
+
+  private nodeParams(node: Node): unknown[] {
+    return [
+      node.id, node.kind, node.name, node.qualifiedName, node.filePath, node.language,
+      node.startLine, node.endLine, node.startColumn, node.endColumn,
+      node.docstring ?? null, node.signature ?? null, node.visibility ?? null,
+      node.isExported ? 1 : 0, node.isAsync ? 1 : 0,
+      node.isStatic ? 1 : 0, node.isAbstract ? 1 : 0,
+      node.decorators ? JSON.stringify(node.decorators) : null,
+      node.typeParameters ? JSON.stringify(node.typeParameters) : null,
+      node.updatedAt,
+      node.complexityCyclomatic ?? null, node.complexityCognitive ?? null,
+      node.complexityHalstead ?? null, node.maintainabilityIndex ?? null,
+      node.nestingDepth ?? null,
+    ];
+  }
+
+  /**
+   * Inserts many rows with few statements. Calls into the WASM driver cost far more than the rows
+   * themselves (about 20 µs a call against 5 µs a row), so rows go in groups. Group sizes are
+   * powers of two: only a handful of distinct statements are ever prepared, and they stay cached.
+   */
+  private multiInsert(head: string, rowSql: string, rows: unknown[][]): void {
+    if (rows.length === 0) return;
+    const maxRows = Math.max(1, Math.floor(MAX_PARAMS_PER_STATEMENT / rows[0].length));
+    const sizes = GROUP_SIZES.filter(s => s <= maxRows);
+    let i = 0;
+    while (i < rows.length) {
+      const size = sizes.find(s => s <= rows.length - i)!;
+      const params: unknown[] = [];
+      for (let k = 0; k < size; k++) for (const v of rows[i + k]) params.push(v);
+      this.db.run(`${head} VALUES ${Array(size).fill(rowSql).join(',')}`, params);
+      i += size;
+    }
+  }
+
+  /**
+   * Same result as calling `upsertNode` for each node, in a few statements. When the same id
+   * appears twice the later node wins, as INSERT OR REPLACE did row by row.
+   */
+  upsertNodes(nodes: Node[]): void {
+    if (nodes.length === 0) return;
+    const byId = new Map<string, Node>();
+    for (const n of nodes) byId.set(n.id, n);
+    const unique = [...byId.values()];
+    this.multiInsert(`INSERT OR REPLACE INTO nodes ${GraphDatabase.NODE_COLUMNS}`, GraphDatabase.NODE_ROW,
+      unique.map(n => this.nodeParams(n)));
+    // Full-text index: one statement per group of ids, each node under its own rowid
+    const ids = unique.map(n => n.id);
+    let i = 0;
+    while (i < ids.length) {
+      const size = GROUP_SIZES.find(s => s <= ids.length - i)!;
+      this.db.run(
+        `INSERT OR REPLACE INTO nodes_fts (rowid, id, name, qualified_name, docstring, signature)
+         SELECT rowid, id, name, qualified_name, COALESCE(docstring, ''), COALESCE(signature, '')
+         FROM nodes WHERE id IN (${Array(size).fill('?').join(',')})`,
+        ids.slice(i, i + size),
+      );
+      i += size;
+    }
+  }
+
   upsertNode(node: Node): void {
-    this.db.run(
-      `INSERT OR REPLACE INTO nodes
-        (id, kind, name, qualified_name, file_path, language,
-         start_line, end_line, start_column, end_column,
-         docstring, signature, visibility,
-         is_exported, is_async, is_static, is_abstract,
-         decorators, type_parameters, updated_at,
-         complexity_cyclomatic, complexity_cognitive, complexity_halstead,
-         maintainability_index, nesting_depth)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [
-        node.id, node.kind, node.name, node.qualifiedName, node.filePath, node.language,
-        node.startLine, node.endLine, node.startColumn, node.endColumn,
-        node.docstring ?? null, node.signature ?? null, node.visibility ?? null,
-        node.isExported ? 1 : 0, node.isAsync ? 1 : 0,
-        node.isStatic ? 1 : 0, node.isAbstract ? 1 : 0,
-        node.decorators ? JSON.stringify(node.decorators) : null,
-        node.typeParameters ? JSON.stringify(node.typeParameters) : null,
-        node.updatedAt,
-        node.complexityCyclomatic ?? null, node.complexityCognitive ?? null,
-        node.complexityHalstead ?? null, node.maintainabilityIndex ?? null,
-        node.nestingDepth ?? null,
-      ]
+    const inserted = this.db.run(
+      `INSERT OR REPLACE INTO nodes ${GraphDatabase.NODE_COLUMNS} VALUES ${GraphDatabase.NODE_ROW}`,
+      this.nodeParams(node),
     );
-    // Keep FTS in sync
+    // Keep FTS in sync, under the node's own rowid so it can be deleted by rowid (see deleteNodesByFile)
     this.db.run(
-      `INSERT OR REPLACE INTO nodes_fts (id, name, qualified_name, docstring, signature)
-       VALUES (?, ?, ?, ?, ?)`,
-      [node.id, node.name, node.qualifiedName, node.docstring ?? '', node.signature ?? '']
+      `INSERT OR REPLACE INTO nodes_fts (rowid, id, name, qualified_name, docstring, signature)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [(inserted as { lastInsertRowid: number }).lastInsertRowid,
+        node.id, node.name, node.qualifiedName, node.docstring ?? '', node.signature ?? '']
     );
   }
 
   getNode(id: string): Node | null {
     const row = this.db.get('SELECT * FROM nodes WHERE id = ?', [id]);
     return row ? this.rowToNode(row) : null;
+  }
+
+  /** Number of nodes in a file, without loading them. */
+  countNodesByFile(filePath: string): number {
+    return this.db.get('SELECT count(*) AS c FROM nodes WHERE file_path = ?', [filePath]).c;
+  }
+
+  /** Number of edges that start or end at a node of the file: what getEdgesForNodes would return. */
+  countEdgesTouchingFile(filePath: string): number {
+    return this.db.get(
+      `SELECT count(*) AS c FROM edges
+       WHERE source IN (SELECT id FROM nodes WHERE file_path = ?)
+          OR target IN (SELECT id FROM nodes WHERE file_path = ?)`,
+      [filePath, filePath],
+    ).c;
   }
 
   getNodesByFile(filePath: string): Node[] {
@@ -377,7 +488,10 @@ export class GraphDatabase {
     if (ids.length === 0) return;
     const placeholders = ids.map(() => '?').join(',');
     this.db.run(`DELETE FROM edges WHERE source IN (${placeholders}) OR target IN (${placeholders})`, [...ids, ...ids]);
-    this.db.run(`DELETE FROM nodes_fts WHERE id IN (${placeholders})`, ids);
+    // By rowid: the FTS table has no index on id, so deleting by id scanned the whole table for
+    // every file, which made a sync slower the larger the project. Must run before the nodes
+    // are deleted: an external-content table reads the old values from them.
+    this.db.run(`DELETE FROM nodes_fts WHERE rowid IN (SELECT rowid FROM nodes WHERE file_path = ?)`, [filePath]);
     this.db.run(`DELETE FROM nodes WHERE file_path = ?`, [filePath]);
   }
 
@@ -418,6 +532,16 @@ export class GraphDatabase {
       `INSERT OR IGNORE INTO edges (source, target, kind, metadata, line, column, confidence, confidence_score)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [edge.source, edge.target, edge.kind, edge.metadata ? JSON.stringify(edge.metadata) : null, edge.line ?? null, edge.column ?? null, edge.confidence ?? 'extracted', edge.confidenceScore ?? 1.0]
+    );
+  }
+
+  /** Same result as calling `insertEdge` for each edge, in a few statements. */
+  insertEdges(edges: Edge[]): void {
+    this.multiInsert(
+      'INSERT OR IGNORE INTO edges (source, target, kind, metadata, line, column, confidence, confidence_score)',
+      '(?, ?, ?, ?, ?, ?, ?, ?)',
+      edges.map(e => [e.source, e.target, e.kind, e.metadata ? JSON.stringify(e.metadata) : null,
+        e.line ?? null, e.column ?? null, e.confidence ?? 'extracted', e.confidenceScore ?? 1.0]),
     );
   }
 
@@ -511,6 +635,16 @@ export class GraphDatabase {
       `INSERT INTO unresolved_refs (source_id, ref_name, ref_kind, file_path, line, column, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [sourceId, refName, refKind, filePath, line ?? null, column ?? null, metadata ? JSON.stringify(metadata) : null]
+    );
+  }
+
+  /** Same result as calling `insertUnresolvedRef` for each reference, in a few statements. */
+  insertUnresolvedRefs(filePath: string, refs: Array<{ sourceId: string; refName: string; refKind: string; line?: number; column?: number; metadata?: Record<string, unknown> }>): void {
+    this.multiInsert(
+      'INSERT INTO unresolved_refs (source_id, ref_name, ref_kind, file_path, line, column, metadata)',
+      '(?, ?, ?, ?, ?, ?, ?)',
+      refs.map(r => [r.sourceId, r.refName, r.refKind, filePath, r.line ?? null, r.column ?? null,
+        r.metadata ? JSON.stringify(r.metadata) : null]),
     );
   }
 
@@ -1189,15 +1323,49 @@ export class GraphDatabase {
 
   // ── Transactions ──────────────────────────────────────────────────────────
 
+  /**
+   * Runs `fn` in one transaction. The process stays marked as a writer for the whole call, so
+   * another process does not mistake this lock for a stale one.
+   */
   transaction<T>(fn: () => T): T {
-    this.db.run('BEGIN');
+    const release = this.db.hold();
     try {
-      const result = fn();
-      this.db.run('COMMIT');
-      return result;
-    } catch (err) {
-      this.db.run('ROLLBACK');
-      throw err;
+      this.db.run('BEGIN');
+      try {
+        const result = fn();
+        this.db.run('COMMIT');
+        return result;
+      } catch (err) {
+        this.db.run('ROLLBACK');
+        throw err;
+      }
+    } finally {
+      release();
+    }
+  }
+
+  private savepointDepth = 0;
+
+  /**
+   * Runs `fn` inside the current transaction and undoes only its own writes if it throws.
+   * Must be called inside `transaction()`. The name depends only on the nesting depth, so the
+   * statements are the same every time and stay in the statement cache.
+   */
+  savepoint<T>(fn: () => T): T {
+    const name = `kg_sp${this.savepointDepth++}`;
+    try {
+      this.db.run(`SAVEPOINT ${name}`);
+      try {
+        const result = fn();
+        this.db.run(`RELEASE ${name}`);
+        return result;
+      } catch (err) {
+        this.db.run(`ROLLBACK TO ${name}`);
+        this.db.run(`RELEASE ${name}`);
+        throw err;
+      }
+    } finally {
+      this.savepointDepth--;
     }
   }
 

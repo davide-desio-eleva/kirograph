@@ -14,22 +14,95 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { GraphDatabase } from '../db/database';
-import { scanDirectory, hashContent, getChangedFiles, shouldIncludeFile } from '../sync/index';
-import { extractFile } from '../extraction/extractor';
+import { scanDirectory, hashContent, getChangedFiles, shouldIncludeFile, findGitRoots } from '../sync/index';
+import { extractFile, type ExtractedFile } from '../extraction/extractor';
+import { ExtractionPool } from '../extraction/worker-pool';
 import { clearParserCache, initGrammars, hasWasmGrammar } from '../extraction/grammars';
 import { detectFrameworks } from '../frameworks/index';
 import { ReferenceResolver } from '../resolution/index';
 import { VectorManager } from '../vectors/index';
 import { ArchitectureAnalyzer } from '../architecture/index';
+import { clearArchitectureState } from '../architecture/incremental';
+import { readGitHeads, writeGitHeads, currentHead, headKey } from '../sync/git-head';
+import { withWorkspaceFileCache } from '../sync/files';
 import type { KiroGraphConfig } from '../config';
 import type { IndexResult, IndexProgress, SyncResult } from '../types';
+import { workspaceFingerprint, isUpToDate, writeSyncState, writeSyncErrors, hasTransientErrors } from '../sync/state';
 import { LockManager } from './lock-manager';
+import { WriteBatch } from './write-batch';
 import { Mutex } from '../utils';
 
 const FILE_IO_BATCH_SIZE = 10;
+/** Below this many files starting worker threads costs more than parsing in-process saves. */
+const PARALLEL_MIN_FILES = 100;
 
 export class IndexPipeline {
   private readonly mutex = new Mutex();
+
+  /**
+   * Removes the embeddings of a file's nodes before the file is rewritten. Only with embeddings
+   * enabled: otherwise there are none, and reading every file's nodes to find out cost about a
+   * tenth of an index.
+   */
+  private async deleteEmbeddingsOfFile(filePath: string): Promise<void> {
+    if (this.config.enableEmbeddings !== true) return;
+    const oldNodes = this.db.getNodesByFile(filePath);
+    if (oldNodes.length === 0) return;
+    await this.loadVectors();
+    await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
+  }
+
+  /**
+   * Loads the embedding model and engine when they were deferred (see KiroGraph.open). Called only
+   * where they are needed, so a sync that changes nothing never loads the model.
+   */
+  private loadVectors: () => Promise<void> = async () => {};
+
+  setVectorLoader(load: () => Promise<void>): void {
+    this.loadVectors = load;
+  }
+
+  /** What the embeddings were last completed for: a change of either makes them incomplete. */
+  private embeddingsKey(): string {
+    return JSON.stringify([this.config.embeddingModel ?? null, this.config.semanticEngine ?? null]);
+  }
+
+  private embeddingsStatePath(): string {
+    return path.join(this.projectRoot, '.kirograph', 'embeddings-state.json');
+  }
+
+  /** True when the last embedding pass ran to the end with the current model and engine. */
+  private embeddingsComplete(): boolean {
+    try {
+      return JSON.parse(fs.readFileSync(this.embeddingsStatePath(), 'utf8')).key === this.embeddingsKey();
+    } catch {
+      return false;
+    }
+  }
+
+  private recordEmbeddings(complete: boolean): void {
+    try {
+      if (!complete) { fs.rmSync(this.embeddingsStatePath(), { force: true }); return; }
+      fs.writeFileSync(this.embeddingsStatePath(), JSON.stringify({ key: this.embeddingsKey(), at: Date.now() }));
+    } catch { /* an optimisation: without it the next sync checks the embeddings again */ }
+  }
+
+  /**
+   * Embeds the nodes that have no embedding. Skipped when no file changed and the last pass ran to
+   * the end: that pass loaded every embedded id and paged through every embeddable node to find
+   * nothing, and outside the MCP server it first had to load the model.
+   */
+  private async embedPending(graphChanged: boolean, onProgress?: (p: IndexProgress) => void): Promise<void> {
+    if (this.config.enableEmbeddings !== true) return;
+    if (!graphChanged && this.embeddingsComplete()) return;
+    await this.loadVectors();
+    if (!this.vectors.isInitialized()) return;
+    onProgress?.({ phase: 'embeddings', current: 0, total: 1 });
+    // Marked incomplete first: a pass that is interrupted runs again next time
+    this.recordEmbeddings(false);
+    await this.vectors.embedAll((current, total) => onProgress?.({ phase: 'embeddings', current, total }));
+    this.recordEmbeddings(true);
+  }
 
   constructor(
     private readonly db: GraphDatabase,
@@ -46,6 +119,15 @@ export class IndexPipeline {
     force?: boolean;
     signal?: AbortSignal;
   }): Promise<IndexResult> {
+    // The phases share one listing of the workspace's files (see sync/files.ts)
+    return withWorkspaceFileCache(() => this.indexAllNow(opts));
+  }
+
+  private async indexAllNow(opts?: {
+    onProgress?: (p: IndexProgress) => void;
+    force?: boolean;
+    signal?: AbortSignal;
+  }): Promise<IndexResult> {
     const release = await this.mutex.acquire();
     // Acquire the file lock inside a guard: if it throws (another live PID
     // holds it), release the in-process mutex before rethrowing. Otherwise the
@@ -54,13 +136,25 @@ export class IndexPipeline {
     // gates the finally so we never unlink a lock owned by another process.
     let heldByUs = false;
     try {
-      this.lock.acquire();
+      await this.lock.acquireWait();
       heldByUs = true;
     } catch (e) {
       release();
       throw e;
     }
+    // A full index does not wait for the disk after each commit: it is 10% faster, and an index
+    // that did not finish is run again. A process that is killed loses nothing (the operating system
+    // has the writes); only a power loss during the index could, and then the index is run again.
+    // Syncs keep the normal setting.
+    this.db.getRawDb().run('PRAGMA synchronous=OFF');
     const start = Date.now();
+    // Taken before anything is read, so an edit made during the index is seen by the next sync
+    const fingerprint = workspaceFingerprint(this.projectRoot);
+    const heads: Record<string, string> = {};
+    for (const gitRoot of findGitRoots(this.projectRoot)) {
+      const head = currentHead(gitRoot);
+      if (head) heads[headKey(this.projectRoot, gitRoot)] = head;
+    }
     const errors: string[] = [];
     let filesIndexed = 0;
     let nodesCreated = 0;
@@ -73,6 +167,7 @@ export class IndexPipeline {
     // Track consecutive WASM crashes per language. Only poison after threshold is exceeded.
     const crashCounts = new Map<string, number>();
     const POISON_THRESHOLD = 3;
+    let pool: ExtractionPool | null = null;
 
     try {
       const files = await scanDirectory(this.projectRoot, this.config, opts?.signal);
@@ -88,9 +183,37 @@ export class IndexPipeline {
         }
       }
 
+      const extractOpts = { enableComplexity: !!(this.config as any).enableComplexity, maxFileSize: this.config.maxFileSize };
+
+      // Parsing runs on worker threads, a few files ahead of the loop that writes them. The loop
+      // takes the results in file order, so the graph is the same as when parsing in-process.
+      if (files.length >= PARALLEL_MIN_FILES) pool = ExtractionPool.create();
+      const parsing = new Map<number, Promise<ExtractedFile | null>>();
+      const lookahead = (pool?.size ?? 0) * 4;
+      const startParsing = async (from: number): Promise<void> => {
+        if (!pool) return;
+        const { detectLanguage } = await import('../extraction/languages');
+        for (let j = from; j < Math.min(files.length, from + lookahead); j++) {
+          if (parsing.has(j)) continue;
+          const f = files[j];
+          const content = contentMap.get(f);
+          if (!content || content.length > this.config.maxFileSize) continue;
+          if (poisonedLanguages.has(detectLanguage(f))) continue;
+          if (!opts?.force) {
+            const known = this.db.getFile(path.relative(this.projectRoot, f).replace(/\\/g, '/'));
+            if (known && hashContent(content) === known.contentHash) continue;
+          }
+          const job = pool.run(f, this.projectRoot, content, extractOpts);
+          job.catch(() => { /* taken up by the loop, which parses the file itself */ });
+          parsing.set(j, job);
+        }
+      };
+
+      const batch = new WriteBatch(this.db);
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         opts?.onProgress?.({ phase: 'parsing', current: i + 1, total: files.length, currentFile: file });
+        await startParsing(i);
 
         try {
           const content = contentMap.get(file);
@@ -109,13 +232,21 @@ export class IndexPipeline {
           const lang = detectLanguage(file);
           if (poisonedLanguages.has(lang)) continue;
 
-          const extracted = await extractFile(file, this.projectRoot, content, { enableComplexity: !!(this.config as any).enableComplexity, maxFileSize: this.config.maxFileSize });
+          let extracted: ExtractedFile | null;
+          const ahead = parsing.get(i);
+          parsing.delete(i);
+          try {
+            extracted = ahead ? await ahead : await extractFile(file, this.projectRoot, content, extractOpts);
+          } catch {
+            // The worker failed: parse it here, where a failure is handled as it always was
+            extracted = await extractFile(file, this.projectRoot, content, extractOpts);
+          }
           if (!extracted) continue;
 
-          const oldNodes = this.db.getNodesByFile(extracted.filePath);
-          if (oldNodes.length > 0) await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
+          await this.deleteEmbeddingsOfFile(extracted.filePath);
 
-          this.db.transaction(() => {
+          // Written with the other files of its batch, in one transaction (see WriteBatch)
+          batch.add(() => {
             this.db.deleteNodesByFile(extracted.filePath);
             this.db.deleteUnresolvedRefsByFile(extracted.filePath);
             this.db.upsertFile({
@@ -126,15 +257,14 @@ export class IndexPipeline {
               symbolCount: extracted.nodes.length,
               indexedAt: Date.now(),
             });
-            for (const node of extracted.nodes) { this.db.upsertNode(node); nodesCreated++; }
-            for (const edge of extracted.edges) { this.db.insertEdge(edge); edgesCreated++; }
+            this.db.upsertNodes(extracted.nodes); nodesCreated += extracted.nodes.length;
+            this.db.insertEdges(extracted.edges); edgesCreated += extracted.edges.length;
             for (const mount of extracted.routeMounts ?? []) this.db.insertRouteMount(extracted.filePath, mount);
-              for (const ref of extracted.unresolvedRefs) {
-              this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column, ref.metadata);
-            }
-          });
-
-          filesIndexed++;
+            this.db.insertUnresolvedRefs(extracted.filePath, extracted.unresolvedRefs);
+            filesIndexed++;
+          }, writeErr => {
+            errors.push(`${file}: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`);
+          }, extracted.nodes.length + extracted.edges.length + extracted.unresolvedRefs.length);
           // Reset crash count on successful parse for this language
           crashCounts.set(lang, 0);
         } catch (err) {
@@ -172,6 +302,11 @@ export class IndexPipeline {
         }
       }
 
+      batch.flush();
+      // Parsing is over: release the workers before resolution and embeddings, which need the memory
+      await pool?.close();
+      pool = null;
+
       // Re-process files that have symbolCount=0 but should have symbols (WASM recovery)
       const emptyFiles = this.db.getAllFiles().filter(
         (f: any) => f.symbolCount === 0 && hasWasmGrammar(f.language)
@@ -186,8 +321,7 @@ export class IndexPipeline {
             const extracted = await extractFile(absPath, this.projectRoot, undefined, { enableComplexity: !!(this.config as any).enableComplexity });
             if (!extracted || extracted.nodes.length === 0) continue;
 
-            const oldNodes = this.db.getNodesByFile(extracted.filePath);
-            if (oldNodes.length > 0) await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
+            await this.deleteEmbeddingsOfFile(extracted.filePath);
 
             this.db.transaction(() => {
               this.db.deleteNodesByFile(extracted.filePath);
@@ -200,12 +334,10 @@ export class IndexPipeline {
                 symbolCount: extracted.nodes.length,
                 indexedAt: Date.now(),
               });
-              for (const node of extracted.nodes) { this.db.upsertNode(node); nodesCreated++; }
-              for (const edge of extracted.edges) { this.db.insertEdge(edge); edgesCreated++; }
+              this.db.upsertNodes(extracted.nodes); nodesCreated += extracted.nodes.length;
+              this.db.insertEdges(extracted.edges); edgesCreated += extracted.edges.length;
               for (const mount of extracted.routeMounts ?? []) this.db.insertRouteMount(extracted.filePath, mount);
-              for (const ref of extracted.unresolvedRefs) {
-                this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column, ref.metadata);
-              }
+              this.db.insertUnresolvedRefs(extracted.filePath, extracted.unresolvedRefs);
             });
             filesIndexed++;
           } catch {
@@ -230,12 +362,7 @@ export class IndexPipeline {
       });
 
       // Generate embeddings (if enabled)
-      if (this.vectors.isInitialized()) {
-        opts?.onProgress?.({ phase: 'embeddings', current: 0, total: 1 });
-        await this.vectors.embedAll((current, total) =>
-          opts?.onProgress?.({ phase: 'embeddings', current, total })
-        );
-      }
+      await this.embedPending(true, opts?.onProgress);
 
       // Analyze architecture (if enabled, or auto-enabled for security)
       if (this.config.enableArchitecture || this.config.enableSecurity) {
@@ -244,9 +371,10 @@ export class IndexPipeline {
           logWarn('enableSecurity requires enableArchitecture — auto-enabling architecture analysis for this run');
         }
         opts?.onProgress?.({ phase: 'architecture', current: 0, total: 1 });
-        await this.arch.analyze(msg =>
+        // A full index always runs it, and records its inputs for the syncs that follow
+        await this.db.getRawDb().coalesce(() => this.arch.analyzeIfChanged(true, msg =>
           opts?.onProgress?.({ phase: 'architecture', current: 0, total: 1, meta: { msg } })
-        );
+        ));
         opts?.onProgress?.({ phase: 'architecture', current: 1, total: 1 });
       }
 
@@ -257,9 +385,9 @@ export class IndexPipeline {
           this.db.applySecuritySchema();
           const secPipeline = new SecurityPipeline(this.db, this.config, this.projectRoot);
           opts?.onProgress?.({ phase: 'security', current: 0, total: 1 });
-          await secPipeline.run((phase, current, total) =>
+          await this.db.getRawDb().coalesce(() => secPipeline.run((phase, current, total) =>
             opts?.onProgress?.({ phase: 'security', current, total, meta: { secPhase: phase } })
-          );
+          ));
           opts?.onProgress?.({ phase: 'security', current: 1, total: 1 });
         } catch { /* security analysis is non-critical */ }
       }
@@ -270,10 +398,10 @@ export class IndexPipeline {
           const { DocsIndexer } = await import('../docs/indexer');
           this.db.applyDocsSchema();
           const docsIndexer = new DocsIndexer(this.db.getRawDb(), this.config, this.projectRoot);
-          await docsIndexer.indexAll({
+          await this.db.getRawDb().coalesce(() => docsIndexer.indexAll({
             force: opts?.force,
             onProgress: msg => opts?.onProgress?.({ phase: 'docs', current: 0, total: 1, meta: { msg } }),
-          });
+          }));
         } catch { /* docs indexing is non-critical */ }
       }
 
@@ -283,9 +411,9 @@ export class IndexPipeline {
           const { DataIndexer } = await import('../data/indexer');
           this.db.applyDataSchema();
           const dataIndexer = new DataIndexer(this.db.getRawDb(), this.config, this.projectRoot);
-          await dataIndexer.indexAll({
+          await this.db.getRawDb().coalesce(() => dataIndexer.indexAll({
             onProgress: msg => opts?.onProgress?.({ phase: 'data', current: 0, total: 1, meta: { msg } }),
-          });
+          }));
 
           // Assign data files to 'data' architecture layer if architecture is enabled
           if (this.config.enableArchitecture) {
@@ -325,17 +453,74 @@ export class IndexPipeline {
       }
 
       this.lock.clearDirty();
+      // Files that fail to parse fail the same way until they change, so they do not keep the
+      // fingerprint from being recorded; an error that may pass on its own (a busy database) does
+      writeSyncErrors(this.projectRoot, errors);
+      if (!hasTransientErrors(errors)) {
+        if (fingerprint) writeSyncState(this.projectRoot, fingerprint);
+        writeGitHeads(this.projectRoot, heads);
+      }
       return { success: errors.length === 0, filesIndexed, nodesCreated, edgesCreated, errors, duration: Date.now() - start };
     } finally {
+      await pool?.close();
+      try { this.db.getRawDb().run('PRAGMA synchronous=NORMAL'); } catch { /* the database is closed or gone */ }
       if (heldByUs) this.lock.release();
       release();
     }
   }
 
+  private hasIndexedFiles(): boolean {
+    return this.db.getRawDb().get('SELECT 1 AS x FROM files LIMIT 1') != null;
+  }
+
+  /**
+   * True when the workspace is known to have changed since the last sync: the dirty marker is set,
+   * or its fingerprint differs. False when that cannot be known (no fingerprint): sync-if-dirty
+   * then leaves it to the marker.
+   */
+  hasKnownChanges(): boolean {
+    if (this.lock.isDirty()) return true;
+    const fingerprint = workspaceFingerprint(this.projectRoot);
+    if (!fingerprint) return false;
+    return !this.hasIndexedFiles() || !isUpToDate(this.projectRoot, fingerprint);
+  }
+
+  /** True when nothing has changed since the last sync that ended without errors. */
+  isUpToDate(): boolean {
+    if (!this.hasIndexedFiles()) return false; // never indexed
+    if (this.lock.isDirty()) return false;     // see sync()
+    return isUpToDate(this.projectRoot, workspaceFingerprint(this.projectRoot));
+  }
+
   async sync(opts?: {
     changedFiles?: string[];
     onProgress?: (p: IndexProgress) => void;
+    /** Run in full even when nothing seems to have changed. */
+    full?: boolean;
   }): Promise<SyncResult> {
+    // The phases share one listing of the workspace's files (see sync/files.ts)
+    return withWorkspaceFileCache(() => this.syncNow(opts));
+  }
+
+  private async syncNow(opts?: {
+    changedFiles?: string[];
+    onProgress?: (p: IndexProgress) => void;
+    full?: boolean;
+  }): Promise<SyncResult> {
+    // Taken before anything is read, so an edit made during the sync is seen by the next one
+    const fingerprint = opts?.changedFiles ? null : workspaceFingerprint(this.projectRoot);
+    // The dirty marker is an explicit signal (written by the file-save hook, and the only one for
+    // an ignored file the fingerprint cannot see), so a sync that finds it is never skipped
+    if (!opts?.full && fingerprint && this.hasIndexedFiles() && !this.lock.isDirty()
+        && isUpToDate(this.projectRoot, fingerprint)) {
+      return {
+        added: [], modified: [], removed: [],
+        nodesCreated: 0, nodesUpdated: 0, nodesRemoved: 0,
+        edgesCreated: 0, edgesRemoved: 0,
+        filesScanned: 0, errors: [], duration: 0, skipped: true,
+      };
+    }
+
     const release = await this.mutex.acquire();
     // Acquire the file lock inside a guard: if it throws (another live PID
     // holds it), release the in-process mutex before rethrowing. Otherwise the
@@ -344,7 +529,7 @@ export class IndexPipeline {
     // gates the finally so we never unlink a lock owned by another process.
     let heldByUs = false;
     try {
-      this.lock.acquire();
+      await this.lock.acquireWait();
       heldByUs = true;
     } catch (e) {
       release();
@@ -362,11 +547,9 @@ export class IndexPipeline {
 
     try {
       const removeFile = async (rel: string) => {
-        const oldNodes = this.db.getNodesByFile(rel);
-        const oldEdgeCount = this.db.getEdgesForNodes(oldNodes.map(n => n.id)).length;
-        result.nodesRemoved += oldNodes.length;
-        result.edgesRemoved += oldEdgeCount;
-        await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
+        result.nodesRemoved += this.db.countNodesByFile(rel);
+        result.edgesRemoved += this.db.countEdgesTouchingFile(rel);
+        await this.deleteEmbeddingsOfFile(rel);
         this.db.deleteFile(rel);
         this.db.deleteUnresolvedRefsByFile(rel);
         // Clean up pattern matches for removed files (only if patterns are enabled)
@@ -393,29 +576,35 @@ export class IndexPipeline {
 
       onProgress?.({ phase: 'scanning', current: 0, total: 0 });
 
+      // The HEAD of each repository, read before any file is: recorded after the sync, so the next
+      // one adds the files of the commits made meanwhile (see sync/git-head.ts)
+      let heads: Record<string, string> | null = null;
+
       if (changedFiles) {
         filesToProcess = changedFiles.map(f => path.resolve(this.projectRoot, f));
       } else {
-        const gitChanged = await getChangedFiles(this.projectRoot, this.config);
+        const gitChanged = await getChangedFiles(this.projectRoot, this.config, readGitHeads(this.projectRoot));
+        heads = gitChanged.heads;
         const hasChanges = gitChanged.added.length > 0 || gitChanged.modified.length > 0 || gitChanged.removed.length > 0;
 
-        if (hasChanges) {
+        // Only the changed files when the lists are known to cover everything: the uncommitted
+        // changes, and the commits since the last sync. Otherwise (no recorded heads, a repository
+        // git could not read, or nothing changed at all) every file is looked at, by hash
+        if (hasChanges && gitChanged.complete) {
           for (const p of gitChanged.removed) {
             await removeFile(path.relative(this.projectRoot, p).replace(/\\/g, '/'));
           }
           filesToProcess = [...gitChanged.added, ...gitChanged.modified];
         } else {
-          // Fallback: full scan + detect removed files
+          // Full scan + detect removed files
+          const scanned = await scanDirectory(this.projectRoot, this.config);
           const indexed = new Set(this.db.getAllFiles().map(f => f.path));
-          const current = new Set(
-            (await scanDirectory(this.projectRoot, this.config))
-              .map(f => path.relative(this.projectRoot, f).replace(/\\/g, '/'))
-          );
+          const current = new Set(scanned.map(f => path.relative(this.projectRoot, f).replace(/\\/g, '/')));
           result.filesScanned = current.size;
           for (const p of indexed) {
             if (!current.has(p)) await removeFile(p);
           }
-          filesToProcess = await scanDirectory(this.projectRoot, this.config);
+          filesToProcess = scanned;
         }
       }
 
@@ -426,6 +615,7 @@ export class IndexPipeline {
       const crashCounts = new Map<string, number>();
       const POISON_THRESHOLD = 3;
 
+      const batch = new WriteBatch(this.db);
       for (let i = 0; i < filesToProcess.length; i++) {
         const file = filesToProcess[i];
         onProgress?.({ phase: 'parsing', current: i + 1, total: filesToProcess.length, currentFile: file });
@@ -442,6 +632,15 @@ export class IndexPipeline {
           const lang = detectLanguage(file);
           if (poisonedLanguages.has(lang)) continue;
 
+          // Skip an unchanged file by hash before parsing it. Parsing is the expensive step, and
+          // when git reports no changes (clean tree, after a pull or a branch switch) the
+          // fallback scan reaches every indexed file.
+          const known = this.db.getFile(path.relative(this.projectRoot, file).replace(/\\/g, '/'));
+          if (known && (await fs.promises.stat(file)).size <= this.config.maxFileSize) {
+            const content = await fs.promises.readFile(file).catch(() => null);
+            if (content && hashContent(content) === known.contentHash) continue;
+          }
+
           const extracted = await extractFile(file, this.projectRoot, undefined, { enableComplexity: !!(this.config as any).enableComplexity, maxFileSize: this.config.maxFileSize });
           if (!extracted) continue;
 
@@ -449,12 +648,13 @@ export class IndexPipeline {
           const isNew = !existing;
           if (!isNew && existing!.contentHash === extracted.contentHash) continue;
 
-          const oldNodes = this.db.getNodesByFile(extracted.filePath);
-          const oldEdgeCount = this.db.getEdgesForNodes(oldNodes.map(n => n.id)).length;
-          await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
+          const oldNodeCount = this.db.countNodesByFile(extracted.filePath);
+          const oldEdgeCount = this.db.countEdgesTouchingFile(extracted.filePath);
+          await this.deleteEmbeddingsOfFile(extracted.filePath);
 
-          this.db.transaction(() => {
-            result.nodesRemoved += oldNodes.length;
+          // Written with the other files of its batch, in one transaction (see WriteBatch)
+          batch.add(() => {
+            result.nodesRemoved += oldNodeCount;
             result.edgesRemoved += oldEdgeCount;
             this.db.deleteNodesByFile(extracted.filePath);
             this.db.deleteUnresolvedRefsByFile(extracted.filePath);
@@ -466,19 +666,18 @@ export class IndexPipeline {
               symbolCount: extracted.nodes.length,
               indexedAt: Date.now(),
             });
-            for (const node of extracted.nodes) { this.db.upsertNode(node); result.nodesCreated++; }
-            for (const edge of extracted.edges) { this.db.insertEdge(edge); result.edgesCreated++; }
+            this.db.upsertNodes(extracted.nodes); result.nodesCreated += extracted.nodes.length;
+            this.db.insertEdges(extracted.edges); result.edgesCreated += extracted.edges.length;
             for (const mount of extracted.routeMounts ?? []) this.db.insertRouteMount(extracted.filePath, mount);
-              for (const ref of extracted.unresolvedRefs) {
-              this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column, ref.metadata);
-            }
-          });
-
-          this.resolver.invalidateFile(extracted.filePath);
+            this.db.insertUnresolvedRefs(extracted.filePath, extracted.unresolvedRefs);
+            this.resolver.invalidateFile(extracted.filePath);
+            if (isNew) result.added.push(extracted.filePath);
+            else { result.modified.push(extracted.filePath); result.nodesUpdated += extracted.nodes.length; }
+          }, writeErr => {
+            result.errors.push(`${file}: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`);
+          }, extracted.nodes.length + extracted.edges.length + extracted.unresolvedRefs.length);
           // Reset crash count on successful parse for this language
           crashCounts.set(lang, 0);
-          if (isNew) result.added.push(extracted.filePath);
-          else { result.modified.push(extracted.filePath); result.nodesUpdated += extracted.nodes.length; }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           result.errors.push(`${file}: ${msg}`);
@@ -511,21 +710,26 @@ export class IndexPipeline {
         }
       }
 
-      // Resolve cross-file references
-      onProgress?.({ phase: 'resolving', current: 0, total: 1 });
-      await this.resolver.resolveAll((current, total) => {
-        onProgress?.({ phase: 'resolving', current, total });
-      });
+      batch.flush();
+
+      // Resolve cross-file references. When no file was added, changed or removed, no node or
+      // reference is new, so resolution has nothing to find: every unresolved reference was
+      // already tried against the same nodes.
+      if (result.added.length + result.modified.length + result.removed.length > 0) {
+        onProgress?.({ phase: 'resolving', current: 0, total: 1 });
+        await this.resolver.resolveAll((current, total) => {
+          onProgress?.({ phase: 'resolving', current, total });
+        }, [...result.added, ...result.modified, ...result.removed]);
+      }
 
       await detectFrameworks(this.projectRoot);
 
+      // Whether any file was added, changed or removed: the phases below that read only the graph
+      // (and files of their own, which they check themselves) have nothing new to see without it
+      const graphChanged = result.added.length + result.modified.length + result.removed.length > 0;
+
       // Generate embeddings (if enabled)
-      if (this.vectors.isInitialized()) {
-        onProgress?.({ phase: 'embeddings', current: 0, total: 1 });
-        await this.vectors.embedAll((current, total) =>
-          onProgress?.({ phase: 'embeddings', current, total })
-        );
-      }
+      await this.embedPending(graphChanged, onProgress);
 
       // Analyze architecture (if enabled, or auto-enabled for security)
       if (this.config.enableArchitecture || this.config.enableSecurity) {
@@ -534,10 +738,14 @@ export class IndexPipeline {
           logWarn('enableSecurity requires enableArchitecture — auto-enabling architecture analysis for this run');
         }
         onProgress?.({ phase: 'architecture', current: 0, total: 1 });
-        await this.arch.analyze(msg =>
+        // Skipped when the graph, the manifests and the configuration are as at the last run
+        await this.db.getRawDb().coalesce(() => this.arch.analyzeIfChanged(graphChanged, msg =>
           onProgress?.({ phase: 'architecture', current: 0, total: 1, meta: { msg } })
-        );
+        ));
         onProgress?.({ phase: 'architecture', current: 1, total: 1 });
+      } else if (graphChanged) {
+        // The analysis did not see this change: if it is turned on later, it must run
+        clearArchitectureState(this.projectRoot);
       }
 
       // Run security analysis (if enabled)
@@ -547,9 +755,12 @@ export class IndexPipeline {
           this.db.applySecuritySchema();
           const secPipeline = new SecurityPipeline(this.db, this.config, this.projectRoot);
           onProgress?.({ phase: 'security', current: 0, total: 1 });
-          await secPipeline.run((phase, current, total) =>
-            onProgress?.({ phase: 'security', current, total, meta: { secPhase: phase } })
-          );
+          // Only what the changes since the last complete run require: see security/incremental.ts
+          await this.db.getRawDb().coalesce(() => secPipeline.run(
+            (phase, current, total) =>
+              onProgress?.({ phase: 'security', current, total, meta: { secPhase: phase } }),
+            { incremental: { graphChanged } },
+          ));
           onProgress?.({ phase: 'security', current: 1, total: 1 });
         } catch { /* security analysis is non-critical */ }
       }
@@ -560,9 +771,9 @@ export class IndexPipeline {
           const { DocsIndexer } = await import('../docs/indexer');
           this.db.applyDocsSchema();
           const docsIndexer = new DocsIndexer(this.db.getRawDb(), this.config, this.projectRoot);
-          await docsIndexer.indexAll({
+          await this.db.getRawDb().coalesce(() => docsIndexer.indexAll({
             onProgress: msg => onProgress?.({ phase: 'docs', current: 0, total: 1, meta: { msg } }),
-          });
+          }));
         } catch { /* docs indexing is non-critical */ }
       }
 
@@ -572,9 +783,9 @@ export class IndexPipeline {
           const { DataIndexer } = await import('../data/indexer');
           this.db.applyDataSchema();
           const dataIndexer = new DataIndexer(this.db.getRawDb(), this.config, this.projectRoot);
-          await dataIndexer.indexAll({
+          await this.db.getRawDb().coalesce(() => dataIndexer.indexAll({
             onProgress: msg => onProgress?.({ phase: 'data', current: 0, total: 1, meta: { msg } }),
-          });
+          }));
 
           // Assign data files to 'data' architecture layer if architecture is enabled
           if (this.config.enableArchitecture) {
@@ -624,6 +835,12 @@ export class IndexPipeline {
       }
 
       this.lock.clearDirty();
+      // A sync with errors is not recorded: the files that failed are tried again next time
+      writeSyncErrors(this.projectRoot, result.errors);
+      if (!hasTransientErrors(result.errors)) {
+        if (fingerprint) writeSyncState(this.projectRoot, fingerprint);
+        if (heads) writeGitHeads(this.projectRoot, heads);
+      }
       result.duration = Date.now() - start;
       return result;
     } finally {

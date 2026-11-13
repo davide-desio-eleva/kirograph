@@ -29,7 +29,7 @@ function buildWindsurfHooks(): object {
   return {
     hooks: {
       post_cascade_response: [
-        { command: silentCommand('kirograph sync --quiet'), show_output: false },
+        { command: silentCommand('kirograph sync --quiet --background'), show_output: false },
       ],
     },
   };

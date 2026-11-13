@@ -6,6 +6,8 @@
 
 import * as path from 'path';
 import type { Language } from '../types';
+import * as fs from 'fs';
+import { shimLibc, zeroMallocInBinary } from './libc-shims';
 
 // ── Module-level singletons ───────────────────────────────────────────────────
 
@@ -50,6 +52,8 @@ export const GRAMMAR_FILE_MAP: Record<Language, string> = {
   vue: 'tree-sitter-vue',
   objc: 'tree-sitter-objc',
   yaml: 'tree-sitter-yaml',
+  // JSON configuration files are read by extractJsonConfig (infra.ts), without a grammar
+  json: '',
   // HCL (Terraform) is bundled in src/extraction/wasm/ (not in tree-sitter-wasms)
   hcl: 'tree-sitter-hcl',
   // CSS is in tree-sitter-wasms; SCSS is bundled in src/extraction/wasm/
@@ -83,7 +87,11 @@ export async function initGrammars(): Promise<void> {
   parserInitPromise = (async () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const TreeSitter = require('web-tree-sitter');
-    await TreeSitter.Parser.init();
+    // web-tree-sitter uses the object passed here as its runtime module, which lets shimLibc add the
+    // C library functions that the bash and yaml grammars need and the runtime lacks.
+    const runtime: any = {};
+    await TreeSitter.Parser.init(runtime);
+    shimLibc(runtime);
     parserLib = TreeSitter;
   })();
   return parserInitPromise;
@@ -149,7 +157,7 @@ export async function loadGrammarsForLanguages(languages: Language[]): Promise<v
         if (!wasmPath) { resolve(); return; }
         try {
           await initGrammars();
-          const langObj = await parserLib.Language.load(wasmPath);
+          const langObj = await parserLib.Language.load(zeroMallocInBinary(fs.readFileSync(wasmPath)));
           loadedGrammars.set(lang, langObj);
         } catch {
           // Silently skip — no WASM or load failure

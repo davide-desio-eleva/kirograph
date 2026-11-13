@@ -15,6 +15,8 @@ import * as path from 'path';
 import { getAllManifestParsers } from '../../architecture/manifest/index';
 import type { ManifestParser as ArchManifestParser, ArchPackage } from '../../architecture/types';
 import type { ParsedDependency, ManifestParseResult } from '../types';
+import type { KiroGraphConfig } from '../../config';
+import { listWorkspaceFiles } from '../../sync/files';
 
 // ── Include/Exclude filter support ────────────────────────────────────────────
 
@@ -291,39 +293,25 @@ export class SecurityManifestAdapter {
   }
 
   /**
-   * Walk the project directory tree looking for manifest files.
-   * Mirrors the architecture module's _findManifests() logic, respecting SKIP_DIRS.
-   * Includes manifest filenames from standalone plugins in addition to arch parsers.
+   * The manifest files of the project, from the shared workspace file list (sync/files.ts: git's
+   * list of each repository, so no walk of .git, node_modules or ignored folders), less those under
+   * a folder in SKIP_DIRS. Includes manifest filenames from standalone plugins in addition to arch
+   * parsers.
    */
-  private _findManifests(dir: string, results: string[] = []): string[] {
+  private _findManifests(dir: string): string[] {
     const manifestFilenames = new Set([
       ...this.archParsers.flatMap(p => p.manifestFiles),
       ...Array.from(this.standalonePlugins.values()).flatMap(p => p.manifestFiles),
     ]);
-
-    return this._walkDir(dir, manifestFilenames, results);
-  }
-
-  private _walkDir(dir: string, manifestFilenames: Set<string>, results: string[]): string[] {
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return results;
+    const results: string[] = [];
+    const config = { exclude: this.scanOptions.exclude ?? [] } as unknown as KiroGraphConfig;
+    for (const rel of listWorkspaceFiles(dir, config)) {
+      const parts = rel.split('/');
+      const name = parts[parts.length - 1];
+      if (!manifestFilenames.has(name) && !name.endsWith('.csproj')) continue;
+      if (parts.slice(0, -1).some(p => SKIP_DIRS.has(p))) continue;
+      results.push(path.join(dir, rel));
     }
-
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        if (!SKIP_DIRS.has(entry.name)) {
-          this._walkDir(path.join(dir, entry.name), manifestFilenames, results);
-        }
-      } else if (entry.isFile()) {
-        if (manifestFilenames.has(entry.name) || entry.name.endsWith('.csproj')) {
-          results.push(path.join(dir, entry.name));
-        }
-      }
-    }
-
     return results;
   }
 }

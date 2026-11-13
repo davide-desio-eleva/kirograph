@@ -10,6 +10,7 @@
  */
 
 import * as fs from 'fs';
+import { resolveEngine } from '../shared/engines';
 import * as path from 'path';
 import * as crypto from 'crypto';
 
@@ -96,7 +97,7 @@ export class DataLinter {
 
     // Check for missing optional deps
     try {
-      require.resolve('xlsx');
+      if (!resolveEngine('xlsx')) throw new Error('missing');
     } catch {
       // Check if any xlsx/xls files exist in include patterns
       const xlsxFiles = this.db.all(`SELECT file_path FROM data_datasets WHERE format IN ('xlsx', 'xls')`) as any[];
@@ -107,7 +108,7 @@ export class DataLinter {
     }
 
     try {
-      require.resolve('parquetjs-lite');
+      if (!resolveEngine('parquetjs-lite')) throw new Error('missing');
     } catch {
       issues.push({ severity: 'info', message: `Optional dep 'parquetjs-lite' not installed. Parquet files will be skipped during indexing.` });
     }

@@ -21,7 +21,7 @@ import {
 import { buildAgentInstructions } from '../instructions';
 
 const CLINE_RULES_FILE = 'kirograph.md';
-const CLINE_HOOK_SCRIPT = '#!/bin/sh\nkirograph sync --quiet 2>/dev/null || true\n';
+const CLINE_HOOK_SCRIPT = '#!/bin/sh\nkirograph sync --quiet --background 2>/dev/null || true\n';
 
 export function installClineEarly(projectRoot: string): void {
   // Write MCP config to workspace-level .cline/mcp_settings.json

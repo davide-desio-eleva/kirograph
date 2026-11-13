@@ -21,6 +21,7 @@
  */
 
 import * as path from 'path';
+import { requireEngine } from '../shared/engines';
 import * as crypto from 'crypto';
 import * as http from 'http';
 import * as fs from 'fs';
@@ -156,7 +157,7 @@ export class QdrantIndex {
     let QdrantClient: any;
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      QdrantClient = require('@qdrant/qdrant-js').QdrantClient;
+      QdrantClient = requireEngine('@qdrant/qdrant-js').QdrantClient;
     } catch {
       logDebug('QdrantIndex: @qdrant/qdrant-js not available — Qdrant engine unavailable');
       return;

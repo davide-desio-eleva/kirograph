@@ -71,6 +71,8 @@ export default class KiroGraph {
     this.arch = new ArchitectureAnalyzer(db, config, projectRoot);
     this.lock = new LockManager(projectRoot);
     this.pipeline = new IndexPipeline(db, this.vectors, this.resolver, this.arch, this.lock, config, projectRoot);
+    // With deferred vectors, the pipeline loads the model at the first point that needs it
+    this.pipeline.setVectorLoader(() => this.ensureVectors());
     this.searcher = new Searcher(db);
   }
 
@@ -95,7 +97,14 @@ export default class KiroGraph {
   static async open(
     projectRoot: string,
     onModelProgress?: (file: string, loaded: number, total: number, done: boolean) => void,
-    opts?: { skipVectors?: boolean },
+    opts?: {
+      skipVectors?: boolean;
+      /**
+       * Do not load the embedding model until a method that needs it runs. A sync that finds
+       * nothing to do never does, and loading the model takes most of a second.
+       */
+      deferVectors?: boolean;
+    },
   ): Promise<KiroGraph> {
     const resolved = path.resolve(projectRoot);
     validateProjectPath(resolved);
@@ -105,7 +114,9 @@ export default class KiroGraph {
     const cfg = await loadConfig(resolved);
     const db = new GraphDatabase(resolved);
     const kg = new KiroGraph(resolved, db, cfg);
-    if (!opts?.skipVectors) {
+    if (opts?.deferVectors && !opts.skipVectors) {
+      kg.deferredVectors = { onModelProgress };
+    } else if (!opts?.skipVectors) {
       try {
         await kg.vectors.initialize(onModelProgress);
       } catch (e) {
@@ -129,8 +140,13 @@ export default class KiroGraph {
   isDirty(): boolean { return this.lock.isDirty(); }
   isIndexLocked(): boolean { return this.lock.isLocked(); }
 
+  /**
+   * Syncs when the dirty marker is set or the workspace has changed since the last sync. The
+   * marker alone is not enough: it is written by a hook on file save, and an agent's own edits do
+   * not run that hook, so a sync gated on it never saw them.
+   */
   async syncIfDirty(): Promise<SyncResult | null> {
-    if (!this.isDirty()) return null;
+    if (!this.pipeline.hasKnownChanges()) return null;
     return this.sync();
   }
 
@@ -142,7 +158,9 @@ export default class KiroGraph {
   async getPendingSyncCount(): Promise<number> {
     try {
       const { getChangedFiles, scanDirectory } = await import('./sync/index');
-      const gitChanged = await getChangedFiles(this.projectRoot, this.config);
+      const { readGitHeads } = await import('./sync/git-head');
+      // Commits since the last sync count too (a pull brings changes git status does not show)
+      const gitChanged = await getChangedFiles(this.projectRoot, this.config, readGitHeads(this.projectRoot));
       const hasGitChanges =
         gitChanged.added.length > 0 ||
         gitChanged.modified.length > 0 ||
@@ -173,15 +191,31 @@ export default class KiroGraph {
     return this.pipeline.indexAll(opts);
   }
 
-  async sync(changedFilesOrOpts?: string[] | { files?: string[]; onProgress?: (p: IndexProgress) => void }): Promise<SyncResult> {
+  /** Set by open({ deferVectors }) until the embedding model has been loaded. */
+  private deferredVectors: { onModelProgress?: (file: string, loaded: number, total: number, done: boolean) => void } | null = null;
+
+  private async ensureVectors(): Promise<void> {
+    const deferred = this.deferredVectors;
+    if (!deferred) return;
+    this.deferredVectors = null;
+    await this.vectors.initialize(deferred.onModelProgress);
+  }
+
+  async sync(changedFilesOrOpts?: string[] | { files?: string[]; onProgress?: (p: IndexProgress) => void; full?: boolean }): Promise<SyncResult> {
+    // The embedding model is not loaded here: the pipeline loads it when a file changed or an
+    // embedding is missing (setVectorLoader), so a sync that changes nothing never does
     if (Array.isArray(changedFilesOrOpts)) {
       return this.pipeline.sync({ changedFiles: changedFilesOrOpts });
     }
     return this.pipeline.sync({
       changedFiles: changedFilesOrOpts?.files,
       onProgress: changedFilesOrOpts?.onProgress,
+      full: changedFilesOrOpts?.full,
     });
   }
+
+  /** True when files have changed since the last sync, so a sync would have work to do. */
+  hasPendingChanges(): boolean { return !this.pipeline.isUpToDate(); }
 
   // ── Symbol search ──────────────────────────────────────────────────────────
 

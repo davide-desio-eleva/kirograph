@@ -14,6 +14,7 @@
  */
 
 import * as path from 'path';
+import { requireEngine } from '../shared/engines';
 import * as fs from 'fs';
 import { logDebug, logWarn, logError } from '../errors';
 import type { Node } from '../types';
@@ -64,7 +65,7 @@ export class OramaIndex {
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const oramaModule = require('@orama/orama');
+      const oramaModule = requireEngine('@orama/orama');
       this.orama = {
         create:  oramaModule.create,
         insert:  oramaModule.insert,
@@ -80,7 +81,7 @@ export class OramaIndex {
     try {
       // persistToFile / restoreFromFile live in the /server subpath (Node.js only)
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const persistModule = require('@orama/plugin-data-persistence/server');
+      const persistModule = requireEngine('@orama/plugin-data-persistence/server');
       this.persistence = {
         persistToFile:   persistModule.persistToFile,
         restoreFromFile: persistModule.restoreFromFile,

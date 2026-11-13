@@ -24,7 +24,7 @@ function buildCopilotHooks(): object {
   return {
     hooks: {
       'session-end': [
-        { command: silentCommand('kirograph sync --quiet') },
+        { command: silentCommand('kirograph sync --quiet --background') },
       ],
     },
   };

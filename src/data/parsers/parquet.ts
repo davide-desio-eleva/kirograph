@@ -7,6 +7,7 @@
  */
 
 import type { DataFormatParser, ParsedRow } from '../types';
+import { requireEngine } from '../../shared/engines';
 
 const BATCH_SIZE = 10_000;
 
@@ -17,11 +18,11 @@ function tryLoadParquet(): boolean {
   if (parquetChecked) return parquetModule !== null;
   parquetChecked = true;
   try {
-    parquetModule = require('parquetjs-lite');
+    parquetModule = requireEngine('parquetjs-lite');
     return true;
   } catch {
     try {
-      parquetModule = require('parquetjs');
+      parquetModule = requireEngine('parquetjs');
       return true;
     } catch {
       return false;

@@ -12,6 +12,7 @@ import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
+import { installEngines } from '../../shared/engines';
 import { loadConfig, updateConfig, addExcludePatterns } from '../../config';
 import { printBanner } from '../banner';
 import { renderIndexProgress } from '../progress';
@@ -212,12 +213,12 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
           try { require('turboquant-js'); tqAvailable = true; } catch { /* not installed */ }
           if (!tqAvailable) {
             console.log(`\n  Installing TurboQuant dependencies...`);
-            const result = spawnSync('npm', ['install', 'turboquant-js'], { stdio: 'inherit', shell: true });
+            const result = installEngines(['turboquant-js']);
             if (result.status === 0) {
               console.log(`  ✓ turboquant-js installed`);
             } else {
-              console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
-              console.warn(`    npm install turboquant-js`);
+              console.warn(`  ✗ npm install --prefix ~/.kirograph/engines failed (exit ${result.status}). Run manually:`);
+              console.warn(`    npm install --prefix ~/.kirograph/engines turboquant-js`);
             }
           }
         }
@@ -279,67 +280,67 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
           console.log(`  • semanticEngine: ${patch.semanticEngine}`);
           if (patch.semanticEngine === 'sqlite-vec') {
             console.log(`\n  Installing sqlite-vec dependencies...`);
-            const result = spawnSync('npm', ['install', 'better-sqlite3', 'sqlite-vec'], { stdio: 'inherit', shell: true });
+            const result = installEngines(['better-sqlite3', 'sqlite-vec']);
             if (result.status === 0) {
               console.log(`  ✓ better-sqlite3 and sqlite-vec installed`);
             } else {
-              console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
-              console.warn(`    npm install better-sqlite3 sqlite-vec`);
+              console.warn(`  ✗ npm install --prefix ~/.kirograph/engines failed (exit ${result.status}). Run manually:`);
+              console.warn(`    npm install --prefix ~/.kirograph/engines better-sqlite3 sqlite-vec`);
             }
           } else if (patch.semanticEngine === 'orama') {
             console.log(`\n  Installing Orama dependencies...`);
-            const result = spawnSync('npm', ['install', '@orama/orama', '@orama/plugin-data-persistence'], { stdio: 'inherit', shell: true });
+            const result = installEngines(['@orama/orama', '@orama/plugin-data-persistence']);
             if (result.status === 0) {
               console.log(`  ✓ @orama/orama and @orama/plugin-data-persistence installed`);
             } else {
-              console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
-              console.warn(`    npm install @orama/orama @orama/plugin-data-persistence`);
+              console.warn(`  ✗ npm install --prefix ~/.kirograph/engines failed (exit ${result.status}). Run manually:`);
+              console.warn(`    npm install --prefix ~/.kirograph/engines @orama/orama @orama/plugin-data-persistence`);
             }
           } else if (patch.semanticEngine === 'pglite') {
             console.log(`\n  Installing PGlite dependencies...`);
-            const result = spawnSync('npm', ['install', '@electric-sql/pglite'], { stdio: 'inherit', shell: true });
+            const result = installEngines(['@electric-sql/pglite']);
             if (result.status === 0) {
               console.log(`  ✓ @electric-sql/pglite installed`);
             } else {
-              console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
-              console.warn(`    npm install @electric-sql/pglite`);
+              console.warn(`  ✗ npm install --prefix ~/.kirograph/engines failed (exit ${result.status}). Run manually:`);
+              console.warn(`    npm install --prefix ~/.kirograph/engines @electric-sql/pglite`);
             }
           } else if (patch.semanticEngine === 'lancedb') {
             console.log(`\n  Installing LanceDB dependencies...`);
-            const result = spawnSync('npm', ['install', '@lancedb/lancedb'], { stdio: 'inherit', shell: true });
+            const result = installEngines(['@lancedb/lancedb']);
             if (result.status === 0) {
               console.log(`  ✓ @lancedb/lancedb installed`);
             } else {
-              console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
-              console.warn(`    npm install @lancedb/lancedb`);
+              console.warn(`  ✗ npm install --prefix ~/.kirograph/engines failed (exit ${result.status}). Run manually:`);
+              console.warn(`    npm install --prefix ~/.kirograph/engines @lancedb/lancedb`);
             }
           } else if (patch.semanticEngine === 'qdrant') {
             console.log(`\n  Installing Qdrant dependencies...`);
-            const result = spawnSync('npm', ['install', 'qdrant-local'], { stdio: 'inherit', shell: true });
+            const result = installEngines(['qdrant-local']);
             if (result.status === 0) {
               console.log(`  ✓ qdrant-local installed`);
             } else {
-              console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
-              console.warn(`    npm install qdrant-local`);
+              console.warn(`  ✗ npm install --prefix ~/.kirograph/engines failed (exit ${result.status}). Run manually:`);
+              console.warn(`    npm install --prefix ~/.kirograph/engines qdrant-local`);
             }
           } else if (patch.semanticEngine === 'typesense') {
             console.log(`\n  Installing Typesense dependencies...`);
-            const result = spawnSync('npm', ['install', 'typesense'], { stdio: 'inherit', shell: true });
+            const result = installEngines(['typesense']);
             if (result.status === 0) {
               console.log(`  ✓ typesense installed`);
               console.log(`  ℹ  The Typesense binary (~37MB) will be auto-downloaded on first index run.`);
             } else {
-              console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
-              console.warn(`    npm install typesense`);
+              console.warn(`  ✗ npm install --prefix ~/.kirograph/engines failed (exit ${result.status}). Run manually:`);
+              console.warn(`    npm install --prefix ~/.kirograph/engines typesense`);
             }
           } else if (patch.semanticEngine === 'turboquant') {
             console.log(`\n  Installing TurboQuant dependencies...`);
-            const result = spawnSync('npm', ['install', 'turboquant-js'], { stdio: 'inherit', shell: true });
+            const result = installEngines(['turboquant-js']);
             if (result.status === 0) {
               console.log(`  ✓ turboquant-js installed`);
             } else {
-              console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
-              console.warn(`    npm install turboquant-js`);
+              console.warn(`  ✗ npm install --prefix ~/.kirograph/engines failed (exit ${result.status}). Run manually:`);
+              console.warn(`    npm install --prefix ~/.kirograph/engines turboquant-js`);
             }
           } else if (patch.semanticEngine === 'turbovec') {
             _installTurbovecAddon();
@@ -363,39 +364,36 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
         if (enableData) {
           if ((patch as any).dataInstallExcel) {
             console.log(`\n  Installing xlsx...`);
-            const xlsxResult = spawnSync('npm', ['install', 'xlsx'], { stdio: 'inherit', shell: true });
+            const xlsxResult = installEngines(['xlsx']);
             if (xlsxResult.status === 0) {
               console.log(`  ✓ xlsx installed`);
             } else {
-              console.warn(`  ✗ npm install failed. Run manually: npm install xlsx`);
+              console.warn(`  ✗ npm install --prefix ~/.kirograph/engines failed. Run manually: npm install --prefix ~/.kirograph/engines xlsx`);
             }
           }
           if ((patch as any).dataInstallParquet) {
             console.log(`\n  Installing parquetjs-lite...`);
-            const pqResult = spawnSync('npm', ['install', 'parquetjs-lite'], { stdio: 'inherit', shell: true });
+            const pqResult = installEngines(['parquetjs-lite']);
             if (pqResult.status === 0) {
               console.log(`  ✓ parquetjs-lite installed`);
             } else {
-              console.warn(`  ✗ npm install failed. Run manually: npm install parquetjs-lite`);
+              console.warn(`  ✗ npm install --prefix ~/.kirograph/engines failed. Run manually: npm install --prefix ~/.kirograph/engines parquetjs-lite`);
             }
           }
           if ((patch as any).dataInstallPdf) {
             console.log(`\n  Installing @firecrawl/pdf-inspector...`);
-            const pdfResult = spawnSync('npm', ['install', '--save-optional', '@firecrawl/pdf-inspector'], { stdio: 'inherit', shell: true });
+            const pdfResult = installEngines(['@firecrawl/pdf-inspector']);
             if (pdfResult.status === 0) {
               console.log(`  ✓ @firecrawl/pdf-inspector installed`);
             } else {
-              console.warn(`  ✗ npm install failed. Run manually: npm install --save-optional @firecrawl/pdf-inspector`);
+              console.warn(`  ✗ npm install --prefix ~/.kirograph/engines failed. Run manually: npm install --prefix ~/.kirograph/engines @firecrawl/pdf-inspector`);
             }
           }
         }
 
         if (enablePatterns) {
           console.log(`\n  Installing @ast-grep/napi...`);
-          const astGrepResult = spawnSync('npm', ['install', '@ast-grep/napi', '--save-optional'], {
-            stdio: 'inherit',
-            shell: true,
-          });
+          const astGrepResult = installEngines(['@ast-grep/napi']);
           if (astGrepResult.status === 0) {
             console.log(`  ✓ @ast-grep/napi installed`);
 
@@ -421,18 +419,15 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
               '@ast-grep/lang-elixir',
               '@ast-grep/lang-haskell',
             ];
-            const langResult = spawnSync('npm', ['install', ...langPackages, '--save-optional'], {
-              stdio: 'inherit',
-              shell: true,
-            });
+            const langResult = installEngines(langPackages);
             if (langResult.status === 0) {
               console.log(`  ✓ @ast-grep language grammars installed`);
             } else {
               console.warn(`  ✗ Language grammar install failed. Pattern matching will be limited to JS/TS/HTML/CSS.`);
-              console.warn(`    Run manually: npm install ${langPackages.join(' ')}`);
+              console.warn(`    Run manually: npm install --prefix ~/.kirograph/engines ${langPackages.join(' ')}`);
             }
           } else {
-            console.warn(`  ✗ @ast-grep/napi install failed. Run manually: npm install @ast-grep/napi`);
+            console.warn(`  ✗ @ast-grep/napi install failed. Run manually: npm install --prefix ~/.kirograph/engines @ast-grep/napi`);
             console.warn(`  KiroGraph will continue but kirograph pattern and kirograph_live_search will be unavailable.`);
           }
         }

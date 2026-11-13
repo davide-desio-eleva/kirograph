@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { loadConfig } from '../../config';
+import { requireEngine } from '../../shared/engines';
 import { dim, reset, violet, bold, green, value } from '../ui';
 
 export function register(program: Command): void {
@@ -685,10 +686,10 @@ export function register(program: Command): void {
 
       let pdfModule: any;
       try {
-        pdfModule = require('@firecrawl/pdf-inspector');
+        pdfModule = requireEngine('@firecrawl/pdf-inspector');
       } catch {
         console.error(`  ✖ @firecrawl/pdf-inspector is not installed.`);
-        console.error(`  ${dim}Install with:${reset} npm install --save-optional @firecrawl/pdf-inspector`);
+        console.error(`  ${dim}Install with:${reset} npm install --prefix ~/.kirograph/engines @firecrawl/pdf-inspector`);
         process.exit(1);
       }
 

@@ -521,12 +521,12 @@ export function register(program: Command): void {
       const mem = new MemoryManager(config, db.getRawDb());
       mem.initialize();
 
-      const result = mem.lint();
+      const result = mem.lint({ fix: !!opts.fix });
 
       console.log(`\n  ${section('Memory Lint')}\n`);
       console.log(`  Stale links:    ${result.staleLinks > 0 ? violet + result.staleLinks + reset : dim + '0' + reset}`);
       console.log(`  Model mismatch: ${result.modelMismatch ? violet + 'yes' + reset : dim + 'no' + reset}`);
-      console.log(`  Stale sessions: ${result.staleSessions > 0 ? violet + String(result.staleSessions) + ' (auto-closed)' + reset : dim + '0' + reset}`);
+      console.log(`  Stale sessions: ${result.staleSessions > 0 ? violet + String(result.staleSessions) + (opts.fix ? ' (closed)' : ' (run with --fix to close them)') + reset : dim + '0' + reset}`);
 
       if (opts.fix && result.staleLinks > 0) {
         const removed = mem.removeStaleLinks();

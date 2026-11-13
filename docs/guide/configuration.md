@@ -35,9 +35,10 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `enableSecurity` | boolean | `false` | Enable dependency vulnerability detection and reachability analysis. Requires `enableArchitecture` (auto-enabled if missing). |
 | `securityDatabases` | string[] | `["OSV"]` | Vulnerability databases to query. Supported: `OSV`. |
 | `securityAutoEnrich` | boolean | `true` | Auto-run vulnerability enrichment after manifest parsing. Set to `false` for on-demand only (via `kirograph vulns --refresh` or `kirograph_vulns` with `refresh: true`). |
+| `securityEnrichMaxAgeDays` | number | `7` | Days after which a sync fetches vulnerability data again (OSV, EPSS) even if no manifest changed. A sync that changed neither manifests nor source skips the security analysis. |
 | `securityAuthDetectionMode` | string | `'heuristic'` | ⚠️ *experimental.* `'heuristic'` — substring match against a fixed name list for `attack-surface`'s `isAuthenticated` detection (misses custom-named auth wrappers); `'jev'` — when the heuristic finds nothing, [jev](#jev) confirms/overrides using the route + call-path names (requires `jevApiKey`); `'strands'` — same backstop via a local [strands-decider](#strands) server (no API key). |
 | `securityAuthConfidenceThreshold` | number | `0.6` | Confidence (0.0–1.0) above which a jev/strands auth judgment overrides the heuristic's "not authenticated" default. |
-| `enablePatterns` | boolean | `false` | Enable AST pattern matching SAST via `@ast-grep/napi`. Requires `npm install @ast-grep/napi`. |
+| `enablePatterns` | boolean | `false` | Enable AST pattern matching SAST via `@ast-grep/napi`. Requires `@ast-grep/napi` (`npm install --prefix ~/.kirograph/engines @ast-grep/napi`, or let `kirograph install` add it). |
 | `patternLibraryPath` | string | — | Path to custom YAML pattern rules directory (merged with bundled rules) |
 | `patternSeverityThreshold` | string | `low` | Minimum severity to store: `critical`, `high`, `medium`, `low` |
 | **Memory** | | | |
@@ -102,7 +103,16 @@ JEV_API_KEY=sk-...
 ```
 `loadConfig()` reads this file automatically on every command and populates `process.env.JEV_API_KEY` if it isn't already set — no shell export needed. `kirograph mem conflicts compare`/`wiki lint`/`attack-surface` will use it as soon as the matching `*Mode` is set to `'jev'`. `test/jev/test.sh` follows the same rule: set `JEV_API_KEY` in your shell before running it and it exercises the real API instead of the bundled mock server.
 
-Default exclude patterns: `node_modules/**`, `dist/**`, `build/**`, `.git/**`, `*.min.js`, `.kirograph/**`
+Default exclude patterns (at any depth): `**/node_modules/**`, `**/dist/**`, `**/build/**`, `**/.git/**`, `**/.kirograph/**`, `**/out/**`, `**/.next/**`, minified and bundled files, source maps. Files git ignores are not indexed. Documentation, data and manifest files are taken from the same list, so a folder the main `exclude` names is never read by those modules either.
+
+A workspace can be a repository, a folder inside one, or a plain folder that holds several repositories: each repository is read on its own, and the files outside them are indexed too.
+
+### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KIROGRAPH_WORKERS` | cores − 1, up to 6 | Worker threads that parse files during a full index of 100 files or more. `0` or `1` parses in-process. |
+| `KIROGRAPH_ENGINES_DIR` | `~/.kirograph/engines` | Where optional packages (semantic engines, data parsers, pattern matching) are installed and loaded from. |
 
 ---
 
@@ -134,6 +144,8 @@ Switching models requires a full re-index (`kirograph index --force`).
 
 ### Semantic Engines
 
+Optional packages (engines, data parsers, pattern matching) live in `~/.kirograph/engines`, not in your project: the installer puts them there, and KiroGraph loads them from there (a package already installed in the project is still found). Set `KIROGRAPH_ENGINES_DIR` to use another folder. The `npm install` commands below install into that folder.
+
 #### turboquant
 
 ANN index powered by [turboquant-js](https://github.com/danilodevhub/turboquant-js), a TypeScript implementation of [Google's TurboQuant algorithm](https://research.google/blog/turboquant-redefining-ai-efficiency-with-extreme-compression/). **Zero native dependencies.** Compresses each embedding at index time via Walsh-Hadamard rotation + Lloyd-Max scalar quantization.
@@ -143,7 +155,7 @@ ANN index powered by [turboquant-js](https://github.com/danilodevhub/turboquant-
 ```
 
 ```bash
-npm install turboquant-js
+npm install --prefix ~/.kirograph/engines turboquant-js
 ```
 
 A 768-dim `Float32Array` (3,072 bytes) is stored as ~120 bytes at 3 bits — roughly **25× smaller**. Falls back silently to `cosine` if `turboquant-js` is not installed.
@@ -183,7 +195,7 @@ Approximate nearest-neighbour (ANN) index. Sub-linear search time.
 ```
 
 ```bash
-npm install better-sqlite3 sqlite-vec
+npm install --prefix ~/.kirograph/engines better-sqlite3 sqlite-vec
 ```
 
 #### orama
@@ -195,7 +207,7 @@ Hybrid search (full-text + vector) powered by [Orama](https://github.com/oramase
 ```
 
 ```bash
-npm install @orama/orama @orama/plugin-data-persistence
+npm install --prefix ~/.kirograph/engines @orama/orama @orama/plugin-data-persistence
 ```
 
 #### pglite
@@ -207,7 +219,7 @@ Hybrid search powered by [PGlite](https://github.com/electric-sql/pglite) (WASM 
 ```
 
 ```bash
-npm install @electric-sql/pglite
+npm install --prefix ~/.kirograph/engines @electric-sql/pglite
 ```
 
 #### lancedb
@@ -219,7 +231,7 @@ ANN vector search powered by [LanceDB](https://github.com/lancedb/lancedb). Pure
 ```
 
 ```bash
-npm install @lancedb/lancedb
+npm install --prefix ~/.kirograph/engines @lancedb/lancedb
 ```
 
 #### qdrant
@@ -231,7 +243,7 @@ ANN vector search powered by [Qdrant](https://github.com/qdrant/qdrant) in embed
 ```
 
 ```bash
-npm install qdrant-local
+npm install --prefix ~/.kirograph/engines qdrant-local
 ```
 
 #### typesense
@@ -243,7 +255,7 @@ ANN vector search powered by [Typesense](https://github.com/typesense/typesense)
 ```
 
 ```bash
-npm install typesense
+npm install --prefix ~/.kirograph/engines typesense
 ```
 
 ### Engine Comparison
@@ -322,7 +334,7 @@ For memory observations and doc sections, the raw Float32 stays in SQLite (neede
 ```
 
 ```bash
-npm install turboquant-js
+npm install --prefix ~/.kirograph/engines turboquant-js
 ```
 
 Each embedding is compressed immediately on `kirograph index`. The index is serialized to `.kirograph/turboquant.bin` at the end of indexing and reloaded in milliseconds on startup. Falls back silently to `cosine` if `turboquant-js` is not installed.

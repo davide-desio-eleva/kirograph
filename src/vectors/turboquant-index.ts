@@ -18,6 +18,7 @@
  */
 
 import * as path from 'path';
+import { requireEngine } from '../shared/engines';
 import * as fs from 'fs';
 import { logDebug, logWarn, logError } from '../errors';
 
@@ -101,7 +102,7 @@ export class TurboQuantIndex {
     let TQModule: any;
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      TQModule = require('turboquant-js');
+      TQModule = requireEngine('turboquant-js');
     } catch {
       logDebug('TurboQuantIndex: turboquant-js not installed — turboquant engine unavailable');
       return;

@@ -19,6 +19,7 @@
  */
 
 import * as path from 'path';
+import { requireEngine } from '../shared/engines';
 import * as fs from 'fs';
 import * as https from 'https';
 import * as http from 'http';
@@ -204,7 +205,7 @@ export class TypesenseIndex {
     let TypesenseClient: any;
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      TypesenseClient = require('typesense').Client;
+      TypesenseClient = requireEngine('typesense').Client;
     } catch {
       logDebug('TypesenseIndex: typesense not installed — Typesense engine unavailable');
       return;

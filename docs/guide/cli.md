@@ -31,15 +31,23 @@ kirograph index [path]            # Full re-index of the project
 kirograph index --force           # Force re-index all files (ignore hash cache)
 kirograph sync [path]             # Incremental sync of changed files
 kirograph sync --files a.ts b.ts  # Sync specific files only
-kirograph sync-if-dirty [path]    # Sync only if a dirty marker is present
+kirograph sync --full             # Run every phase even when nothing seems to have changed
+kirograph sync --timings          # Print the time spent in each phase
+kirograph sync --errors           # List the files that failed in the last sync or index
+kirograph sync --background       # Return at once; sync in a separate process if needed (for hooks)
+kirograph sync-if-dirty [path]    # Sync only if the dirty marker is set or the workspace changed
+kirograph sync-if-dirty --background
 kirograph mark-dirty [path]       # Write a dirty marker for deferred sync
 ```
+
+A sync with nothing to do answers in about 0.1 s from a fingerprint of the workspace (git HEAD and status of each repository, plus the files outside them), before the database is opened. When an MCP server is running for the project, `sync` and `sync-if-dirty` ask it to do the sync instead of opening the database a second time. Optional phases (architecture, security, docs, data, embeddings) redo only what the changes require.
 
 ## Status & Maintenance
 
 ```bash
 kirograph status [path]           # Show index stats (files, symbols, edges, frameworks)
-kirograph unlock [path]           # Force-release a stale lock file
+kirograph unlock [path]           # Release a lock left by a dead process (not one a running process holds)
+kirograph unlock --force [path]   # Release it even while another process looks alive
 ```
 
 ## Search & Exploration

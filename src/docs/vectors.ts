@@ -48,6 +48,24 @@ function sectionToText(section: DocSection): string {
   return text.length > MAX_TOKEN_CHARS ? text.slice(0, MAX_TOKEN_CHARS) : text;
 }
 
+/** A `doc_sections` row as a DocSection. */
+function rowToSection(row: any): DocSection {
+  return {
+    id: row.id,
+    filePath: row.file_path,
+    title: row.title,
+    level: row.level,
+    parentId: row.parent_id ?? null,
+    summary: row.summary ?? null,
+    byteStart: row.byte_start,
+    byteEnd: row.byte_end,
+    contentHash: row.content_hash,
+    tags: row.tags ? JSON.parse(row.tags) : [],
+    position: row.position,
+    updatedAt: row.updated_at,
+  };
+}
+
 /** Cosine similarity between two Float32Arrays */
 function cosine(a: Float32Array, b: Float32Array): number {
   let dot = 0, na = 0, nb = 0;
@@ -146,6 +164,29 @@ export class DocsVectorManager {
   }
 
   /**
+   * Embeds the sections that need it: those with no vector for the current model, and those
+   * rewritten since their vector was made (a section's `updated_at` is set when its file is
+   * indexed again). Removes the vectors of sections that no longer exist.
+   *
+   * Embedding every section on every sync cost one model call per section (tens of milliseconds
+   * each on a CPU) even when no document had changed; this does no model call, and does not load
+   * the model, when nothing needs it.
+   */
+  async embedPending(): Promise<number> {
+    if (!this.isEnabled()) return 0;
+    this.db.run('DELETE FROM doc_vectors WHERE section_id NOT IN (SELECT id FROM doc_sections)');
+    const rows = this.db.all(
+      `SELECT s.* FROM doc_sections s
+         LEFT JOIN doc_vectors v ON v.section_id = s.id AND v.model = ?
+        WHERE v.section_id IS NULL OR v.created_at < s.updated_at
+        ORDER BY s.file_path, s.position`,
+      [this.modelName],
+    ) as any[];
+    if (rows.length === 0) return 0;
+    return this.embedBatch(rows.map(rowToSection));
+  }
+
+  /**
    * Vector search over doc sections.
    * Returns scored sections sorted by cosine similarity.
    * Falls back to empty results if embeddings are disabled.
@@ -230,20 +271,7 @@ export class DocsVectorManager {
 
     // Get all sections
     const rows = this.db.all('SELECT * FROM doc_sections ORDER BY file_path, position') as any[];
-    const sections: DocSection[] = rows.map((row: any) => ({
-      id: row.id,
-      filePath: row.file_path,
-      title: row.title,
-      level: row.level,
-      parentId: row.parent_id ?? null,
-      summary: row.summary ?? null,
-      byteStart: row.byte_start,
-      byteEnd: row.byte_end,
-      contentHash: row.content_hash,
-      tags: row.tags ? JSON.parse(row.tags) : [],
-      position: row.position,
-      updatedAt: row.updated_at,
-    }));
+    const sections: DocSection[] = rows.map(rowToSection);
 
     let embedded = 0;
     for (let i = 0; i < sections.length; i += batchSize) {

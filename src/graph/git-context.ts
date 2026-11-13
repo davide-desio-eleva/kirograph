@@ -6,8 +6,11 @@
  * import from here.
  */
 
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import type { GraphDatabase } from '../db/database';
+import { findGitRoots } from '../sync/index';
 
 export interface ChangedSymbol {
   name: string;
@@ -29,17 +32,60 @@ export interface DiffHunk {
   isDeletedFile: boolean;
 }
 
-/** Run a git command in projectRoot. Throws if git not found or not a git repo. */
-function git(projectRoot: string, args: string): string {
+/**
+ * Run a git command in projectRoot. Throws if git not found or not a git repo. The arguments are
+ * passed as a list, never through a shell: a ref comes from the caller (a tool argument), and
+ * "main; rm -rf ~" must be a ref that does not exist, not a command. The format of the log
+ * contains `|`, which a shell reads as a pipe.
+ */
+function git(projectRoot: string, args: string[]): string {
   try {
-    return execSync(`git ${args}`, {
+    return execFileSync('git', args, {
       cwd: projectRoot,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
+      maxBuffer: 1 << 28,
     }).trim();
   } catch (err: any) {
-    throw new Error(`git ${args.split(' ')[0]} failed: ${err.message ?? String(err)}`);
+    throw new Error(`git ${args[0]} failed: ${err.message ?? String(err)}`);
   }
+}
+
+/** A ref that cannot be taken for an option: it does not start with a dash. */
+function safeRef(ref: string): string {
+  if (!ref || ref.startsWith('-')) throw new Error(`Invalid git ref: ${JSON.stringify(ref)}`);
+  return ref;
+}
+
+/**
+ * The repositories of a workspace, with the prefix that turns a path inside one into a path
+ * relative to the workspace (the form the graph stores). A workspace that is a repository, or a
+ * folder inside one, is a single repository with no prefix. A folder that only holds repositories
+ * (Terraform modules, charts and scripts kept as separate repos) gives one entry per repository:
+ * these tools failed there with "Not a git repository", while `sync` already looked in each.
+ */
+export function repositoriesOf(projectRoot: string): Array<{ cwd: string; prefix: string }> {
+  if (fs.existsSync(path.join(projectRoot, '.git'))) return [{ cwd: projectRoot, prefix: '' }];
+  const roots = findGitRoots(projectRoot).filter(r => path.resolve(r) !== path.resolve(projectRoot));
+  if (roots.length === 0) return [{ cwd: projectRoot, prefix: '' }]; // a folder inside a repository, or none
+  return roots.map(cwd => ({ cwd, prefix: path.relative(projectRoot, cwd).replace(/\\/g, '/') + '/' }));
+}
+
+/**
+ * Runs `fn` in each repository of the workspace. A repository where it fails (a ref that exists
+ * only in another one) is skipped as long as one succeeds; with a single repository the error is
+ * the caller's, as before.
+ */
+function perRepository<T>(projectRoot: string, fn: (cwd: string, prefix: string) => T): T[] {
+  const repos = repositoriesOf(projectRoot);
+  if (repos.length === 1) return [fn(repos[0].cwd, repos[0].prefix)];
+  const results: T[] = [];
+  let firstError: unknown;
+  for (const { cwd, prefix } of repos) {
+    try { results.push(fn(cwd, prefix)); } catch (err) { firstError ??= err; }
+  }
+  if (results.length === 0 && firstError) throw firstError;
+  return results;
 }
 
 /** Parse unified diff output into a list of DiffHunk objects. */
@@ -158,14 +204,16 @@ export interface GitDiffResult {
  * - ref          → git diff <ref>..HEAD
  */
 export function getChangedSymbols(projectRoot: string, db: GraphDatabase, opts: { staged?: boolean; ref?: string } = {}): GitDiffResult {
-  let diffArgs = 'diff --unified=0';
-  if (opts.ref) diffArgs = `diff --unified=0 ${opts.ref}..HEAD`;
-  else if (opts.staged) diffArgs = 'diff --cached --unified=0';
+  let diffArgs = ['diff', '--unified=0'];
+  if (opts.ref) diffArgs = ['diff', '--unified=0', `${safeRef(opts.ref)}..HEAD`];
+  else if (opts.staged) diffArgs = ['diff', '--cached', '--unified=0'];
 
-  const diffOutput = git(projectRoot, diffArgs);
-  if (!diffOutput) return { changedSymbols: [], hunks: [] };
+  const hunks = perRepository(projectRoot, (cwd, prefix) => {
+    const diffOutput = git(cwd, diffArgs);
+    return diffOutput ? parseDiff(diffOutput).map(h => ({ ...h, filePath: prefix + h.filePath })) : [];
+  }).flat();
+  if (hunks.length === 0) return { changedSymbols: [], hunks: [] };
 
-  const hunks = parseDiff(diffOutput);
   const allNodes: Array<{ id: string; name: string; kind: string; filePath: string; startLine: number; endLine: number; qualifiedName: string; changeType: 'added' | 'modified' | 'deleted' | 'unknown' }> = [];
   for (const h of hunks) {
     allNodes.push(...hunkToNodes(db, h));
@@ -186,24 +234,31 @@ export interface CommitContext {
 }
 
 export function getCommitContext(projectRoot: string, db: GraphDatabase): CommitContext {
-  const stagedFiles = git(projectRoot, 'diff --cached --name-only').split('\n').filter(Boolean);
-  const diffStat = git(projectRoot, 'diff --cached --stat');
+  const repos = repositoriesOf(projectRoot);
+  const stagedFiles = perRepository(projectRoot, (cwd, prefix) =>
+    git(cwd, ['diff', '--cached', '--name-only']).split('\n').filter(Boolean).map(f => prefix + f)).flat();
+  const stats = perRepository(projectRoot, (cwd, prefix) => ({ prefix, stat: git(cwd, ['diff', '--cached', '--stat']) }));
+  const diffStat = repos.length === 1
+    ? stats[0].stat
+    : stats.filter(s => s.stat).map(s => `# ${s.prefix.replace(/\/$/, '')}\n${s.stat}`).join('\n\n');
   const { changedSymbols } = getChangedSymbols(projectRoot, db, { staged: true });
   return { stagedFiles, changedSymbols, diffStat };
 }
 
 /** Get semantic diff between two git refs. */
 export function getPRContext(projectRoot: string, db: GraphDatabase, base: string, head = 'HEAD'): GitDiffResult {
-  const ref = `${base}..${head}`;
-  let diffOutput: string;
+  const ref = `${safeRef(base)}..${safeRef(head)}`;
+  let hunks: DiffHunk[];
   try {
-    diffOutput = git(projectRoot, `diff --unified=0 ${ref}`);
+    hunks = perRepository(projectRoot, (cwd, prefix) => {
+      const diffOutput = git(cwd, ['diff', '--unified=0', ref]);
+      return diffOutput ? parseDiff(diffOutput).map(h => ({ ...h, filePath: prefix + h.filePath })) : [];
+    }).flat();
   } catch {
     throw new Error(`Could not diff ${ref}. Ensure both refs exist in this repository.`);
   }
-  if (!diffOutput) return { changedSymbols: [], hunks: [], ref };
+  if (hunks.length === 0) return { changedSymbols: [], hunks: [], ref };
 
-  const hunks = parseDiff(diffOutput);
   const allNodes: Array<{ id: string; name: string; kind: string; filePath: string; startLine: number; endLine: number; qualifiedName: string; changeType: 'added' | 'modified' | 'deleted' | 'unknown' }> = [];
   for (const h of hunks) allNodes.push(...hunkToNodes(db, h));
 
@@ -223,12 +278,17 @@ export interface CommitEntry {
 }
 
 export function getCommitLog(projectRoot: string, ref1: string, ref2: string): CommitEntry[] {
-  const log = git(projectRoot, `log --pretty=format:%H|||%h|||%an|||%ad|||%s --date=short ${ref1}..${ref2}`);
-  if (!log) return [];
-  return log.split('\n').filter(Boolean).map(line => {
-    const [hash, shortHash, author, date, ...subjectParts] = line.split('|||');
-    return { hash, shortHash, author, date, subject: subjectParts.join('|||') };
-  });
+  const several = repositoriesOf(projectRoot).length > 1;
+  const entries = perRepository(projectRoot, (cwd, prefix) => {
+    const log = git(cwd, ['log', '--pretty=format:%H|||%h|||%an|||%ad|||%s', '--date=short', `${safeRef(ref1)}..${safeRef(ref2)}`]);
+    if (!log) return [];
+    return log.split('\n').filter(Boolean).map(line => {
+      const [hash, shortHash, author, date, ...subjectParts] = line.split('|||');
+      const subject = subjectParts.join('|||');
+      return { hash, shortHash, author, date, subject: several ? `[${prefix.replace(/\/$/, '')}] ${subject}` : subject };
+    });
+  }).flat();
+  return several ? entries.sort((a, b) => b.date.localeCompare(a.date)) : entries;
 }
 
 /** Find test files that reference a given symbol. */

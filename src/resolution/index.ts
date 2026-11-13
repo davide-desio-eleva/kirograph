@@ -60,7 +60,12 @@ export class ReferenceResolver {
 
     // Access the underlying db instance to query all nodes
     const rawDb = (this.db as any).db;
-    const rows: any[] = rawDb.all('SELECT * FROM nodes');
+    // Every column but the docstring, which nothing in resolution reads and which is a third of
+    // the bytes of the table
+    const rows: any[] = rawDb.all(
+      `SELECT id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column,
+              end_column, signature, visibility, is_exported, is_async, is_static, is_abstract,
+              decorators, type_parameters, updated_at FROM nodes`);
 
     for (const row of rows) {
       const node: Node = this._rowToNode(row);
@@ -114,7 +119,11 @@ export class ReferenceResolver {
    * Warms caches first, then processes all pending refs.
    * Returns a ResolutionResult with counts and duration.
    */
-  async resolveAll(onProgress?: (current: number, total: number) => void): Promise<ResolutionResult> {
+  async resolveAll(
+    onProgress?: (current: number, total: number) => void,
+    /** The files a sync changed. Without it (an index) everything runs. */
+    changedFiles?: string[],
+  ): Promise<ResolutionResult> {
     const start = Date.now();
 
     this.warmCaches();
@@ -129,7 +138,9 @@ export class ReferenceResolver {
 
     // Run cross-language bridge resolvers after standard resolution
     let bridgeResult: BridgeResolutionResult | undefined;
-    if (this.projectRoot) {
+    // The bridges read only the file types below (and package.json to decide whether they apply),
+    // and the edges they made survive a sync that touched none of those
+    if (this.projectRoot && (!changedFiles || changedFiles.some(f => BRIDGE_FILE.test(f)))) {
       bridgeResult = this._runBridgeResolvers();
     }
 
@@ -164,16 +175,14 @@ export class ReferenceResolver {
     // WASM linear memory, which can exceed the 2GB limit on large codebases.
     const BATCH_SIZE = 1000;
 
-    // Skip the expensive "scan all nodes" fuzzy fallback for very large graphs.
-    // The O(N*M) cost is prohibitive and the WASM heap cannot sustain it.
-    const FUZZY_ALL_NODES_LIMIT = 200_000;
-    const skipFullFuzzy = this.nodeByIdCache.size > FUZZY_ALL_NODES_LIMIT;
-    if (skipFullFuzzy) {
-      logDebug(`ReferenceResolver: skipping full-scan fuzzy (${this.nodeByIdCache.size} nodes exceeds ${FUZZY_ALL_NODES_LIMIT} limit)`);
-    }
-
     for (let batchStart = 0; batchStart < refs.length; batchStart += BATCH_SIZE) {
       const batchEnd = Math.min(batchStart + BATCH_SIZE, refs.length);
+
+      // Edges to add, refs to delete, and strategy lists to record are collected and written at
+      // the end of the batch, in a few statements instead of one per reference.
+      const batchEdges: Edge[] = [];
+      const resolvedIds: number[] = [];
+      const strategiesToRecord = new Map<string, number[]>(); // strategies JSON -> ref ids
 
       // Wrap each batch in a transaction — dramatically reduces write amplification
       rawDb.run('BEGIN');
@@ -195,7 +204,11 @@ export class ReferenceResolver {
           const attemptedStrategies: string[] = [];
           let targetId: string | null = null;
 
-          if (refKind === 'import') {
+          if (refKind === 'reference' || refKind === 'qualified_call') {
+            // Infrastructure references (infra.ts): the exact qualified name, nothing looser
+            attemptedStrategies.push('qualified');
+            targetId = this.qualifiedNameCache.get(refName)?.id ?? null;
+          } else if (refKind === 'import') {
             attemptedStrategies.push('import-path');
             targetId = this._resolveImportPath(refName, filePath);
           } else if (refKind === 'extends' || refKind === 'implements') {
@@ -244,19 +257,16 @@ export class ReferenceResolver {
                 }
               }
 
-              // Full-scan fuzzy: only for smaller graphs (O(N*M) is too expensive otherwise)
-              if (!targetId && !skipFullFuzzy) {
-                const allCandidates = [...this.nodeByIdCache.values()];
-                const match = matchReference(refName, allCandidates, threshold);
-                if (match) {
-                  targetId = match.nodeId;
-                }
-              }
+              // No full-scan fallback here: the lowercase index above already holds every node
+              // whose name matches case-insensitively, and the exact, qualified and method
+              // strategies were answered from their indexes earlier. A scan of all nodes per
+              // unresolved reference only repeated that work.
             }
           }
 
           if (targetId) {
-            const edgeKind = refKind === 'import' ? 'imports'
+            const edgeKind = refKind === 'reference' ? 'references'
+              : refKind === 'import' ? 'imports'
               : refKind === 'extends' ? 'extends'
               : refKind === 'implements' ? 'implements'
               : 'calls';
@@ -268,19 +278,29 @@ export class ReferenceResolver {
               column: column ?? undefined,
               metadata: refMetadata ? JSON.parse(refMetadata) : undefined,
             };
-            this.db.insertEdge(edge);
-            rawDb.run('DELETE FROM unresolved_refs WHERE id = ?', [refId]);
+            batchEdges.push(edge);
+            resolvedIds.push(refId);
             resolved++;
           } else {
+            // Nothing to write when the same list is already recorded: a reference that stays
+            // unresolved is tried again on every resolution and ends up with the same list.
             const strategiesJson = JSON.stringify(attemptedStrategies);
-            try {
-              rawDb.run(
-                'UPDATE unresolved_refs SET attempted_strategies = ? WHERE id = ?',
-                [strategiesJson, refId]
-              );
-            } catch {
-              logWarn(`ReferenceResolver: failed to record attempted strategies for ref ${refId}`);
+            if (ref.attempted_strategies !== strategiesJson) {
+              const ids = strategiesToRecord.get(strategiesJson);
+              if (ids) ids.push(refId); else strategiesToRecord.set(strategiesJson, [refId]);
             }
+          }
+        }
+        this.db.insertEdges(batchEdges);
+        for (const group of idGroups(resolvedIds)) {
+          rawDb.run(`DELETE FROM unresolved_refs WHERE id IN (${group.map(() => '?').join(',')})`, group);
+        }
+        for (const [strategiesJson, ids] of strategiesToRecord) {
+          for (const group of idGroups(ids)) {
+            rawDb.run(
+              `UPDATE unresolved_refs SET attempted_strategies = ? WHERE id IN (${group.map(() => '?').join(',')})`,
+              [strategiesJson, ...group],
+            );
           }
         }
         rawDb.run('COMMIT');
@@ -628,11 +648,24 @@ export class ReferenceResolver {
     const db = this.db;
     const nameCache = this.nameCache;
     const kindCache = this.kindCache;
+    const nodeByIdCache = this.nodeByIdCache;
     const fileCache = new Map<string, string | null>();
+    // Nodes by file, from the warm cache instead of one query per file: every bridge asks for the
+    // nodes of every file it scans, which was 280 ms of queries on 600 files. The cache lists
+    // nodes in table order, so each file's nodes come in the order the query returned them.
+    let nodesByFile: Map<string, Node[]> | null = null;
+    let allFiles: string[] | null = null;
 
     return {
       getNodesInFile(filePath: string): Node[] {
-        return db.getNodesByFile(filePath);
+        if (!nodesByFile) {
+          nodesByFile = new Map();
+          for (const node of nodeByIdCache.values()) {
+            const list = nodesByFile.get(node.filePath);
+            if (list) list.push(node); else nodesByFile.set(node.filePath, [node]);
+          }
+        }
+        return nodesByFile.get(filePath) ?? [];
       },
       getNodesByName(name: string): Node[] {
         return nameCache.get(name) ?? [];
@@ -658,10 +691,29 @@ export class ReferenceResolver {
         return projectRoot;
       },
       getAllFiles(): string[] {
-        return db.getAllFiles().map((f: any) => f.path);
+        return allFiles ??= db.getAllFiles().map((f: any) => f.path);
       },
     };
   }
+}
+
+/** Files the bridge resolvers look at (see resolution/bridges). */
+const BRIDGE_FILE = /(\.(tsx?|jsx?|m|mm|h|swift|java|kt|dart)|(^|\/)(package\.json|expo-module\.config\.json))$/;
+
+/**
+ * Splits ids into groups whose sizes are powers of two, for IN (...) lists. A handful of distinct
+ * statements is all that is ever prepared, so they stay in the statement cache.
+ */
+function idGroups(ids: number[]): number[][] {
+  const sizes = [512, 256, 128, 64, 32, 16, 8, 4, 2, 1];
+  const groups: number[][] = [];
+  let i = 0;
+  while (i < ids.length) {
+    const size = sizes.find(n => n <= ids.length - i)!;
+    groups.push(ids.slice(i, i + size));
+    i += size;
+  }
+  return groups;
 }
 
 /** Key of the scope that stands for a whole file (a plugin the resolver could not match by name). */

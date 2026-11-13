@@ -21,6 +21,7 @@
  */
 
 import * as path from 'path';
+import { requireEngine } from '../shared/engines';
 import * as fs from 'fs';
 import { logDebug, logWarn, logError } from '../errors';
 
@@ -51,7 +52,7 @@ export class TurboVecIndex {
     let TVModule: any;
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      TVModule = require('turbovec-node');
+      TVModule = requireEngine('turbovec-node');
     } catch {
       logDebug('TurboVecIndex: turbovec-node not found — run: cd native/turbovec-node && npm install && npm run build');
       return;

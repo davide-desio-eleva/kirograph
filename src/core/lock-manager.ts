@@ -14,6 +14,16 @@ const LOCK_FILE = 'kirograph.lock';
 const DIRTY_FILE = 'dirty';
 const LOCK_STALE_MS = 5 * 60 * 1000; // 5 minutes
 
+/**
+ * How long a second index or sync waits for a live holder before failing. The same as the
+ * database busy timeout, so a second command waits as long as a read does. Exposed mutable so
+ * tests can shorten it.
+ */
+export const lockWaitTiming = {
+  waitMs: 120_000,
+  pollMs: 250,
+};
+
 export class LockManager {
   private readonly lockPath: string;
   private readonly dirtyPath: string;
@@ -89,6 +99,25 @@ export class LockManager {
       const tmp = `${this.lockPath}.${process.pid}.${Date.now()}.tmp`;
       fs.writeFileSync(tmp, `${process.pid}:${Date.now()}`);
       fs.renameSync(tmp, this.lockPath);
+    }
+  }
+
+  /**
+   * Like acquire(), but waits while another live process holds the lock, up to `timeoutMs`.
+   * Only that refusal is retried; any other error is rethrown at once. Async, so a long-lived
+   * process (the MCP server) keeps serving while it waits.
+   */
+  async acquireWait(timeoutMs: number = lockWaitTiming.waitMs): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      try {
+        this.acquire();
+        return;
+      } catch (e: any) {
+        const heldByOther = typeof e?.message === 'string' && e.message.startsWith('KiroGraph is locked by PID');
+        if (!heldByOther || Date.now() >= deadline) throw e;
+      }
+      await new Promise(resolve => setTimeout(resolve, lockWaitTiming.pollMs));
     }
   }
 
