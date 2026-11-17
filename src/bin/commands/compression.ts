@@ -76,7 +76,7 @@ export function register(program: Command): void {
       // Regenerate hooks if hooks dir exists
       const hooksDir = path.join(kiroDir, 'hooks');
       if (fs.existsSync(hooksDir)) {
-        writeHooks(kiroDir, { enableCompression });
+        writeHooks(kiroDir, { enableCompression, restore: enableCompression ? ['kirograph-compress-hint'] : [] });
       }
 
       console.log();
