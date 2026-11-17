@@ -18,6 +18,12 @@ export interface KiroGraphConfig {
   include: string[];
   exclude: string[];
   maxFileSize: number;
+  /**
+   * The MCP server watches the project and syncs the files that change, a moment after the last
+   * save. For integrations without IDE hooks (Kiro's hooks already sync). KIROGRAPH_WATCH=1 turns
+   * it on for one run. Default: false.
+   */
+  watch: boolean;
   extractDocstrings: boolean;
   trackCallSites: boolean;
   // Parity fields:
@@ -288,7 +294,7 @@ const KIROGRAPH_DIR = '.kirograph';
 const CONFIG_FILE = 'config.json';
 
 const KNOWN_FIELDS = new Set<string>([
-  'version', 'languages', 'include', 'exclude', 'maxFileSize',
+  'version', 'languages', 'include', 'exclude', 'maxFileSize', 'watch',
   'extractDocstrings', 'trackCallSites', 'enableEmbeddings', 'embeddingModel', 'embeddingDim',
   'useVecIndex', 'semanticEngine', 'turboquantMemDocs', 'turboquantBits', 'turbovecMemDocs', 'turbovecBits', 'typesenseDashboard', 'qdrantDashboard',
   'minLogLevel', 'frameworkHints', 'fuzzyResolutionThreshold',
@@ -353,6 +359,7 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
       '**/public/build/**', '**/Resources/Public/**',
     ],
     maxFileSize: 1_048_576,
+    watch: false,
     extractDocstrings: false,
     trackCallSites: false,
     enableEmbeddings: false,
@@ -847,6 +854,7 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     include,
     exclude,
     maxFileSize,
+    watch: typeof raw.watch === 'boolean' ? raw.watch : defaults.watch,
     extractDocstrings,
     trackCallSites,
     enableEmbeddings,
