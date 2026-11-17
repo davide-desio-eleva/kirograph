@@ -12,6 +12,7 @@
  * reported once (see rustEngineFallback).
  */
 
+import * as fs from 'fs';
 import * as path from 'path';
 import { requireEngine } from '../shared/engines';
 import { logWarn } from '../errors';
@@ -98,8 +99,16 @@ export function effectiveEngine(config: KiroGraphConfig): 'node' | 'rust' {
 export function loadRustEngine(): RustEngine | null {
   if (loaded !== undefined) return loaded;
   try {
-    const mod = requireEngine('kirograph-rust');
-    if (typeof mod?.indexFiles !== 'function' || typeof mod?.resolveReferences !== 'function') {
+    // A source checkout's own build first (development), then the installed package
+    const isEngine = (m: any) => typeof m?.indexFiles === 'function' && typeof m?.resolveReferences === 'function';
+    let mod: any = null;
+    const checkout = path.join(__dirname, '..', '..', 'native', 'kirograph-rust');
+    if (fs.existsSync(path.join(checkout, 'index.js'))) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      try { mod = require(checkout); } catch { mod = null; }
+    }
+    if (!isEngine(mod)) mod = requireEngine('kirograph-rust');
+    if (!isEngine(mod)) {
       throw new Error('kirograph-rust has no native binary for this platform (build it: cd native/kirograph-rust && npm run build)');
     }
     loaded = mod as RustEngine;

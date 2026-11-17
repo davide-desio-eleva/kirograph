@@ -19,6 +19,15 @@ npm run build        # fetches the grammar sources, then builds the .node for th
 
 Requires the Rust toolchain. `scripts/fetch-grammars.mjs` downloads the grammars listed in `grammars.json` from npm into `grammars/` (not committed): the versions are those the WASM grammars in `tree-sitter-wasms` were built from, so both engines parse every file into the same tree.
 
+## Release
+
+`npm run release` (scripts/release.sh) builds and publishes this package with kirograph, at the same version, from the release machine only:
+
+- `scripts/build-release.sh <version>` builds macOS arm64 and x64 natively, and Linux x64/arm64 (glibc 2.31) and Windows x64 in the Docker image of `release/Dockerfile`; loads and runs the Linux binaries in `node:22-bullseye-slim` containers and checks the format of the others; and lays out the packages in `npm/`: `kirograph-rust-<platform>` with one binary each, and `kirograph-rust`, which lists them as optional dependencies.
+- the release publishes the platform packages, then `kirograph-rust`, then `kirograph`, which depends on `kirograph-rust` at its own version (`npm version` keeps them in step through `scripts/sync-native-version.mjs`).
+
+`index.js` loads a binary built in this folder first (development), then the installed platform package.
+
 ## Keeping the engines in step
 
 The extractor and resolver are line-by-line ports. A change to `extractor.ts`, `routes.ts`, `resolution/index.ts` or to what `database.ts` writes needs the same change here. The parity tests catch a difference:

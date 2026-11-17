@@ -2,3 +2,4 @@ target/
 grammars/
 node_modules/
 *.node
+npm/

@@ -54,6 +54,10 @@ fn main() {
 fn compile(lang: &str, src: &Path) {
     let mut c = cc::Build::new();
     c.include(src).std("c11").warnings(false).flag_if_supported("-w").opt_level(2);
+    // The MSVC headers define static_assert for C++ only; some scanners use it in C
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        c.define("static_assert", "_Static_assert");
+    }
     c.file(src.join("parser.c"));
     let scanner_c = src.join("scanner.c");
     if scanner_c.exists() {

@@ -56,6 +56,7 @@
     "test:integration:mcp": "bash test/agent/mcp.sh --no-build && bash test/architecture/mcp.sh --no-build && bash test/branch/mcp.sh --no-build && bash test/data/mcp.sh --no-build && bash test/edit/mcp.sh --no-build && bash test/git/mcp.sh --no-build && bash test/graph/mcp.sh --no-build && bash test/health/mcp.sh --no-build && bash test/insights/mcp.sh --no-build && bash test/mem/mcp.sh --no-build && bash test/patterns/mcp.sh --no-build && bash test/security/mcp.sh --no-build && bash test/turboquant/mcp.sh --no-build && bash test/turbovec/mcp.sh --no-build --skip-native && bash test/watchmen/mcp.sh --no-build --skip-llm && bash test/wiki/mcp.sh --no-build --skip-llm",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "release": "./scripts/release.sh",
+    "version": "node scripts/sync-native-version.mjs && git add package.json native/kirograph-rust/package.json",
     "docs": "npx serve docs"
   },
   "keywords": [
@@ -102,7 +103,7 @@
     "@orama/plugin-data-persistence": "^3.1.18",
     "@qdrant/qdrant-js": "^1.17.0",
     "better-sqlite3": ">=11.10.0 <14",
-    "kirograph-rust": "file:native/kirograph-rust",
+    "kirograph-rust": "1.5.1",
     "qdrant-local": "^0.0.0-alpha.10",
     "sqlite-vec": "^0.1.9",
     "turboquant-js": "^0.2.0",

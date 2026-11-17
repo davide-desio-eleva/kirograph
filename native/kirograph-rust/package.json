@@ -1,6 +1,6 @@
 {
   "name": "kirograph-rust",
-  "version": "0.1.0",
+  "version": "1.5.1",
   "description": "Native indexing engine for KiroGraph (engine: \"rust\")",
   "main": "index.js",
   "types": "index.d.ts",
@@ -19,7 +19,11 @@
     "build": "node scripts/fetch-grammars.mjs && napi build --platform --release --no-js --dts target/napi.d.ts",
     "build:debug": "node scripts/fetch-grammars.mjs && napi build --platform --no-js --dts target/napi.d.ts"
   },
-  "files": ["index.js", "index.d.ts", "*.node"],
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node"
+  ],
   "license": "MIT",
   "devDependencies": {
     "@napi-rs/cli": "^3"

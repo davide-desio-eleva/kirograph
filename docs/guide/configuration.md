@@ -131,12 +131,13 @@ Everything else (scanning, frameworks, embeddings, architecture, security, docs,
 { "engine": "rust" }
 ```
 
+The native module comes with KiroGraph: npm installs the prebuilt binary for your platform (`kirograph-rust-<platform>`, an optional dependency) for macOS (arm64, x64), Linux with glibc 2.31 or newer (x64, arm64) and Windows (x64). Nothing to build, no Rust toolchain needed. From a source checkout, or on another platform, build it:
+
 ```bash
-# Build the native module once (requires the Rust toolchain: https://rustup.rs)
-cd native/kirograph-rust && npm install && npm run build
+cd native/kirograph-rust && npm install && npm run build   # requires https://rustup.rs
 ```
 
-`kirograph install` asks for the engine and builds the module when `rust` is chosen. When the module is missing or does not load, KiroGraph uses `node` and says so (`kirograph status`, and a warning after `index` and `sync`).
+`kirograph install` asks for the engine. When the module is missing or does not load, KiroGraph uses `node` and says so (`kirograph status`, and a warning after `index` and `sync`).
 
 **Same graph.** The native engine compiles the same grammar versions as the WASM files and parses as UTF-16, as web-tree-sitter does, so even files with syntax errors produce the same tree. Its extractor and resolver are ports of the TypeScript ones. Languages it has no extractor for (YAML, HCL, JSON, shell, notebooks, Swift, Svelte, ReScript and the other WASM-only grammars) are extracted by the TypeScript engine and handed to it, so every file is still written in order and rows get the same ids. `test/rust/` compares both engines file by file, table by table and after a sync.
 

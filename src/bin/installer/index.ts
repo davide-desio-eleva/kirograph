@@ -137,6 +137,26 @@ function _installNativeAddon(addon: NativeAddon): void {
   }
 }
 
+/**
+ * The native engine for `"engine": "rust"`. An npm install brings the prebuilt binary of this
+ * platform (kirograph-rust-<platform>); a source checkout builds it.
+ */
+function _ensureRustEngine(): void {
+  const { loadRustEngine, _resetRustEngine } = require('../../core/rust-engine') as typeof import('../../core/rust-engine');
+  if (loadRustEngine()) {
+    console.log(`  ✓ Native engine available (kirograph-rust)`);
+    return;
+  }
+  const checkout = path.join(__dirname, '..', '..', '..', 'native', RUST_ENGINE_ADDON.dir);
+  if (fs.existsSync(checkout)) {
+    _installNativeAddon(RUST_ENGINE_ADDON);
+    _resetRustEngine();
+    if (loadRustEngine()) return;
+  }
+  console.warn(`  ⚠ No native engine for ${process.platform}-${process.arch}: index and sync use the node engine.`);
+  console.warn(`    Prebuilt binaries cover macOS (arm64, x64), Linux glibc (x64, arm64) and Windows x64.`);
+}
+
 export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?: boolean } = {}): Promise<void> {
   printBanner();
 
@@ -242,7 +262,7 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
           _installNativeAddon(TURBOVEC_ADDON);
         }
         console.log(`  • engine: ${config.engine}`);
-        if (config.engine === 'rust') _installNativeAddon(RUST_ENGINE_ADDON);
+        if (config.engine === 'rust') _ensureRustEngine();
         console.log(`  • enableArchitecture: ${config.enableArchitecture}`);
         console.log(`  • cavemanMode: ${cavemanMode}`);
         console.log(`  • shellCompressionLevel: ${shellCompressionLevel}`);
@@ -365,7 +385,7 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
           }
         }
         console.log(`  • engine: ${patch.engine}`);
-        if (patch.engine === 'rust') _installNativeAddon(RUST_ENGINE_ADDON);
+        if (patch.engine === 'rust') _ensureRustEngine();
         console.log(`  • extractDocstrings: ${patch.extractDocstrings}`);
         console.log(`  • trackCallSites: ${patch.trackCallSites}`);
         console.log(`  • enableArchitecture: ${patch.enableArchitecture}`);

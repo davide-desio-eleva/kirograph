@@ -18,11 +18,18 @@ set -euo pipefail
 #   6. Creates a GitHub release with the changelog notes (requires `gh` CLI)
 #   7. Publishes to npm (requires `npm` login)
 #
+# The native engine (kirograph-rust) is built here too, for macOS (arm64, x64), Linux (x64,
+# arm64) and Windows (x64), and published before kirograph: one package per platform plus
+# kirograph-rust, all at the version of kirograph. Nothing runs anywhere but on this machine.
+#
 # Prerequisites:
 #   - gh CLI installed and authenticated (https://cli.github.com)
 #   - npm login done (`npm whoami` should return your username)
 #   - Clean working tree (no uncommitted changes)
 #   - All changes committed and pushed to main
+#   - macOS with the Rust toolchain (https://rustup.rs) and Docker running
+#   - native/kirograph-rust at the same version (`npm version` does it, or
+#     `node scripts/sync-native-version.mjs`)
 # ─────────────────────────────────────────────────────────────────────────────
 
 RED='\033[0;31m'
@@ -82,6 +89,19 @@ if [ "$BRANCH" != "main" ]; then
   fi
 fi
 
+# The native engine is released with kirograph, at the same version
+if ! node scripts/sync-native-version.mjs --check; then
+  error "Version mismatch with native/kirograph-rust (see above)"
+fi
+command -v cargo &> /dev/null || export PATH="$HOME/.cargo/bin:$PATH"
+if ! command -v cargo &> /dev/null; then
+  error "Rust toolchain not found (needed to build the native engine): https://rustup.rs"
+fi
+if ! docker info &> /dev/null; then
+  error "Docker is not running (needed to build the native engine for Linux and Windows)"
+fi
+info "Rust toolchain and Docker available"
+
 # Check tag doesn't already exist
 TAG_EXISTS=false
 if git rev-parse "$TAG" &> /dev/null 2>&1; then
@@ -119,6 +139,15 @@ step "Building"
 npm run build
 info "Build complete"
 
+step "Building the native engine for every platform"
+
+NATIVE_DIR="$ROOT/native/kirograph-rust"
+"$NATIVE_DIR/scripts/build-release.sh" "$VERSION"
+NATIVE_PACKAGES=()
+for dir in "$NATIVE_DIR"/npm/kirograph-rust-*; do NATIVE_PACKAGES+=("$dir"); done
+NATIVE_PACKAGES+=("$NATIVE_DIR/npm/kirograph-rust")  # after its platform packages
+info "Native engine built: ${#NATIVE_PACKAGES[@]} packages"
+
 # ── Create and push tag ──────────────────────────────────────────────────────
 if [ "$TAG_EXISTS" = true ]; then
   info "Tag $TAG already exists — skipping creation"
@@ -149,6 +178,9 @@ else
     --latest
   info "GitHub release created: $TAG"
 fi
+# The binaries are attached too, for anyone who wants one without npm
+gh release upload "$TAG" "$NATIVE_DIR"/target/release-bin/*.node --clobber > /dev/null
+info "Native binaries attached to the release"
 
 # ── Publish to npm ───────────────────────────────────────────────────────────
 if [ "$NPM_SKIP" = true ]; then
@@ -156,10 +188,24 @@ if [ "$NPM_SKIP" = true ]; then
 else
   step "Publishing to npm"
 
+  for dir in "${NATIVE_PACKAGES[@]}"; do
+    echo -e "  ${DIM}Package: $(basename "$dir")@${VERSION}${RESET}"
+  done
   echo -e "  ${DIM}Package: kirograph@${VERSION}${RESET}"
   echo -e "  ${YELLOW}Publish to npm? [y/N]${RESET}"
   read -r CONFIRM
   if [ "$CONFIRM" = "y" ] || [ "$CONFIRM" = "Y" ]; then
+    # The native packages first: kirograph depends on kirograph-rust, which depends on them.
+    # A package already at this version (a release run again) is left as it is.
+    for dir in "${NATIVE_PACKAGES[@]}"; do
+      name=$(basename "$dir")
+      if npm view "${name}@${VERSION}" version &> /dev/null; then
+        info "${name}@${VERSION} already on npm — skipping"
+      else
+        (cd "$dir" && npm publish --access public)
+        info "Published ${name}@${VERSION}"
+      fi
+    done
     npm publish --access public
     info "Published kirograph@${VERSION} to npm"
   else
