@@ -50,6 +50,8 @@ export interface ExtractedFile {
   edges: Edge[];
   unresolvedRefs: UnresolvedRef[];
   routeMounts?: RouteMountFact[];
+  /** The WASM parser crashed on this file: it is recorded without symbols, and retried once. */
+  parseFailed?: boolean;
 }
 
 export function makeNodeId(filePath: string, kind: string, name: string, line: number): string {
@@ -195,6 +197,7 @@ export async function extractFile(filePath: string, projectRoot: string, content
           nodes: [],
           edges: [],
           unresolvedRefs: [],
+          parseFailed: true,
         };
       }
       throw parseErr; // Re-throw non-WASM errors
