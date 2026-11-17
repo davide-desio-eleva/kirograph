@@ -154,6 +154,8 @@ export interface IndexResult {
   edgesCreated: number;
   errors: string[];
   duration: number;
+  /** Wall-clock milliseconds per phase (fingerprint, scan, read, extract, write, resolve...). */
+  timings?: Record<string, number>;
 }
 
 export interface SyncResult {

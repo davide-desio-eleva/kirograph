@@ -159,6 +159,14 @@ export class IndexPipeline {
     let filesIndexed = 0;
     let nodesCreated = 0;
     let edgesCreated = 0;
+    // Wall-clock time per phase, in milliseconds (IndexResult.timings)
+    const timings: Record<string, number> = { fingerprint: Date.now() - start };
+    let phaseStart = Date.now();
+    const endPhase = (name: string): void => {
+      const now = Date.now();
+      timings[name] = (timings[name] ?? 0) + now - phaseStart;
+      phaseStart = now;
+    };
 
     // Track languages whose WASM parser is currently poisoned (ABORT=true on the module).
     // Once a language's parser aborts, every subsequent parse call for that language
@@ -172,6 +180,7 @@ export class IndexPipeline {
     try {
       const files = await scanDirectory(this.projectRoot, this.config, opts?.signal);
       opts?.onProgress?.({ phase: 'scanning', current: files.length, total: files.length });
+      endPhase('scan');
 
       // Batch-read files in parallel
       const contentMap = new Map<string, Buffer>();
@@ -184,6 +193,7 @@ export class IndexPipeline {
       }
 
       const extractOpts = { enableComplexity: !!(this.config as any).enableComplexity, maxFileSize: this.config.maxFileSize };
+      endPhase('read');
 
       // Parsing runs on worker threads, a few files ahead of the loop that writes them. The loop
       // takes the results in file order, so the graph is the same as when parsing in-process.
@@ -210,6 +220,8 @@ export class IndexPipeline {
       };
 
       const batch = new WriteBatch(this.db);
+      // Time spent writing, within the parse-and-write loop (reported apart from parsing)
+      let writeMs = 0;
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         opts?.onProgress?.({ phase: 'parsing', current: i + 1, total: files.length, currentFile: file });
@@ -246,6 +258,7 @@ export class IndexPipeline {
           await this.deleteEmbeddingsOfFile(extracted.filePath);
 
           // Written with the other files of its batch, in one transaction (see WriteBatch)
+          const writeStart = Date.now();
           batch.add(() => {
             this.db.deleteNodesByFile(extracted.filePath);
             this.db.deleteUnresolvedRefsByFile(extracted.filePath);
@@ -265,6 +278,7 @@ export class IndexPipeline {
           }, writeErr => {
             errors.push(`${file}: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`);
           }, extracted.nodes.length + extracted.edges.length + extracted.unresolvedRefs.length);
+          writeMs += Date.now() - writeStart;
           // Reset crash count on successful parse for this language
           crashCounts.set(lang, 0);
         } catch (err) {
@@ -302,7 +316,12 @@ export class IndexPipeline {
         }
       }
 
+      const flushStart = Date.now();
       batch.flush();
+      writeMs += Date.now() - flushStart;
+      endPhase('extract');
+      timings.extract -= writeMs;
+      timings.write = writeMs;
       // Parsing is over: release the workers before resolution and embeddings, which need the memory
       await pool?.close();
       pool = null;
@@ -346,11 +365,14 @@ export class IndexPipeline {
         }
       }
 
+      endPhase('retry');
+
       // Resolve cross-file references
       opts?.onProgress?.({ phase: 'resolving', current: 0, total: 1 });
       await this.resolver.resolveAll((current, total) => {
         opts?.onProgress?.({ phase: 'resolving', current, total });
       });
+      endPhase('resolve');
 
       // Detect frameworks
       opts?.onProgress?.({ phase: 'detecting frameworks', current: 0, total: 1 });
@@ -360,9 +382,11 @@ export class IndexPipeline {
         phase: 'detecting frameworks', current: 1, total: 1,
         meta: { frameworks: detectedFrameworks.map(f => f.name), languages },
       });
+      endPhase('frameworks');
 
       // Generate embeddings (if enabled)
       await this.embedPending(true, opts?.onProgress);
+      endPhase('embeddings');
 
       // Analyze architecture (if enabled, or auto-enabled for security)
       if (this.config.enableArchitecture || this.config.enableSecurity) {
@@ -460,7 +484,8 @@ export class IndexPipeline {
         if (fingerprint) writeSyncState(this.projectRoot, fingerprint);
         writeGitHeads(this.projectRoot, heads);
       }
-      return { success: errors.length === 0, filesIndexed, nodesCreated, edgesCreated, errors, duration: Date.now() - start };
+      endPhase('other');
+      return { success: errors.length === 0, filesIndexed, nodesCreated, edgesCreated, errors, duration: Date.now() - start, timings };
     } finally {
       await pool?.close();
       try { this.db.getRawDb().run('PRAGMA synchronous=NORMAL'); } catch { /* the database is closed or gone */ }
