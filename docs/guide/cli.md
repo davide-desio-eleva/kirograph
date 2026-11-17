@@ -47,7 +47,7 @@ A sync with nothing to do answers in about 0.1 s from a fingerprint of the works
 
 ```bash
 kirograph status [path]           # Show index stats (files, symbols, edges, frameworks)
-kirograph unlock [path]           # Release a lock left by a dead process (not one a running process holds)
+kirograph unlock [path]           # Release a sync lock left by a dead process (and the database lock of KiroGraph 1.5)
 kirograph unlock --force [path]   # Release it even while another process looks alive
 ```
 

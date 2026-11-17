@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased 1.6.0]
+
+### ⚠️ Breaking
+
+- **Node.js 22.16 or later is required** ([#88](https://github.com/davide-desio-eleva/kirograph/issues/88)): the graph database now uses the SQLite built into Node.js (`node:sqlite`), which has full-text search (FTS5) from 22.16. On an older Node.js every command stops at once with a message saying so (`nvm install 22`).
+- **The database switches to WAL on first open** ([#88](https://github.com/davide-desio-eleva/kirograph/issues/88)): stop every KiroGraph 1.5 process using the project (the IDE or MCP server that runs it, any running sync) before upgrading. 1.6 refuses to open a database that a live 1.5 process still uses, and says so. A database opened by 1.6 cannot be opened by 1.5 again: to go back, delete `.kirograph/kirograph.db*` and index again.
+
+### Changed
+
+- **Real SQLite locking instead of the WASM driver** ([#88](https://github.com/davide-desio-eleva/kirograph/issues/88)): node-sqlite3-wasm locked the database by creating a directory, for reads too, so a running sync blocked every MCP query, and a process killed mid-write left a lock and a journal behind. With `node:sqlite` in WAL mode readers never wait for the writer, a second writer waits for the first, and a killed process leaves nothing to clean: the next open replays the WAL. The `kirograph.db.lock` directory, the `db-writers/` markers and the journal replay are gone; `kirograph unlock` still removes those left by 1.5. One dependency less (`node-sqlite3-wasm`). Writes and reads are faster too: on django (Node 22.16), a full index went from 19.8 s to 14.2 s, a sync of 20 changed files from 8.7 s to 5.6 s, and 200 searches from 5.0 s to 3.0 s; the graph is identical (same nodes, edges and references on django and fastify).
+
 ## [1.5.4] - 2026-11-17: a sync keeps the graph a full index gives, faster syncs and indexes, and a notice when a file changed after the last sync
 
 ### Fixed

@@ -2,204 +2,133 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { spawn, spawnSync } from 'child_process';
+import { spawn, spawnSync, ChildProcess } from 'child_process';
 import { GraphDatabase } from '../../src/db/database';
-import { clearStaleDbLock, dbLockTiming } from '../../src/db/db-lock';
-
-const WASM_DRIVER = path.resolve(__dirname, '../../node_modules/node-sqlite3-wasm');
+import { Database } from '../../src/db/sqlite';
 
 const FILE = { path: 'a.ts', contentHash: 'h', language: 'typescript', fileSize: 1, symbolCount: 0, indexedAt: 1 };
 
 let root: string;
 const dbDir = () => path.join(root, '.kirograph');
+const dbPath = () => path.join(dbDir(), 'kirograph.db');
 const lockPath = () => path.join(dbDir(), 'kirograph.db.lock');
 const writersDir = () => path.join(dbDir(), 'db-writers');
-const agedSeconds = (sec: number) => {
-  const t = (Date.now() - sec * 1000) / 1000;
-  return t;
-};
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'kg-dblock-'));
   fs.mkdirSync(dbDir(), { recursive: true });
-  dbLockTiming.staleAfterMs = 5_000;
 });
 
 afterEach(() => {
-  dbLockTiming.staleAfterMs = 5_000;
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-describe('database lock recovery', () => {
-  it('removes a lock directory left by a process that exited', () => {
-    fs.mkdirSync(lockPath());
-    fs.utimesSync(lockPath(), agedSeconds(60), agedSeconds(60));
+/** Another process that opens the database, starts a write transaction and holds it for `holdMs`. */
+function writer(holdMs: number): { child: ChildProcess; locked: Promise<void>; exited: Promise<void> } {
+  const child = spawn(process.execPath, ['--no-warnings', '-e', `
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(process.argv[1]);
+    db.exec('PRAGMA busy_timeout=5000');
+    db.exec('BEGIN IMMEDIATE');
+    db.exec("INSERT INTO files (path, content_hash, language, file_size, symbol_count, indexed_at) VALUES ('held', 'h', 'x', 0, 0, 0)");
+    console.log('locked');
+    setTimeout(() => { db.exec('COMMIT'); db.close(); }, ${holdMs});
+  `, dbPath()]);
+  const exited = new Promise<void>(resolve => child.on('exit', () => resolve()));
+  const locked = new Promise<void>((resolve, reject) => {
+    child.stdout!.on('data', (d: Buffer) => { if (String(d).includes('locked')) resolve(); });
+    child.on('error', reject);
+    child.on('exit', code => reject(new Error(`writer exited (${code})`)));
+  });
+  return { child, locked, exited };
+}
 
+describe('database locking (node:sqlite, WAL)', () => {
+  it('opens the database in WAL mode', () => {
     const db = new GraphDatabase(root);
-    expect(fs.existsSync(lockPath())).toBe(false);
+    db.close();
+    const raw = new Database(dbPath(), { readOnly: true });
+    expect(raw.get('PRAGMA journal_mode').journal_mode).toBe('wal');
+    raw.close();
+  });
+
+  it('reads while another process holds a write transaction', async () => {
+    const db = new GraphDatabase(root);
+    db.transaction(() => db.upsertFile(FILE));
+
+    const w = writer(1_500);
+    await w.locked;
+    const started = Date.now();
+    expect(db.getFile('a.ts')).not.toBeNull();
+    // The reader sees the last commit, not the writer's open transaction, and does not wait for it
+    expect(db.getFile('held')).toBeNull();
+    expect(Date.now() - started).toBeLessThan(500);
+
+    await w.exited;
+    expect(db.getFile('held')).not.toBeNull();
     db.close();
   });
 
-  it('does not remove a lock while a live process holds it', () => {
-    fs.mkdirSync(lockPath());
-    fs.utimesSync(lockPath(), agedSeconds(60), agedSeconds(60));
-    fs.mkdirSync(writersDir());
-    // process.ppid is alive for the whole test run: it stands for a live writer
-    fs.writeFileSync(path.join(writersDir(), String(process.ppid)), String(Date.now()));
-
-    expect(clearStaleDbLock(dbDir(), lockPath())).toBe(false);
-    expect(fs.existsSync(lockPath())).toBe(true);
-  });
-
-  it('waits for a live writer to release the lock, then writes', async () => {
-    // Set up the database file first, so the child only holds the lock
+  it('waits for a busy writer, then writes', async () => {
     const db = new GraphDatabase(root);
-
-    const holder = spawn(process.execPath, ['-e', `
-      const { Database } = require(process.argv[1]);
-      const raw = new Database(process.argv[2]);
-      raw.exec('BEGIN IMMEDIATE');
-      raw.exec("INSERT INTO files (path, content_hash, language, file_size, symbol_count, indexed_at) VALUES ('held', 'h', 'x', 0, 0, 0)");
-      console.log('locked');
-      setTimeout(() => { raw.exec('COMMIT'); raw.close(); }, 400);
-    `, WASM_DRIVER, path.join(dbDir(), 'kirograph.db')]);
-    await new Promise<void>((resolve, reject) => {
-      holder.stdout.on('data', (d: Buffer) => { if (String(d).includes('locked')) resolve(); });
-      holder.on('error', reject);
-    });
+    const w = writer(400);
+    await w.locked;
 
     const started = Date.now();
     db.transaction(() => db.upsertFile(FILE));
-    // the holder keeps the lock for 400 ms: the write must have waited for it
     expect(Date.now() - started).toBeGreaterThanOrEqual(300);
     expect(db.getFile('a.ts')).not.toBeNull();
+    expect(db.getFile('held')).not.toBeNull();
 
-    await new Promise<void>(resolve => holder.on('exit', () => resolve()));
+    await w.exited;
     db.close();
   });
 
-  it('opens after a live writer releases a lock held for longer than 8 seconds', async () => {
-    const holder = spawn(process.execPath, ['-e', `
-      const { Database } = require(process.argv[1]);
-      const raw = new Database(process.argv[2]);
-      raw.exec('CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, content_hash TEXT, language TEXT, file_size INTEGER, symbol_count INTEGER, indexed_at INTEGER)');
-      raw.exec('BEGIN IMMEDIATE');
-      console.log('locked');
-      setTimeout(() => { raw.exec('COMMIT'); raw.close(); }, 9000);
-    `, WASM_DRIVER, path.join(dbDir(), 'kirograph.db')]);
-    await new Promise<void>((resolve, reject) => {
-      holder.stdout.on('data', (d: Buffer) => { if (String(d).includes('locked')) resolve(); });
-      holder.on('error', reject);
-    });
-
-    const started = Date.now();
+  it('recovers after a writer is killed in the middle of a transaction', () => {
     const db = new GraphDatabase(root);
-    expect(Date.now() - started).toBeGreaterThanOrEqual(8000);
     db.transaction(() => db.upsertFile(FILE));
-    expect(db.getFile('a.ts')).not.toBeNull();
     db.close();
 
-    await new Promise<void>(resolve => holder.on('exit', () => resolve()));
-  }, 30_000);
-
-  it('recovers after a writer is killed while it holds the lock', () => {
     // A writer that dies mid-transaction, the way an IDE that kills a hook leaves it
-    const killed = spawnSync(process.execPath, ['-e', `
-      const { Database } = require(process.argv[1]);
-      const raw = new Database(process.argv[2]);
-      raw.exec('CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, content_hash TEXT, language TEXT, file_size INTEGER, symbol_count INTEGER, indexed_at INTEGER)');
-      raw.exec('BEGIN IMMEDIATE');
-      raw.exec("INSERT INTO files (path, content_hash, language, file_size, symbol_count, indexed_at) VALUES ('x', 'h', 'x', 0, 0, 0)");
+    const killed = spawnSync(process.execPath, ['--no-warnings', '-e', `
+      const { DatabaseSync } = require('node:sqlite');
+      const db = new DatabaseSync(process.argv[1]);
+      db.exec('BEGIN IMMEDIATE');
+      db.exec("INSERT INTO files (path, content_hash, language, file_size, symbol_count, indexed_at) VALUES ('lost', 'h', 'x', 0, 0, 0)");
       process.kill(process.pid, 'SIGKILL');
-    `, WASM_DRIVER, path.join(dbDir(), 'kirograph.db')]);
+    `, dbPath()]);
     expect(killed.signal).toBe('SIGKILL');
-    expect(fs.existsSync(lockPath())).toBe(true);
-    fs.utimesSync(lockPath(), agedSeconds(60), agedSeconds(60));
 
-    const db = new GraphDatabase(root);
-    db.transaction(() => db.upsertFile(FILE));
-    expect(db.getFile('a.ts')).not.toBeNull();
-    expect(fs.existsSync(lockPath())).toBe(false);
-    db.close();
-  });
-
-  it('leaves no writer marker behind after normal use', () => {
-    const db = new GraphDatabase(root);
-    db.transaction(() => db.upsertFile(FILE));
-    db.getFile('a.ts');
-    db.close();
-    expect(fs.readdirSync(writersDir())).toEqual([]);
+    const again = new GraphDatabase(root);
+    expect(again.getFile('a.ts')).not.toBeNull();
+    expect(again.getFile('lost')).toBeNull();
+    again.transaction(() => again.upsertFile({ ...FILE, path: 'b.ts' }));
+    expect(again.getFile('b.ts')).not.toBeNull();
+    again.close();
   });
 });
 
-describe('a lock that appears after the database was opened', () => {
-  // These need their own imports: the file above predates them
-  it('is cleared when the process that left it is gone, without waiting the full timeout', async () => {
-    const { GraphDatabase } = await import('../../src/db/database');
-    const fsx = await import('fs'); const pathx = await import('path'); const osx = await import('os');
-    const { dbLockTiming } = await import('../../src/db/db-lock');
-    const saved = { ...dbLockTiming };
-    dbLockTiming.busyMs = 200; dbLockTiming.maxWaitMs = 20_000;
-    const dir = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'kg-late-'));
-    const db = new GraphDatabase(dir);
-    try {
-      const lock = pathx.join(dir, '.kirograph', 'kirograph.db.lock');
-      fsx.mkdirSync(lock);
-      const old = new Date(Date.now() - 180_000);
-      fsx.utimesSync(lock, old, old); // left by a process that died a minute ago
-      const started = Date.now();
-      expect(db.getRawDb().get('SELECT count(*) AS c FROM files').c).toBe(0);
-      expect(Date.now() - started).toBeLessThan(5_000);
-      expect(fsx.existsSync(lock)).toBe(false);
-    } finally {
-      Object.assign(dbLockTiming, saved);
-      db.close(); fsx.rmSync(dir, { recursive: true, force: true });
-    }
+describe('leaving the database of KiroGraph 1.5', () => {
+  it('removes the lock directory and writer markers that 1.5 left behind', () => {
+    new GraphDatabase(root).close();
+    fs.mkdirSync(lockPath());
+    fs.mkdirSync(writersDir());
+    fs.writeFileSync(path.join(writersDir(), '2147483000'), String(Date.now())); // a process that is gone
+
+    const db = new GraphDatabase(root);
+    expect(fs.existsSync(lockPath())).toBe(false);
+    expect(fs.existsSync(writersDir())).toBe(false);
+    db.close();
   });
 
-  it('is waited for while a live process holds it, and then reported', async () => {
-    const { GraphDatabase } = await import('../../src/db/database');
-    const fsx = await import('fs'); const pathx = await import('path'); const osx = await import('os');
-    const { dbLockTiming } = await import('../../src/db/db-lock');
-    const saved = { ...dbLockTiming };
-    dbLockTiming.busyMs = 200; dbLockTiming.maxWaitMs = 1_000;
-    const dir = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'kg-late-'));
-    const db = new GraphDatabase(dir);
-    try {
-      const kg = pathx.join(dir, '.kirograph');
-      fsx.mkdirSync(pathx.join(kg, 'kirograph.db.lock'));
-      fsx.mkdirSync(pathx.join(kg, 'db-writers'), { recursive: true });
-      fsx.writeFileSync(pathx.join(kg, 'db-writers', String(process.ppid)), String(Date.now())); // a live writer
-      const old = new Date(Date.now() - 180_000);
-      fsx.utimesSync(pathx.join(kg, 'kirograph.db.lock'), old, old);
-      expect(() => db.getRawDb().get('SELECT count(*) AS c FROM files')).toThrow(/locked/i);
-      expect(fsx.existsSync(pathx.join(kg, 'kirograph.db.lock'))).toBe(true); // not taken from a live holder
-    } finally {
-      Object.assign(dbLockTiming, saved);
-      fsx.rmSync(pathx.join(dir, '.kirograph', 'kirograph.db.lock'), { recursive: true, force: true });
-      db.close(); fsx.rmSync(dir, { recursive: true, force: true });
-    }
-  });
+  it('refuses to open while a 1.5 process still uses the database', () => {
+    new GraphDatabase(root).close();
+    fs.mkdirSync(lockPath());
+    fs.mkdirSync(writersDir());
+    // process.ppid is alive for the whole test run: it stands for a running 1.5 MCP server
+    fs.writeFileSync(path.join(writersDir(), String(process.ppid)), String(Date.now()));
 
-  it('asks for a restart when the dead process left a journal, which this connection cannot replay', async () => {
-    const { GraphDatabase } = await import('../../src/db/database');
-    const fsx = await import('fs'); const pathx = await import('path'); const osx = await import('os');
-    const { dbLockTiming } = await import('../../src/db/db-lock');
-    const saved = { ...dbLockTiming };
-    dbLockTiming.busyMs = 200; dbLockTiming.maxWaitMs = 20_000;
-    const dir = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'kg-late-'));
-    const db = new GraphDatabase(dir);
-    try {
-      const kg = pathx.join(dir, '.kirograph');
-      fsx.mkdirSync(pathx.join(kg, 'kirograph.db.lock'));
-      const old = new Date(Date.now() - 180_000);
-      fsx.utimesSync(pathx.join(kg, 'kirograph.db.lock'), old, old);
-      fsx.writeFileSync(pathx.join(kg, 'kirograph.db-journal'), 'half written');
-      expect(() => db.getRawDb().get('SELECT count(*) AS c FROM files')).toThrow(/Restart KiroGraph/);
-    } finally {
-      Object.assign(dbLockTiming, saved);
-      fsx.rmSync(pathx.join(dir, '.kirograph', 'kirograph.db-journal'), { force: true });
-      db.close(); fsx.rmSync(dir, { recursive: true, force: true });
-    }
+    expect(() => new GraphDatabase(root)).toThrow(/1\.5 or older is still using/);
+    expect(fs.existsSync(lockPath())).toBe(true);
   });
 });

@@ -190,7 +190,7 @@ Hooks sync when the agent stops, so between an edit and the next sync the graph 
 
 - **A notice on stale files.** When a tool response names a file that changed (or was deleted) after the graph last read it, the response starts with a `⚠️` notice naming the file and asking the agent to read it directly. The check costs one `stat` per file named, compared with what the index recorded.
 - **Catch-up at start.** When the MCP server opens a project that changed while no server was running (a `git pull` from a terminal, another editor), it syncs first. The first tool call waits for it for up to 5 seconds.
-- **Watch (opt-in).** With `"watch": true` in `.kirograph/config.json` (or `KIROGRAPH_WATCH=1`), the MCP server watches the project and syncs the changed files 2 seconds after the last change (`KIROGRAPH_WATCH_DEBOUNCE_MS`, 100 ms to 60 s). Useful for tools without hooks. With Kiro the hooks already sync. On Linux it needs Node 20 or later.
+- **Watch (opt-in).** With `"watch": true` in `.kirograph/config.json` (or `KIROGRAPH_WATCH=1`), the MCP server watches the project and syncs the changed files 2 seconds after the last change (`KIROGRAPH_WATCH_DEBOUNCE_MS`, 100 ms to 60 s). Useful for tools without hooks. With Kiro the hooks already sync.
 
 ### Multiple Targets
 

@@ -1,9 +1,7 @@
 // ── Global error handler for WASM runtime crashes ─────────────────────────────
 //
-// node-sqlite3-wasm calls process.abort() when it hits a fatal error (e.g.
-// database is locked by another process). This produces a raw "Aborted()"
-// message with no context. We intercept it here to print a clear explanation
-// before the process exits.
+// A WASM runtime (the tree-sitter parsers) can abort with a raw "Aborted()" or a RuntimeError
+// and no context. We intercept it here to print a clear explanation before the process exits.
 export function installCrashHandler(): void {
   process.on('uncaughtException', (err: Error) => {
     const msg = err?.message ?? String(err);
@@ -12,19 +10,11 @@ export function installCrashHandler(): void {
     if (isWasmAbort) {
       process.stderr.write([
         '',
-        '  ✖ KiroGraph crashed: SQLite WASM runtime aborted.',
+        '  ✖ KiroGraph crashed: a WASM runtime (a tree-sitter parser) aborted.',
         '',
-        '  Most likely cause: another process (e.g. the Kiro MCP server) is',
-        '  holding the database open while indexing is running.',
-        '',
-        '  How to fix:',
-        '    1. Close Kiro IDE (or disable the kirograph MCP server) before indexing',
-        '    2. Run: kirograph unlock',
-        '    3. Then retry: kirograph index',
-        '',
-        '  If the problem persists, delete the lock manually:',
-        '    del .kirograph\\kirograph.db.lock  (Windows)',
-        '    rm -rf .kirograph/kirograph.db.lock  (macOS/Linux)',
+        '  The graph is not damaged: the database is written in transactions.',
+        '  Run the command again; if it fails on the same file, report it with',
+        '  the output of: kirograph sync --errors',
         '',
       ].join('\n'));
       process.exit(1);
