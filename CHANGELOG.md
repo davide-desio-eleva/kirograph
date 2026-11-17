@@ -9,9 +9,22 @@
 
 ### Fixed
 
-- **SQL dumps no longer take tens of seconds to index**: the SQL grammar can take very long on data statements (48 s for a 540 KB `pg_dump` of a test fixture), and the extractor reads symbols only from `CREATE` statements. Data statements (`INSERT`, `UPDATE`, `DELETE`, `COPY` with its rows, `SELECT`…) are now blanked out before parsing, keeping lines and positions. On 2,544 SQL files from sqlc, laravel, kong, django and a Prisma project, extraction went from 58 s to 1 s with no symbol lost; 3 files gained tables the grammar's error recovery used to swallow. With this and the retry fix below, the 8-repository workspace indexes in 46 s instead of 157 s with `node`, and in 11 s with `rust`.
 - **A full index no longer parses files without symbols twice**: the retry pass meant to recover files the WASM parser crashed on re-parsed every file recorded without symbols, so SQL migrations, data YAML and similar files were parsed twice. Only the files whose parse crashed are retried now. A workspace of 8 repositories (10,781 files) indexes in 96 s instead of 157 s with the `node` engine.
 - **Writing a large project is no longer quadratic**: every file written first deletes its unresolved references by path, and `unresolved_refs` had no index on the path, so each delete read the whole table. With the TypeScript engine, parsing and writing a first index of django went from 53 s to 22 s. The index is created on the next open.
+
+## [1.5.3] - 2026-11-17: SQL tables, views and functions get their real names, and SQL dumps index in a fraction of a second
+
+### Fixed
+
+- **SQL symbols are read from the text of each `CREATE` statement** ([#84](https://github.com/davide-desio-eleva/kirograph/issues/84)): the bundled SQL grammar read the `IF` of `CREATE TABLE IF NOT EXISTS` as the table's name, so on projects whose migrations use that form most tables were called `IF`, and it gave no symbol at all for views, `OR REPLACE`, `TEMPORARY` tables, procedures, or quoted, backticked and bracketed names. `CREATE TABLE | VIEW | MATERIALIZED VIEW | FUNCTION | PROCEDURE` statements are now read directly, in any dialect, with schema-qualified and quoted names. Tables are classes; views, functions and procedures are functions, as before. On 2,544 SQL files from sqlc, laravel, kong, django and a Prisma project, no symbol was lost, 276 were found that were missing, and the end lines and signatures are no longer cut where the grammar gave up.
+- **SQL dumps no longer take tens of seconds to index**: the grammar took 48 s on a 540 KB `pg_dump`; extraction of those 2,544 files went from 54 s to 0.2 s.
+
+## [1.5.2] - 2026-11-17: `install` writes the hooks again after `.kiro/` is deleted
+
+### Fixed
+
+- **`kirograph install` wrote no hooks after `.kiro/` was deleted** ([#85](https://github.com/davide-desio-eleva/kirograph/issues/85)), a regression of 1.5.1: the installer took every hook it had recorded in `.kirograph/install-state.json` and could not find as deleted by you, so after a reset of `.kiro/` it wrote none, the sync hook included. When none of the recorded hooks is there, the install is now a new one and writes them all; a hook you delete while keeping the others stays deleted.
+
 ## [1.5.1] - 2026-11-17: status reports only files out of date, excluded files stay out of a sync, and `install` keeps your changes
 
 ### Upgrade notes

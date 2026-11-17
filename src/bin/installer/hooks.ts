@@ -219,7 +219,8 @@ export function detectHookFormat(kiroDir: string): KiroHookFormat {
  * Writes KiroGraph's hooks. A hook the last install wrote and the user deleted is not written
  * again (see install-state.ts); `restore` lists hooks to write anyway, for a command that turns
  * their feature on explicitly. Without a record of the last install, the compression hint is
- * taken as deleted when an earlier install is there without it.
+ * taken as deleted when an earlier install is there without it. When none of the recorded hooks
+ * is there (`.kiro/` was reset), the install is a new one.
  */
 export function writeHooks(kiroDir: string, opts?: { enableCompression?: boolean; enableMemory?: boolean; enableWatchmen?: boolean; watchmenSynthesisMode?: 'local' | 'agent'; enableWiki?: boolean; wikiSynthesisMode?: 'local' | 'agent'; wikiLintFrequency?: number; kiroHookFormat?: KiroHookFormat; restore?: string[] }): void {
   const hooksDir = path.join(kiroDir, 'hooks');
@@ -227,9 +228,13 @@ export function writeHooks(kiroDir: string, opts?: { enableCompression?: boolean
 
   const format = opts?.kiroHookFormat ?? 'v2';
   const state = readInstallState(kiroDir);
-  const previous = new Set(state?.hooks ?? []);
   const restore = new Set(opts?.restore ?? []);
   const isPresent = (id: string) => [V2_EXT, V1_EXT].some(ext => fs.existsSync(path.join(hooksDir, `${id}${ext}`)));
+  // None of the hooks the last install wrote is there: `.kiro/` was reset (or never had them), so
+  // this is a new install and every hook is written. Taking each one as deleted by the user left
+  // a reset project without any hook, the sync hook included.
+  const recorded = state?.hooks ?? [];
+  const previous = new Set(recorded.some(isPresent) ? recorded : []);
   const earlierInstall = !state && fs.readdirSync(hooksDir).some(f => f.startsWith('kirograph-'));
   const installed = new Set<string>();
   const keptRemoved: string[] = [];

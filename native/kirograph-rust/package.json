@@ -1,6 +1,6 @@
 {
   "name": "kirograph-rust",
-  "version": "1.5.1",
+  "version": "1.5.3",
   "description": "Native indexing engine for KiroGraph (engine: \"rust\")",
   "main": "index.js",
   "types": "index.d.ts",

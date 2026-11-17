@@ -136,3 +136,15 @@ describe('kirograph compression', () => {
     expect(hooks().filter(f => f.endsWith('.json'))).toEqual([]);
   });
 });
+
+describe('kirograph install after .kiro/ was deleted', () => {
+  it('writes every hook again', () => {
+    writeHooks(kiroDir, { enableCompression: true, enableMemory: true });
+    fs.rmSync(kiroDir, { recursive: true, force: true });
+    writeHooks(kiroDir, { enableCompression: true, enableMemory: true });
+    const hooks = fs.readdirSync(path.join(kiroDir, 'hooks'));
+    expect(hooks).toContain('kirograph-sync-if-dirty.json');
+    expect(hooks).toContain('kirograph-compress-hint.json');
+    expect(hooks).toContain('kirograph-mem-capture.json');
+  });
+});
