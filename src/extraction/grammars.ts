@@ -16,64 +16,15 @@ let parserInitPromise: Promise<void> | null = null;
 const loadedGrammars = new Map<Language, any>();
 let grammarLoadChain = Promise.resolve();
 
-// ── GRAMMAR_FILE_MAP ──────────────────────────────────────────────────────────
+// ── Grammar files ──────────────────────────────────────────────────────────────
 
 /**
- * Maps each Language to its WASM file name (without .wasm extension).
- * Empty string means no WASM is available for that language.
- * Pascal is bundled separately; all others come from tree-sitter-wasms.
+ * Languages parsed with a tree-sitter grammar that is not their own: JSX is JavaScript. Every
+ * other grammar is `wasm/tree-sitter-<language>.wasm`, built from the sources pinned in
+ * grammars/grammars.json (see scripts/grammars.mjs). A language without a file there (JSON,
+ * Liquid, Jupyter, Svelte) is read without a grammar.
  */
-export const GRAMMAR_FILE_MAP: Record<Language, string> = {
-  typescript: 'tree-sitter-typescript',
-  tsx: 'tree-sitter-tsx',
-  javascript: 'tree-sitter-javascript',
-  jsx: 'tree-sitter-javascript',
-  python: 'tree-sitter-python',
-  go: 'tree-sitter-go',
-  rust: 'tree-sitter-rust',
-  java: 'tree-sitter-java',
-  c: 'tree-sitter-c',
-  cpp: 'tree-sitter-cpp',
-  csharp: 'tree-sitter-c_sharp',
-  php: 'tree-sitter-php',
-  ruby: 'tree-sitter-ruby',
-  swift: 'tree-sitter-swift',
-  kotlin: 'tree-sitter-kotlin',
-  dart: 'tree-sitter-dart',
-  svelte: 'tree-sitter-svelte',
-  elixir: 'tree-sitter-elixir',
-  scala: 'tree-sitter-scala',
-  lua: 'tree-sitter-lua',
-  zig: 'tree-sitter-zig',
-  bash: 'tree-sitter-bash',
-  ocaml: 'tree-sitter-ocaml',
-  elm: 'tree-sitter-elm',
-  solidity: 'tree-sitter-solidity',
-  vue: 'tree-sitter-vue',
-  objc: 'tree-sitter-objc',
-  yaml: 'tree-sitter-yaml',
-  // JSON configuration files are read by extractJsonConfig (infra.ts), without a grammar
-  json: '',
-  // HCL (Terraform) is bundled in src/extraction/wasm/ (not in tree-sitter-wasms)
-  hcl: 'tree-sitter-hcl',
-  // CSS is in tree-sitter-wasms; SCSS is bundled in src/extraction/wasm/
-  css: 'tree-sitter-css',
-  scss: 'tree-sitter-scss',
-  html: 'tree-sitter-html',
-  // Pascal is bundled in src/extraction/wasm/ (not in tree-sitter-wasms)
-  pascal: 'tree-sitter-pascal',
-  // No WASM available
-  liquid: '',
-  // Jupyter notebooks are parsed via the notebook extractor (Python grammar on extracted code cells)
-  jupyter: '',
-  // ReScript: WASM available in tree-sitter-wasms
-  rescript: 'tree-sitter-rescript',
-  // Bundled WASMs — compiled from grammar sources, stored in src/extraction/wasm/
-  // resolveWasmPath handles these via BUNDLED_WASM_LANGS set (no entry needed here)
-  sql: '', r: '', julia: '', powershell: '', perl: '',
-  astro: '', gdscript: '', nix: '', verilog: '', haskell: '',
-  unknown: '',
-};
+const GRAMMAR_ALIAS: Partial<Record<Language, Language>> = { jsx: 'javascript' };
 
 // ── initGrammars ──────────────────────────────────────────────────────────────
 
@@ -99,41 +50,12 @@ export async function initGrammars(): Promise<void> {
 
 // ── resolveWasmPath ───────────────────────────────────────────────────────────
 
-/** Languages whose WASM is bundled in dist/extraction/wasm/ (works with global install). */
-const BUNDLED_WASM_LANGS = new Set<Language>([
-  // Compiled from grammar sources (always bundled in src/extraction/wasm/)
-  'pascal', 'hcl', 'scss', 'sql', 'r', 'julia', 'powershell', 'perl',
-  'gdscript', 'nix', 'verilog', 'astro',
-  // Copied from tree-sitter-wasms during build (mainstream languages)
-  'typescript', 'tsx', 'javascript', 'go', 'python', 'bash', 'lua', 'java',
-  'ruby', 'rust', 'c', 'cpp', 'csharp', 'kotlin', 'swift', 'dart',
-  'elixir', 'scala', 'php', 'ocaml', 'elm', 'yaml', 'html', 'css',
-  'solidity', 'vue', 'objc', 'zig', 'rescript',
-]);
-
-/**
- * Resolves the filesystem path to the WASM file for a given language.
- * Languages in BUNDLED_WASM_LANGS use bundled wasm files in dist/extraction/wasm/.
- * Falls back to resolving from the tree-sitter-wasms npm package for local installs.
- * Returns null if the file cannot be located.
- */
+/** The WASM grammar of a language, in dist/extraction/wasm/, or null when it has none. */
 function resolveWasmPath(lang: Language): string | null {
-  // Try bundled path first (works for both local and global installs)
-  if (BUNDLED_WASM_LANGS.has(lang)) {
-    const bundledPath = path.join(__dirname, 'wasm', `tree-sitter-${lang}.wasm`);
-    try {
-      require('fs').accessSync(bundledPath);
-      return bundledPath;
-    } catch {
-      // Bundled file missing — fall through to require.resolve
-    }
-  }
-
-  // Fallback: resolve from tree-sitter-wasms (works when node_modules is accessible)
-  const grammarFile = GRAMMAR_FILE_MAP[lang];
-  if (!grammarFile) return null;
+  const file = path.join(__dirname, 'wasm', `tree-sitter-${GRAMMAR_ALIAS[lang] ?? lang}.wasm`);
   try {
-    return require.resolve(`tree-sitter-wasms/out/${grammarFile}.wasm`);
+    require('fs').accessSync(file);
+    return file;
   } catch {
     return null;
   }
@@ -216,14 +138,17 @@ export function hasWasmGrammar(language: Language): boolean {
   return resolveWasmPath(language) !== null;
 }
 
-/**
- * Returns the list of languages for which a WASM grammar file is known.
- * Languages with an empty GRAMMAR_FILE_MAP entry are excluded.
- */
+/** The languages that have a WASM grammar. */
 export function getSupportedLanguages(): Language[] {
-  return (Object.keys(GRAMMAR_FILE_MAP) as Language[]).filter(
-    (lang) => GRAMMAR_FILE_MAP[lang] !== ''
-  );
+  let files: string[];
+  try { files = fs.readdirSync(path.join(__dirname, 'wasm')); } catch { return []; }
+  const langs = files
+    .filter(f => f.startsWith('tree-sitter-') && f.endsWith('.wasm'))
+    .map(f => f.slice('tree-sitter-'.length, -'.wasm'.length) as Language);
+  for (const [alias, target] of Object.entries(GRAMMAR_ALIAS)) {
+    if (langs.includes(target)) langs.push(alias as Language);
+  }
+  return langs;
 }
 
 /**

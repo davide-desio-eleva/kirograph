@@ -135,12 +135,12 @@ export const GRAMMAR_MAP: Record<Language, string> = {
   css: 'tree-sitter-css',
   scss: 'tree-sitter-scss',
   html: 'tree-sitter-html',
-  // Pascal and Liquid require custom WASM not bundled in tree-sitter-wasms
+  // Pascal has a grammar of its own (see grammars/grammars.json); Liquid has none
   pascal: '',
   liquid: '',
   // Jupyter notebooks are parsed via the notebook extractor (Python grammar on extracted code cells)
   jupyter: '',
-  // ReScript: WASM available in tree-sitter-wasms
+  // ReScript
   rescript: 'tree-sitter-rescript',
   // Languages with WASMs TBD — files tracked, symbol extraction pending WASM compilation
   sql: 'tree-sitter-sql',

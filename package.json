@@ -14,6 +14,7 @@
   ],
   "scripts": {
     "build": "tsx scripts/build.ts",
+    "grammars": "node scripts/grammars.mjs",
     "dev": "tsx scripts/build.ts --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
@@ -72,7 +73,6 @@
     "figlet": "^1.11.0",
     "parquetjs-lite": "^0.8.7",
     "picomatch": "^4.0.3",
-    "tree-sitter-wasms": "^0.1.11",
     "web-tree-sitter": "^0.25.3"
   },
   "optionalDependencies": {
@@ -113,6 +113,7 @@
     "@types/node": "^22.20.5",
     "@types/picomatch": "^4.0.2",
     "esbuild": "^0.28.0",
+    "tree-sitter-cli": "0.25.8",
     "tsx": "^4.21.0",
     "typescript": "^5.0.0",
     "vitest": "^4.1.2"

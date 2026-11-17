@@ -48,3 +48,5 @@ package-lock.json
 
 # benchmark
 benchmarks
+# Grammar sources fetched by scripts/grammars.mjs
+grammars/.sources/
