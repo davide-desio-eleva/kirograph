@@ -113,6 +113,9 @@ CREATE INDEX IF NOT EXISTS idx_route_mounts_file ON route_mounts(file_path);
 CREATE INDEX IF NOT EXISTS idx_unresolved_source ON unresolved_refs(source_id);
 CREATE INDEX IF NOT EXISTS idx_unresolved_name ON unresolved_refs(ref_name);
 CREATE INDEX IF NOT EXISTS idx_unresolved_kind ON unresolved_refs(ref_kind);
+-- Every file written deletes its references by path first: without this index each delete read
+-- the whole table, which made writing a large project quadratic
+CREATE INDEX IF NOT EXISTS idx_unresolved_file ON unresolved_refs(file_path);
 
 -- Vectors table for future semantic search (opt-in)
 CREATE TABLE IF NOT EXISTS vectors (
