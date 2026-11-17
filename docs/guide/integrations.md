@@ -182,7 +182,15 @@ For tools that support lifecycle hooks, the installer writes auto-sync hooks tha
 | OpenCode | `.opencode/plugins/kirograph-sync.js` | session.idle | JS plugin that syncs |
 | Devin | `.devin/hooks.v1.json` | Stop | Sync on session stop |
 
-For tools **without** a hook system (22 targets), the generated instructions include a "Session Hygiene" section that tells the agent to manually run `kirograph sync` at the start and end of each session.
+For tools **without** a hook system (22 targets), the generated instructions include a "Session Hygiene" section that tells the agent to manually run `kirograph sync` at the start and end of each session. Turning on `"watch": true` in `.kirograph/config.json` keeps the graph in step without it: see [Keeping the graph fresh](#keeping-the-graph-fresh).
+
+### Keeping the graph fresh
+
+Hooks sync when the agent stops, so between an edit and the next sync the graph can be behind the code. Three things make sure the agent is never answered from an old graph without knowing it:
+
+- **A notice on stale files.** When a tool response names a file that changed (or was deleted) after the graph last read it, the response starts with a `⚠️` notice naming the file and asking the agent to read it directly. The check costs one `stat` per file named, compared with what the index recorded.
+- **Catch-up at start.** When the MCP server opens a project that changed while no server was running (a `git pull` from a terminal, another editor), it syncs first. The first tool call waits for it for up to 5 seconds.
+- **Watch (opt-in).** With `"watch": true` in `.kirograph/config.json` (or `KIROGRAPH_WATCH=1`), the MCP server watches the project and syncs the changed files 2 seconds after the last change (`KIROGRAPH_WATCH_DEBOUNCE_MS`, 100 ms to 60 s). Useful for tools without hooks. With Kiro the hooks already sync. On Linux it needs Node 20 or later.
 
 ### Multiple Targets
 
