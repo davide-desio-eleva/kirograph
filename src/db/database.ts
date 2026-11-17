@@ -223,6 +223,14 @@ export class GraphDatabase {
       // Column already exists — nothing to do.
     }
 
+    // Size, mtime and ctime of each file when it was read: a sync skips a file whose key is the
+    // same without reading it (FileRecord.statKey).
+    try {
+      this.db.run('ALTER TABLE files ADD COLUMN stat_key TEXT');
+    } catch {
+      // Column already exists — nothing to do.
+    }
+
     // Add attempted_strategies column to unresolved_refs if not present.
     // SQLite throws if the column already exists, so we catch that error.
     try {
@@ -262,10 +270,19 @@ export class GraphDatabase {
 
   upsertFile(record: FileRecord): void {
     this.db.run(
-      `INSERT OR REPLACE INTO files (path, content_hash, language, file_size, symbol_count, indexed_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [record.path, record.contentHash, record.language, record.fileSize, record.symbolCount, record.indexedAt]
+      `INSERT OR REPLACE INTO files (path, content_hash, language, file_size, symbol_count, indexed_at, stat_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [record.path, record.contentHash, record.language, record.fileSize, record.symbolCount, record.indexedAt,
+        record.statKey ?? null]
     );
+  }
+
+  /** Records the stat key of files found unchanged by their hash (see FileRecord.statKey). */
+  setFileStatKeys(keys: Array<[path: string, statKey: string]>): void {
+    if (keys.length === 0) return;
+    this.transaction(() => {
+      for (const [p, key] of keys) this.db.run('UPDATE files SET stat_key = ? WHERE path = ?', [key, p]);
+    });
   }
 
   getFile(filePath: string): FileRecord | null {
@@ -292,6 +309,7 @@ export class GraphDatabase {
       fileSize: row.file_size,
       symbolCount: row.symbol_count,
       indexedAt: row.indexed_at,
+      statKey: row.stat_key ?? null,
     };
   }
 
