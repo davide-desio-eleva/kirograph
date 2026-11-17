@@ -3,8 +3,8 @@
  * Downloads the grammar sources listed in grammars.json into grammars/<package>/, keeping only the
  * directories the build compiles. Run once before `cargo build` (npm run build does it).
  *
- * Sources come from the npm registry with `npm pack`, at the exact versions the WASM grammars were
- * built from, so the Rust engine parses every file into the same tree as the TypeScript extractor.
+ * Sources come from the npm registry with `npm pack` (or, for grammars not published at that
+ * version, from the GitHub commit), at the exact versions the WASM grammars were built from, so the Rust engine parses every file into the same tree as the TypeScript extractor.
  */
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -25,15 +25,26 @@ for (const pkg of manifest.packages) {
 
   const work = mkdtempSync(join(tmpdir(), 'kg-grammar-'));
   try {
-    const out = execFileSync(npm, ['pack', '--silent', `${pkg.package}@${pkg.version}`], { cwd: work, encoding: 'utf8', shell: process.platform === 'win32' });
-    const tarball = out.trim().split('\n').pop();
-    execFileSync('tar', ['xzf', tarball], { cwd: work });
+    let top;
+    if (pkg.github) {
+      // A grammar not published to npm at that version: the commit the WASM was built from
+      const res = await fetch(`https://codeload.github.com/${pkg.github}/tar.gz/${pkg.version}`);
+      if (!res.ok) throw new Error(`${pkg.github}@${pkg.version}: HTTP ${res.status}`);
+      writeFileSync(join(work, 'src.tgz'), Buffer.from(await res.arrayBuffer()));
+      execFileSync('tar', ['xzf', 'src.tgz'], { cwd: work });
+      top = join(work, `${pkg.github.split('/')[1]}-${pkg.version}`);
+    } else {
+      const out = execFileSync(npm, ['pack', '--silent', `${pkg.package}@${pkg.version}`], { cwd: work, encoding: 'utf8', shell: process.platform === 'win32' });
+      const tarball = out.trim().split('\n').pop();
+      execFileSync('tar', ['xzf', tarball], { cwd: work });
+      top = join(work, 'package');
+    }
     rmSync(dest, { recursive: true, force: true });
     for (const dir of pkg.dirs) {
-      cpSync(join(work, 'package', dir), join(dest, dir), { recursive: true });
+      cpSync(join(top, dir), join(dest, dir), { recursive: true });
     }
     writeFileSync(stamp, pkg.version);
-    console.log(`  fetched ${pkg.package}@${pkg.version}`);
+    console.log(`  fetched ${pkg.github ?? pkg.package}@${pkg.version}`);
   } finally {
     rmSync(work, { recursive: true, force: true });
   }

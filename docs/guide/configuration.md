@@ -138,9 +138,9 @@ cd native/kirograph-rust && npm install && npm run build
 
 `kirograph install` asks for the engine and builds the module when `rust` is chosen. When the module is missing or does not load, KiroGraph uses `node` and says so (`kirograph status`, and a warning after `index` and `sync`).
 
-**Same graph.** The native engine compiles the same grammar versions as the WASM files and parses as UTF-16, as web-tree-sitter does, so even files with syntax errors produce the same tree. Its extractor and resolver are ports of the TypeScript ones. Languages it has no extractor for (YAML, HCL, JSON, shell, notebooks, Swift, Dart, Vue, Svelte and the other WASM-only grammars) are extracted by the TypeScript engine and handed to it, so every file is still written in order and rows get the same ids. `test/rust/` compares both engines file by file, table by table and after a sync.
+**Same graph.** The native engine compiles the same grammar versions as the WASM files and parses as UTF-16, as web-tree-sitter does, so even files with syntax errors produce the same tree. Its extractor and resolver are ports of the TypeScript ones. Languages it has no extractor for (YAML, HCL, JSON, shell, notebooks, Swift, Svelte, ReScript and the other WASM-only grammars) are extracted by the TypeScript engine and handed to it, so every file is still written in order and rows get the same ids. `test/rust/` compares both engines file by file, table by table and after a sync.
 
-Native languages: TypeScript, TSX, JavaScript, JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Kotlin, Scala, Lua, Elixir, OCaml, CSS, HTML, Objective-C, Zig.
+Native languages: TypeScript, TSX, JavaScript, JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Kotlin, Scala, Dart, Lua, Elixir, OCaml, Solidity, Vue, CSS, HTML, Objective-C, Zig.
 
 **When it helps.** On small projects the difference is a fraction of a second. On large ones a full index is several times faster (Apple M-series, first index, `kirograph index --timings` shows the phases):
 
