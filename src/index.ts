@@ -156,9 +156,16 @@ export default class KiroGraph {
    * reflected in the index. Used by the MCP status tool to warn the agent
    * when the index may be stale.
    */
+  /**
+   * Files a sync would change: new, removed, or with content other than what is indexed. A file
+   * git reports as changed but indexed as it is now (an uncommitted edit already synced) is not
+   * pending: counting it kept `status` reporting work that `sync` had nothing to do for.
+   */
   async getPendingSyncCount(): Promise<number> {
     try {
-      const { getChangedFiles, scanDirectory } = await import('./sync/index');
+      // Nothing changed since the last sync
+      if (this.pipeline.isUpToDate()) return 0;
+      const { getChangedFiles, scanDirectory, hashContent } = await import('./sync/index');
       const { readGitHeads } = await import('./sync/git-head');
       // Commits since the last sync count too (a pull brings changes git status does not show)
       const gitChanged = await getChangedFiles(this.projectRoot, this.config, readGitHeads(this.projectRoot));
@@ -168,7 +175,17 @@ export default class KiroGraph {
         gitChanged.removed.length > 0;
 
       if (hasGitChanges) {
-        return gitChanged.added.length + gitChanged.modified.length + gitChanged.removed.length;
+        const rel = (f: string) => path.relative(this.projectRoot, f).replace(/\\/g, '/');
+        let pending = 0;
+        for (const f of gitChanged.removed) if (this.db.getFile(rel(f))) pending++;
+        for (const f of [...gitChanged.added, ...gitChanged.modified]) {
+          const known = this.db.getFile(rel(f));
+          if (!known) { pending++; continue; }
+          try {
+            if (hashContent(fs.readFileSync(f)) !== known.contentHash) pending++;
+          } catch { pending++; }
+        }
+        return pending;
       }
 
       // Fallback: compare indexed set vs current filesystem set

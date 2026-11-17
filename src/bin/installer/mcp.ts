@@ -3,7 +3,8 @@
  */
 
 import * as path from 'path';
-import { KIROGRAPH_COMMAND, KIROGRAPH_MCP_ARGS, KIROGRAPH_TOOLS, writeMcpServersConfig, overwriteMcpServersConfig, readJson, writeJson } from './common';
+import { KIROGRAPH_COMMAND, KIROGRAPH_MCP_ARGS, KIROGRAPH_TOOLS, KIROGRAPH_SERVER_NAME, writeMcpServersConfig, readJson, writeJson, ensureDir } from './common';
+import { mergeToolList, readInstallState, updateInstallState } from './install-state';
 import { FEATURE_TOOL_SETS } from '../../mcp/tool-names';
 
 export interface McpFeatureFlags {
@@ -63,16 +64,33 @@ export function updateMcpAutoApprove(kiroDir: string, features: McpFeatureFlags)
 
 /**
  * Write the final MCP config with the correct autoApprove in one atomic write.
- * Always overwrites any existing entry — no intermediate "all tools" state.
  * Call this from installLate where feature flags are known.
+ *
+ * An existing entry is updated, not replaced: fields the user added are kept, and so are their
+ * changes to autoApprove (a tool they removed stays removed, see mergeToolList). The command, its
+ * arguments and the enabled state are always set.
  */
 export function writeMcpConfigFinal(kiroDir: string, projectRoot: string, features: McpFeatureFlags): void {
   const mcpPath = path.join(kiroDir, 'settings', 'mcp.json');
-  overwriteMcpServersConfig(mcpPath, {
+  ensureDir(path.dirname(mcpPath));
+  const config = readJson(mcpPath);
+  config.mcpServers = config.mcpServers ?? {};
+  const existing = config.mcpServers[KIROGRAPH_SERVER_NAME];
+  const entry = existing && typeof existing === 'object' ? existing : {};
+  const autoApprove = mergeToolList(
+    computeAutoApprove(features),
+    entry.autoApprove,
+    readInstallState(kiroDir)?.autoApprove,
+    KIROGRAPH_TOOLS,
+  );
+  config.mcpServers[KIROGRAPH_SERVER_NAME] = {
+    ...entry,
     command: KIROGRAPH_COMMAND,
     args: [...KIROGRAPH_MCP_ARGS, '--path', projectRoot],
     disabled: false,
-    autoApprove: computeAutoApprove(features),
-  });
+    autoApprove,
+  };
+  writeJson(mcpPath, config);
+  updateInstallState(kiroDir, { autoApprove });
   console.log(`  ✓ MCP server registered in ${mcpPath}`);
 }

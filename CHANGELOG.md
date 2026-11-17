@@ -10,6 +10,18 @@
 ### Fixed
 
 - **Writing a large project is no longer quadratic**: every file written first deletes its unresolved references by path, and `unresolved_refs` had no index on the path, so each delete read the whole table. With the TypeScript engine, parsing and writing a first index of django went from 53 s to 22 s. The index is created on the next open.
+## [1.5.1] - 2026-11-17: status reports only files out of date, excluded files stay out of a sync, and `install` keeps your changes
+
+### Upgrade notes
+
+- **The first `kirograph install` after upgrading** has no record yet of what the previous install wrote. It takes a KiroGraph tool missing from an existing `autoApprove` or `allowedTools` as removed by you, and does not add back the compression hint to an install that is there without it. Every later install knows exactly what you changed. `kirograph compression <level>` writes the hint again if you want it.
+
+### Fixed
+
+- **`status` no longer reports files pending that `sync` has nothing to do for** ([#80](https://github.com/davide-desio-eleva/kirograph/issues/80)): it counted every file `git status` lists, so a file with uncommitted edits stayed "pending" until committed, while `sync` read it, found the same content and said "Nothing to sync". It now counts only files missing from the index, removed, or with other content, and answers at once when nothing changed since the last sync. The "N files found" line of a sync is unchanged: those are the files git reports, read to find out whether their content changed.
+- **Excluded files are no longer indexed by a sync** ([#80](https://github.com/davide-desio-eleva/kirograph/issues/80)): the list of changed files taken from git ignored `include` and `exclude`, so a new or edited file under an excluded folder (`dist/`, `build/`, `.terraform/`...) was indexed by a sync and removed again by the next full one. It now follows the same rules as a full scan.
+- **`kirograph install` run again keeps your changes** ([#82](https://github.com/davide-desio-eleva/kirograph/issues/82)): it replaced the `kirograph` entry of `.kiro/settings/mcp.json` and rewrote `.kiro/agents/kirograph.json` from scratch, so tools removed from `autoApprove` came back and custom resources, MCP servers and hooks of the CLI agent were lost; and it wrote back hooks you had deleted, such as the compression hint. Both files are now merged: KiroGraph's settings are updated, everything you added is kept. What the installer wrote is recorded in `.kirograph/install-state.json`, so a tool or hook you removed stays removed, while one new in a version, or of a feature you turn on, is added.
+- **`kirograph compression <level>` no longer removes other hooks**: it rewrote the hooks knowing only the compression setting, so the memory, watchmen and wiki hooks were removed even with those features on, and a legacy (`.kiro.hook`) install was switched to the new format. It now writes every hook from the configuration, in the format already installed.
 
 ## [1.5.0] - 2026-11-13: fast syncs on large workspaces, a killed process no longer breaks the database, symbols for Terraform, Helm, shell and JSON
 

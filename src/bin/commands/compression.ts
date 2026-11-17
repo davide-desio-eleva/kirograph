@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import { Command } from 'commander';
 import { loadConfig, updateConfig, KiroGraphConfig } from '../../config';
 import { writeSteering } from '../installer/steering';
-import { writeHooks } from '../installer/hooks';
+import { writeHooks, detectHookFormat } from '../installer/hooks';
 import { bold, dim, green, reset, violet } from '../ui';
 
 type CompressionLevel = KiroGraphConfig['shellCompressionLevel'];
@@ -76,7 +76,19 @@ export function register(program: Command): void {
       // Regenerate hooks if hooks dir exists
       const hooksDir = path.join(kiroDir, 'hooks');
       if (fs.existsSync(hooksDir)) {
-        writeHooks(kiroDir, { enableCompression });
+        // Every hook flag from the configuration: writeHooks removes the hooks of the features it is
+        // not told are on, so passing only the compression flag removed the memory, watchmen and
+        // wiki hooks; and the format already installed, so legacy hooks are not switched to v2
+        writeHooks(kiroDir, {
+          enableCompression,
+          enableMemory: config.enableMemory,
+          enableWatchmen: config.enableWatchmen,
+          watchmenSynthesisMode: config.watchmenSynthesisMode,
+          enableWiki: config.enableWiki,
+          wikiSynthesisMode: config.wikiSynthesisMode,
+          kiroHookFormat: detectHookFormat(kiroDir),
+          restore: enableCompression ? ['kirograph-compress-hint'] : [],
+        });
       }
 
       console.log();
