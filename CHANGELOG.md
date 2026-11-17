@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- **A full index no longer parses files without symbols twice**: the retry pass meant to recover files the WASM parser crashed on re-parsed every file recorded without symbols, so SQL migrations, data YAML and similar files were parsed twice. Only the files whose parse crashed are retried now. A workspace of 8 repositories (10,781 files) indexes in 96 s instead of 157 s with the `node` engine.
 - **Writing a large project is no longer quadratic**: every file written first deletes its unresolved references by path, and `unresolved_refs` had no index on the path, so each delete read the whole table. With the TypeScript engine, parsing and writing a first index of django went from 53 s to 22 s. The index is created on the next open.
 ## [1.5.1] - 2026-11-17: status reports only files out of date, excluded files stay out of a sync, and `install` keeps your changes
 
