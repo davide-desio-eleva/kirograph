@@ -11,6 +11,7 @@ import type { KiroGraphConfig } from '../config';
 import { matchReference } from './name-matcher';
 import { logDebug, logWarn } from '../errors';
 import { runBridgeResolvers, type BridgeResolutionResult } from './bridges';
+import { rustEngineFor, rustDbPaths } from '../core/rust-engine';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -126,21 +127,41 @@ export class ReferenceResolver {
   ): Promise<ResolutionResult> {
     const start = Date.now();
 
-    this.warmCaches();
-    const resolvedCount = await this.resolveUnresolvedRefs(onProgress);
+    // engine "rust": the native engine resolves the references (same strategies, same order). The
+    // caches below are then needed only by the bridges, and warmed only if they run.
+    const rust = this.projectRoot ? rustEngineFor(this.config) : null;
+    let resolvedCount: number;
+    if (rust) {
+      const native = await rust.resolveReferences({
+        ...rustDbPaths(this.projectRoot),
+        fuzzyThreshold: this.config.fuzzyResolutionThreshold ?? 0.5,
+        // A full index commits without waiting for the disk, as its TypeScript connection does
+        synchronousOff: !changedFiles,
+      }, onProgress);
+      for (const err of native.errors) logWarn(`ReferenceResolver: ${err}`);
+      resolvedCount = native.resolved;
+      this.cacheWarmed = false;
+    } else {
+      this.warmCaches();
+      resolvedCount = await this.resolveUnresolvedRefs(onProgress);
+    }
 
     // Count remaining unresolved
     const rawDb = (this.db as any).db;
     const remaining = rawDb.get('SELECT COUNT(*) as c FROM unresolved_refs')?.c ?? 0;
     const total = resolvedCount + remaining;
 
+    // The bridges read only the file types below (and package.json to decide whether they apply),
+    // and the edges they made survive a sync that touched none of those
+    const runBridges = !!this.projectRoot && (!changedFiles || changedFiles.some(f => BRIDGE_FILE.test(f)));
+    // Warmed before the route prefixes rename routes, as on the TypeScript path
+    if (runBridges && !this.cacheWarmed) this.warmCaches();
+
     this.applyRoutePrefixes();
 
     // Run cross-language bridge resolvers after standard resolution
     let bridgeResult: BridgeResolutionResult | undefined;
-    // The bridges read only the file types below (and package.json to decide whether they apply),
-    // and the edges they made survive a sync that touched none of those
-    if (this.projectRoot && (!changedFiles || changedFiles.some(f => BRIDGE_FILE.test(f)))) {
+    if (runBridges) {
       bridgeResult = this._runBridgeResolvers();
     }
 

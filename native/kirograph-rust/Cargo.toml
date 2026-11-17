@@ -1,0 +1,34 @@
+[package]
+name = "kirograph-rust"
+version = "0.1.0"
+edition = "2021"
+description = "Native indexing engine for KiroGraph (engine: \"rust\")"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+napi = { version = "2", features = ["napi8", "serde-json"] }
+napi-derive = "2"
+tree-sitter = "0.25"
+tree-sitter-language = "0.1"
+rusqlite = { version = "0.37", features = ["bundled"] }
+rayon = "1"
+sha2 = "0.10"
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+regex = "1"
+indexmap = "2"
+
+[build-dependencies]
+napi-build = "2"
+cc = { version = "1", features = ["parallel"] }
+serde_json = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+# Not stripped: a stripped build fails to load on recent macOS ("mis-aligned LINKEDIT string pool")
+strip = false

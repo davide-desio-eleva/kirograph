@@ -18,6 +18,12 @@ export interface KiroGraphConfig {
   include: string[];
   exclude: string[];
   maxFileSize: number;
+  /**
+   * Engine that parses files and resolves references during index and sync. 'rust' uses the
+   * native engine (native/kirograph-rust) when it is installed, and falls back to 'node' with a
+   * warning when it is not. The graph is the same either way. Default: 'node'.
+   */
+  engine: 'node' | 'rust';
   extractDocstrings: boolean;
   trackCallSites: boolean;
   // Parity fields:
@@ -288,7 +294,7 @@ const KIROGRAPH_DIR = '.kirograph';
 const CONFIG_FILE = 'config.json';
 
 const KNOWN_FIELDS = new Set<string>([
-  'version', 'languages', 'include', 'exclude', 'maxFileSize',
+  'version', 'languages', 'include', 'exclude', 'maxFileSize', 'engine',
   'extractDocstrings', 'trackCallSites', 'enableEmbeddings', 'embeddingModel', 'embeddingDim',
   'useVecIndex', 'semanticEngine', 'turboquantMemDocs', 'turboquantBits', 'turbovecMemDocs', 'turbovecBits', 'typesenseDashboard', 'qdrantDashboard',
   'minLogLevel', 'frameworkHints', 'fuzzyResolutionThreshold',
@@ -353,6 +359,7 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
       '**/public/build/**', '**/Resources/Public/**',
     ],
     maxFileSize: 1_048_576,
+    engine: 'node',
     extractDocstrings: false,
     trackCallSites: false,
     enableEmbeddings: false,
@@ -488,6 +495,7 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const useVecIndex = typeof raw.useVecIndex === 'boolean'
     ? raw.useVecIndex
     : defaults.useVecIndex;
+  const engine: KiroGraphConfig['engine'] = raw.engine === 'rust' || raw.engine === 'node' ? raw.engine : defaults.engine;
   const SEMANTIC_ENGINES = new Set(['cosine', 'turboquant', 'turbovec', 'sqlite-vec', 'orama', 'pglite', 'lancedb', 'qdrant', 'typesense']);
   // useVecIndex is a legacy alias: if set and no explicit semanticEngine, map it
   const semanticEngine = typeof raw.semanticEngine === 'string' && SEMANTIC_ENGINES.has(raw.semanticEngine)
@@ -847,6 +855,7 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     include,
     exclude,
     maxFileSize,
+    engine,
     extractDocstrings,
     trackCallSites,
     enableEmbeddings,

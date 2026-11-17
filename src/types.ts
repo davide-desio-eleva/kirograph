@@ -125,6 +125,8 @@ export interface GraphStats {
   turbovecBits?: number;
   vecIndexCount: number;
   engineFallback: string | null;
+  /** Engine that parses and resolves during index and sync ('node' or 'rust'). */
+  indexEngine?: 'node' | 'rust';
   frameworks: string[];
   architectureEnabled: boolean;
   architectureStats?: { packages: number; layers: number; packageDeps: number };
@@ -154,6 +156,8 @@ export interface IndexResult {
   edgesCreated: number;
   errors: string[];
   duration: number;
+  /** Wall-clock milliseconds per phase (scan, read, extract, resolve, embeddings…). */
+  timings?: Record<string, number>;
 }
 
 export interface SyncResult {

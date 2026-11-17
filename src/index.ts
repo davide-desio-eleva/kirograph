@@ -18,6 +18,7 @@ import { ContextBuilder } from './context/index';
 import { ArchitectureAnalyzer } from './architecture/index';
 import { LockManager } from './core/lock-manager';
 import { IndexPipeline } from './core/pipeline';
+import { rustEngineFallback, effectiveEngine } from './core/rust-engine';
 import { buildFileTree } from './core/file-tree';
 import { SnapshotManager } from './core/snapshot';
 import { Searcher } from './search/searcher';
@@ -305,7 +306,8 @@ export default class KiroGraph {
       semanticEngine: this.config.semanticEngine ?? 'cosine',
       turbovecBits: this.config.turbovecBits,
       vecIndexCount,
-      engineFallback: this.vectors.getEngineFallback(),
+      engineFallback: this.getEngineFallback(),
+      indexEngine: effectiveEngine(this.config),
       frameworks: this.config.frameworkHints ?? [],
       architectureEnabled: this.config.enableArchitecture ?? false,
       ...(this.config.enableArchitecture ? { architectureStats: this.db.getArchStats() } : {}),
@@ -315,7 +317,10 @@ export default class KiroGraph {
     };
   }
 
-  getEngineFallback(): string | null { return this.vectors.getEngineFallback(); }
+  getEngineFallback(): string | null {
+    const reasons = [this.vectors.getEngineFallback(), rustEngineFallback(this.config)].filter(Boolean);
+    return reasons.length > 0 ? reasons.join('; ') : null;
+  }
 
   // ── Architecture API ───────────────────────────────────────────────────────
 

@@ -9,7 +9,8 @@ export function register(program: Command): void {
     .command('index [projectPath]')
     .description('Full index of a project')
     .option('--force', 'Force re-index all files')
-    .action(async (projectPath: string | undefined, opts: { force?: boolean }) => {
+    .option('--timings', 'Print the time spent in each phase')
+    .action(async (projectPath: string | undefined, opts: { force?: boolean; timings?: boolean }) => {
       const { withGraph } = await import('../../index');
       const target = path.resolve(projectPath ?? process.cwd());
       await withGraph(target, async (cg) => {
@@ -19,6 +20,10 @@ export function register(program: Command): void {
         });
         process.stdout.write('\n');
         console.log(`  ${green}✓${reset} ${value(String(result.filesIndexed))} ${dim}files,${reset} ${value(String(result.nodesCreated))} ${dim}symbols,${reset} ${value(String(result.edgesCreated))} ${dim}edges${reset} ${dim}(${result.duration}ms)${reset}`);
+        if (opts.timings && result.timings) {
+          const parts = Object.entries(result.timings).filter(([, ms]) => ms > 0).map(([phase, ms]) => `${phase} ${ms}ms`);
+          console.log(`  ${dim}${parts.join(' · ')}${reset}`);
+        }
         if (result.errors.length) console.warn(`  \x1b[33m⚠ ${result.errors.length} warning(s)\x1b[0m`);
         warnFallback(cg.getEngineFallback());
       });

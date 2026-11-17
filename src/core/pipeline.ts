@@ -29,6 +29,8 @@ import type { KiroGraphConfig } from '../config';
 import type { IndexResult, IndexProgress, SyncResult } from '../types';
 import { workspaceFingerprint, isUpToDate, writeSyncState, writeSyncErrors, hasTransientErrors } from '../sync/state';
 import { LockManager } from './lock-manager';
+import { rustEngineFor, rustDbPaths, type RustEngine, type RustIndexEntry, type RustIndexResult } from './rust-engine';
+import { detectLanguage } from '../extraction/languages';
 import { WriteBatch } from './write-batch';
 import { Mutex } from '../utils';
 
@@ -148,6 +150,7 @@ export class IndexPipeline {
     // Syncs keep the normal setting.
     this.db.getRawDb().run('PRAGMA synchronous=OFF');
     const start = Date.now();
+    const fingerprintStart = Date.now();
     // Taken before anything is read, so an edit made during the index is seen by the next sync
     const fingerprint = workspaceFingerprint(this.projectRoot);
     const heads: Record<string, string> = {};
@@ -155,10 +158,19 @@ export class IndexPipeline {
       const head = currentHead(gitRoot);
       if (head) heads[headKey(this.projectRoot, gitRoot)] = head;
     }
+    const fingerprintMs = Date.now() - fingerprintStart;
     const errors: string[] = [];
     let filesIndexed = 0;
     let nodesCreated = 0;
     let edgesCreated = 0;
+    // Wall-clock time per phase, in milliseconds (IndexResult.timings)
+    const timings: Record<string, number> = { fingerprint: fingerprintMs };
+    let phaseStart = Date.now();
+    const endPhase = (name: string): void => {
+      const now = Date.now();
+      timings[name] = (timings[name] ?? 0) + now - phaseStart;
+      phaseStart = now;
+    };
 
     // Track languages whose WASM parser is currently poisoned (ABORT=true on the module).
     // Once a language's parser aborts, every subsequent parse call for that language
@@ -172,6 +184,7 @@ export class IndexPipeline {
     try {
       const files = await scanDirectory(this.projectRoot, this.config, opts?.signal);
       opts?.onProgress?.({ phase: 'scanning', current: files.length, total: files.length });
+      endPhase('scan');
 
       // Batch-read files in parallel
       const contentMap = new Map<string, Buffer>();
@@ -184,6 +197,13 @@ export class IndexPipeline {
       }
 
       const extractOpts = { enableComplexity: !!(this.config as any).enableComplexity, maxFileSize: this.config.maxFileSize };
+      endPhase('read');
+
+      // engine "rust": the native engine parses the languages it has a grammar for and writes every
+      // file. The others are extracted here, as usual, and handed to it in file order.
+      const rust = rustEngineFor(this.config);
+      const nativeLangs = new Set(rust?.nativeLanguages() ?? []);
+      const rustEntries: RustIndexEntry[] = [];
 
       // Parsing runs on worker threads, a few files ahead of the loop that writes them. The loop
       // takes the results in file order, so the graph is the same as when parsing in-process.
@@ -192,13 +212,13 @@ export class IndexPipeline {
       const lookahead = (pool?.size ?? 0) * 4;
       const startParsing = async (from: number): Promise<void> => {
         if (!pool) return;
-        const { detectLanguage } = await import('../extraction/languages');
         for (let j = from; j < Math.min(files.length, from + lookahead); j++) {
           if (parsing.has(j)) continue;
           const f = files[j];
           const content = contentMap.get(f);
           if (!content || content.length > this.config.maxFileSize) continue;
           if (poisonedLanguages.has(detectLanguage(f))) continue;
+          if (nativeLangs.has(detectLanguage(f))) continue; // parsed by the native engine
           if (!opts?.force) {
             const known = this.db.getFile(path.relative(this.projectRoot, f).replace(/\\/g, '/'));
             if (known && hashContent(content) === known.contentHash) continue;
@@ -210,12 +230,17 @@ export class IndexPipeline {
       };
 
       const batch = new WriteBatch(this.db);
+      let writeMs = 0;
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         opts?.onProgress?.({ phase: 'parsing', current: i + 1, total: files.length, currentFile: file });
         await startParsing(i);
 
         try {
+          if (rust && nativeLangs.has(detectLanguage(file))) {
+            rustEntries.push({ path: file, language: detectLanguage(file) });
+            continue;
+          }
           const content = contentMap.get(file);
           if (!content) continue;
           if (content.length > this.config.maxFileSize) continue;
@@ -228,7 +253,6 @@ export class IndexPipeline {
           }
 
           // Skip files whose language parser is currently poisoned
-          const { detectLanguage } = await import('../extraction/languages');
           const lang = detectLanguage(file);
           if (poisonedLanguages.has(lang)) continue;
 
@@ -243,9 +267,17 @@ export class IndexPipeline {
           }
           if (!extracted) continue;
 
+          if (rust) {
+            // Written by the native engine, in file order (its replaced embeddings are removed after)
+            rustEntries.push({ extracted: JSON.stringify(extracted) });
+            crashCounts.set(lang, 0);
+            continue;
+          }
+
           await this.deleteEmbeddingsOfFile(extracted.filePath);
 
           // Written with the other files of its batch, in one transaction (see WriteBatch)
+          const writeStart = Date.now();
           batch.add(() => {
             this.db.deleteNodesByFile(extracted.filePath);
             this.db.deleteUnresolvedRefsByFile(extracted.filePath);
@@ -265,6 +297,7 @@ export class IndexPipeline {
           }, writeErr => {
             errors.push(`${file}: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`);
           }, extracted.nodes.length + extracted.edges.length + extracted.unresolvedRefs.length);
+          writeMs += Date.now() - writeStart;
           // Reset crash count on successful parse for this language
           crashCounts.set(lang, 0);
         } catch (err) {
@@ -277,7 +310,6 @@ export class IndexPipeline {
             || msg.includes('RuntimeError')
             || msg.includes('WASM grammar exists but failed to load');
           if (isWasmCrash) {
-            const { detectLanguage } = await import('../extraction/languages');
             const lang = detectLanguage(file);
             const count = (crashCounts.get(lang) ?? 0) + 1;
             crashCounts.set(lang, count);
@@ -302,14 +334,32 @@ export class IndexPipeline {
         }
       }
 
+      const flushStart = Date.now();
       batch.flush();
+      writeMs += Date.now() - flushStart;
+      endPhase('extract');
+      timings.write = writeMs;
+      timings.extract -= writeMs;
       // Parsing is over: release the workers before resolution and embeddings, which need the memory
       await pool?.close();
       pool = null;
 
-      // Re-process files that have symbolCount=0 but should have symbols (WASM recovery)
+      if (rust) {
+        const native = await this.runRust(rust, rustEntries, {
+          force: !!opts?.force, trackOversize: false, synchronousOff: true, collectStats: false,
+        }, (current, total) => opts?.onProgress?.({ phase: 'parsing', current, total }));
+        filesIndexed += native.filesIndexed;
+        nodesCreated += native.nodesCreated;
+        edgesCreated += native.edgesCreated;
+        errors.push(...native.errors);
+        for (const [k, ms] of Object.entries(native.timings)) timings[`rust.${k}`] = Math.round(ms);
+        endPhase('native');
+      }
+
+      // Re-process files that have symbolCount=0 but should have symbols (WASM recovery). Files of
+      // the native engine's languages were not parsed by WASM: nothing to recover.
       const emptyFiles = this.db.getAllFiles().filter(
-        (f: any) => f.symbolCount === 0 && hasWasmGrammar(f.language)
+        (f: any) => f.symbolCount === 0 && hasWasmGrammar(f.language) && !nativeLangs.has(f.language)
       );
       if (emptyFiles.length > 0) {
         opts?.onProgress?.({ phase: 'retrying', current: 0, total: emptyFiles.length });
@@ -346,11 +396,14 @@ export class IndexPipeline {
         }
       }
 
+      endPhase('retry');
+
       // Resolve cross-file references
       opts?.onProgress?.({ phase: 'resolving', current: 0, total: 1 });
       await this.resolver.resolveAll((current, total) => {
         opts?.onProgress?.({ phase: 'resolving', current, total });
       });
+      endPhase('resolve');
 
       // Detect frameworks
       opts?.onProgress?.({ phase: 'detecting frameworks', current: 0, total: 1 });
@@ -360,9 +413,11 @@ export class IndexPipeline {
         phase: 'detecting frameworks', current: 1, total: 1,
         meta: { frameworks: detectedFrameworks.map(f => f.name), languages },
       });
+      endPhase('frameworks');
 
       // Generate embeddings (if enabled)
       await this.embedPending(true, opts?.onProgress);
+      endPhase('embeddings');
 
       // Analyze architecture (if enabled, or auto-enabled for security)
       if (this.config.enableArchitecture || this.config.enableSecurity) {
@@ -460,13 +515,44 @@ export class IndexPipeline {
         if (fingerprint) writeSyncState(this.projectRoot, fingerprint);
         writeGitHeads(this.projectRoot, heads);
       }
-      return { success: errors.length === 0, filesIndexed, nodesCreated, edgesCreated, errors, duration: Date.now() - start };
+      endPhase('other');
+      return { success: errors.length === 0, filesIndexed, nodesCreated, edgesCreated, errors, duration: Date.now() - start, timings };
     } finally {
       await pool?.close();
       try { this.db.getRawDb().run('PRAGMA synchronous=NORMAL'); } catch { /* the database is closed or gone */ }
       if (heldByUs) this.lock.release();
       release();
     }
+  }
+
+  /**
+   * Hands the entries to the native engine, which writes them in order. The embeddings of the
+   * nodes it replaced are removed afterwards (the TypeScript path removes them before each write;
+   * the end state is the same: a replaced node is embedded again by embedPending).
+   */
+  private async runRust(
+    rust: RustEngine,
+    entries: RustIndexEntry[],
+    mode: { force: boolean; trackOversize: boolean; synchronousOff: boolean; collectStats: boolean },
+    onProgress: (current: number, total: number) => void,
+  ): Promise<RustIndexResult> {
+    const embeddings = this.config.enableEmbeddings === true;
+    const result = await rust.indexFiles({
+      projectRoot: this.projectRoot,
+      ...rustDbPaths(this.projectRoot),
+      force: mode.force,
+      enableComplexity: !!(this.config as any).enableComplexity,
+      maxFileSize: this.config.maxFileSize,
+      trackOversize: mode.trackOversize,
+      synchronousOff: mode.synchronousOff,
+      collectStats: mode.collectStats,
+      collectRemovedIds: embeddings,
+    }, entries, onProgress);
+    if (embeddings && result.removedNodeIds.length > 0) {
+      await this.loadVectors();
+      await this.vectors.deleteEmbeddings(result.removedNodeIds);
+    }
+    return result;
   }
 
   private hasIndexedFiles(): boolean {
@@ -615,6 +701,11 @@ export class IndexPipeline {
       const crashCounts = new Map<string, number>();
       const POISON_THRESHOLD = 3;
 
+      // engine "rust": as in indexAll, the native engine parses its languages and writes every file
+      const rust = rustEngineFor(this.config);
+      const nativeLangs = new Set(rust?.nativeLanguages() ?? []);
+      const rustEntries: RustIndexEntry[] = [];
+
       const batch = new WriteBatch(this.db);
       for (let i = 0; i < filesToProcess.length; i++) {
         const file = filesToProcess[i];
@@ -628,9 +719,13 @@ export class IndexPipeline {
 
         try {
           // Skip files whose language parser is currently poisoned
-          const { detectLanguage } = await import('../extraction/languages');
           const lang = detectLanguage(file);
           if (poisonedLanguages.has(lang)) continue;
+
+          if (rust && nativeLangs.has(lang)) {
+            rustEntries.push({ path: file, language: lang });
+            continue;
+          }
 
           // Skip an unchanged file by hash before parsing it. Parsing is the expensive step, and
           // when git reports no changes (clean tree, after a pull or a branch switch) the
@@ -647,6 +742,13 @@ export class IndexPipeline {
           const existing = this.db.getFile(extracted.filePath);
           const isNew = !existing;
           if (!isNew && existing!.contentHash === extracted.contentHash) continue;
+
+          if (rust) {
+            // Written by the native engine, which also counts what it replaces
+            rustEntries.push({ extracted: JSON.stringify(extracted) });
+            crashCounts.set(lang, 0);
+            continue;
+          }
 
           const oldNodeCount = this.db.countNodesByFile(extracted.filePath);
           const oldEdgeCount = this.db.countEdgesTouchingFile(extracted.filePath);
@@ -688,7 +790,6 @@ export class IndexPipeline {
             || msg.includes('RuntimeError')
             || msg.includes('WASM grammar exists but failed to load');
           if (isWasmCrash) {
-            const { detectLanguage } = await import('../extraction/languages');
             const lang = detectLanguage(file);
             const count = (crashCounts.get(lang) ?? 0) + 1;
             crashCounts.set(lang, count);
@@ -711,6 +812,21 @@ export class IndexPipeline {
       }
 
       batch.flush();
+
+      if (rust && rustEntries.length > 0) {
+        const native = await this.runRust(rust, rustEntries, {
+          force: false, trackOversize: true, synchronousOff: false, collectStats: true,
+        }, (current, total) => onProgress?.({ phase: 'parsing', current, total }));
+        for (const f of native.files) {
+          result.nodesRemoved += f.oldNodes;
+          result.edgesRemoved += f.oldEdges;
+          result.nodesCreated += f.nodes;
+          result.edgesCreated += f.edges;
+          if (f.isNew) result.added.push(f.path);
+          else { result.modified.push(f.path); result.nodesUpdated += f.nodes; }
+        }
+        result.errors.push(...native.errors);
+      }
 
       // Resolve cross-file references. When no file was added, changed or removed, no node or
       // reference is new, so resolution has nothing to find: every unresolved reference was
