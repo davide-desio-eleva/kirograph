@@ -213,7 +213,14 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
     let classificationBackend: 'jev' | 'strands' | null = null;
 
     try {
-      if (alreadyInitialized) {
+      // A project configured before: keep its configuration (and with --yes, always), or answer
+      // the questions again. Without the choice, a second install could never change anything.
+      const reuseConfig = alreadyInitialized && (opts.yes || await arrowSelect<boolean>(rl,
+        'KiroGraph is already configured in this project:', [
+          { value: true, label: 'Keep the current configuration', description: 'Update hooks, steering and MCP registration; change no setting.' },
+          { value: false, label: 'Change the configuration', description: 'Answer the questions again (install mode, semantic search, index engine, features).' },
+        ]));
+      if (reuseConfig) {
         const config = await loadConfig(cwd);
         cavemanMode = config.cavemanMode ?? 'off';
         shellCompressionLevel = config.shellCompressionLevel ?? 'normal';

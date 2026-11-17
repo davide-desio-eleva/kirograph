@@ -41,7 +41,8 @@ const GROUPS: Group[] = [
   {
     icon: '📦', title: 'Indexing',
     commands: [
-      { name: 'index',         args: '[path]', desc: 'Full re-index of a project',             opts: ['--force     Force re-index all files'] },
+      { name: 'index',         args: '[path]', desc: 'Full re-index of a project',             opts: ['--force     Force re-index all files', '--timings   Print the time spent in each phase'] },
+      { name: 'engine',        args: '[node|rust]', desc: 'Show or set the index engine (rust: native, faster on large repositories)' },
       { name: 'sync',          args: '[path]', desc: 'Incremental sync of changed files',       opts: ['--files <f> Specific files to sync'] },
       { name: 'sync-if-dirty', args: '[path]', desc: 'Sync only if a dirty marker is present', opts: ['-q, --quiet  Suppress output'] },
       { name: 'mark-dirty',    args: '[path]', desc: 'Write a dirty marker for deferred sync' },

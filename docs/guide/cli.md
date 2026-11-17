@@ -30,6 +30,8 @@ kirograph hook list               # List saved global hooks
 kirograph index [path]            # Full re-index of the project
 kirograph index --force           # Force re-index all files (ignore hash cache)
 kirograph index --timings         # Print the time spent in each phase
+kirograph engine                  # Show the index engine, and whether the native one is available
+kirograph engine rust             # Use the native engine for index and sync (node to go back)
 kirograph sync [path]             # Incremental sync of changed files
 kirograph sync --files a.ts b.ts  # Sync specific files only
 kirograph sync --full             # Run every phase even when nothing seems to have changed
