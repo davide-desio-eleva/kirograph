@@ -24,6 +24,10 @@ After building, the `kirograph` and `kg` commands are available globally.
 kirograph --version
 ```
 
+## Running `install` again
+
+`kirograph install` can be run again at any time (after an upgrade, or to turn features on or off). It updates KiroGraph's own settings and keeps your changes: fields and tools you removed from the `kirograph` entry of `.kiro/settings/mcp.json`, resources, MCP servers, hooks and other keys you added to `.kiro/agents/kirograph.json`, and hooks you deleted from `.kiro/hooks/`. It records what it wrote in `.kirograph/install-state.json` to tell your removals from what is new. To get the defaults back, delete the `kirograph` entry of `mcp.json`, `.kiro/agents/kirograph.json` and `.kirograph/install-state.json` before running it; `kirograph compression <level>` writes the compression hint again.
+
 ## Uninstallation
 
 ### Remove from a project
