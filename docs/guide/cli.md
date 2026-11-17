@@ -29,6 +29,7 @@ kirograph hook list               # List saved global hooks
 ```bash
 kirograph index [path]            # Full re-index of the project
 kirograph index --force           # Force re-index all files (ignore hash cache)
+kirograph index --timings         # Print the time spent in each phase
 kirograph sync [path]             # Incremental sync of changed files
 kirograph sync --files a.ts b.ts  # Sync specific files only
 kirograph sync --full             # Run every phase even when nothing seems to have changed
