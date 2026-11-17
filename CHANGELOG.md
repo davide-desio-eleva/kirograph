@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.3] - 2026-11-17: SQL tables, views and functions get their real names, and SQL dumps index in a fraction of a second
+
+### Fixed
+
+- **SQL symbols are read from the text of each `CREATE` statement** ([#84](https://github.com/davide-desio-eleva/kirograph/issues/84)): the bundled SQL grammar read the `IF` of `CREATE TABLE IF NOT EXISTS` as the table's name, so on projects whose migrations use that form most tables were called `IF`, and it gave no symbol at all for views, `OR REPLACE`, `TEMPORARY` tables, procedures, or quoted, backticked and bracketed names. `CREATE TABLE | VIEW | MATERIALIZED VIEW | FUNCTION | PROCEDURE` statements are now read directly, in any dialect, with schema-qualified and quoted names. Tables are classes; views, functions and procedures are functions, as before. On 2,544 SQL files from sqlc, laravel, kong, django and a Prisma project, no symbol was lost, 276 were found that were missing, and the end lines and signatures are no longer cut where the grammar gave up.
+- **SQL dumps no longer take tens of seconds to index**: the grammar took 48 s on a 540 KB `pg_dump`; extraction of those 2,544 files went from 54 s to 0.2 s.
+
 ## [1.5.2] - 2026-11-17: `install` writes the hooks again after `.kiro/` is deleted
 
 ### Fixed
