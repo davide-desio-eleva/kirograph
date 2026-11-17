@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.5.2] - 2026-11-17: `install` writes the hooks again after `.kiro/` is deleted
+
+### Fixed
+
+- **`kirograph install` wrote no hooks after `.kiro/` was deleted** ([#85](https://github.com/davide-desio-eleva/kirograph/issues/85)), a regression of 1.5.1: the installer took every hook it had recorded in `.kirograph/install-state.json` and could not find as deleted by you, so after a reset of `.kiro/` it wrote none, the sync hook included. When none of the recorded hooks is there, the install is now a new one and writes them all; a hook you delete while keeping the others stays deleted.
+
 ## [1.5.1] - 2026-11-17: status reports only files out of date, excluded files stay out of a sync, and `install` keeps your changes
 
 ### Upgrade notes
