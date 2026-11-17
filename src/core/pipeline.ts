@@ -204,6 +204,8 @@ export class IndexPipeline {
       const rust = rustEngineFor(this.config);
       const nativeLangs = new Set(rust?.nativeLanguages() ?? []);
       const rustEntries: RustIndexEntry[] = [];
+      // Files the WASM parser crashed on in this run: the only ones the retry below re-parses
+      const parseFailed = new Set<string>();
 
       // Parsing runs on worker threads, a few files ahead of the loop that writes them. The loop
       // takes the results in file order, so the graph is the same as when parsing in-process.
@@ -266,6 +268,7 @@ export class IndexPipeline {
             extracted = await extractFile(file, this.projectRoot, content, extractOpts);
           }
           if (!extracted) continue;
+          if (extracted.parseFailed) parseFailed.add(extracted.filePath);
 
           if (rust) {
             // Written by the native engine, in file order (its replaced embeddings are removed after)
@@ -356,10 +359,11 @@ export class IndexPipeline {
         endPhase('native');
       }
 
-      // Re-process files that have symbolCount=0 but should have symbols (WASM recovery). Files of
-      // the native engine's languages were not parsed by WASM: nothing to recover.
+      // Re-parse the files the WASM parser crashed on (recorded without symbols), now that the
+      // workers are gone. Every file without symbols used to be parsed again, which on a project
+      // with many files that have none (SQL migrations, data YAML) doubled the parsing time.
       const emptyFiles = this.db.getAllFiles().filter(
-        (f: any) => f.symbolCount === 0 && hasWasmGrammar(f.language) && !nativeLangs.has(f.language)
+        (f: any) => parseFailed.has(f.path) && f.symbolCount === 0 && hasWasmGrammar(f.language) && !nativeLangs.has(f.language)
       );
       if (emptyFiles.length > 0) {
         opts?.onProgress?.({ phase: 'retrying', current: 0, total: emptyFiles.length });
