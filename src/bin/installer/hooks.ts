@@ -16,6 +16,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { silentCommand } from './common';
+import { readInstallState, updateInstallState } from './install-state';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -205,11 +206,40 @@ function removeHookDual(hooksDir: string, id: string): void {
 
 export type KiroHookFormat = 'v1-legacy' | 'v2';
 
-export function writeHooks(kiroDir: string, opts?: { enableCompression?: boolean; enableMemory?: boolean; enableWatchmen?: boolean; watchmenSynthesisMode?: 'local' | 'agent'; enableWiki?: boolean; wikiSynthesisMode?: 'local' | 'agent'; wikiLintFrequency?: number; kiroHookFormat?: KiroHookFormat }): void {
+/** The format of the hooks already installed: legacy when only `.kiro.hook` files are there. */
+export function detectHookFormat(kiroDir: string): KiroHookFormat {
+  let files: string[];
+  try { files = fs.readdirSync(path.join(kiroDir, 'hooks')).filter(f => f.startsWith('kirograph-')); } catch { return 'v2'; }
+  const legacy = files.some(f => f.endsWith(V1_EXT));
+  const current = files.some(f => f.endsWith(V2_EXT));
+  return legacy && !current ? 'v1-legacy' : 'v2';
+}
+
+/**
+ * Writes KiroGraph's hooks. A hook the last install wrote and the user deleted is not written
+ * again (see install-state.ts); `restore` lists hooks to write anyway, for a command that turns
+ * their feature on explicitly. Without a record of the last install, the compression hint is
+ * taken as deleted when an earlier install is there without it.
+ */
+export function writeHooks(kiroDir: string, opts?: { enableCompression?: boolean; enableMemory?: boolean; enableWatchmen?: boolean; watchmenSynthesisMode?: 'local' | 'agent'; enableWiki?: boolean; wikiSynthesisMode?: 'local' | 'agent'; wikiLintFrequency?: number; kiroHookFormat?: KiroHookFormat; restore?: string[] }): void {
   const hooksDir = path.join(kiroDir, 'hooks');
   ensureDir(hooksDir);
 
   const format = opts?.kiroHookFormat ?? 'v2';
+  const state = readInstallState(kiroDir);
+  const previous = new Set(state?.hooks ?? []);
+  const restore = new Set(opts?.restore ?? []);
+  const isPresent = (id: string) => [V2_EXT, V1_EXT].some(ext => fs.existsSync(path.join(hooksDir, `${id}${ext}`)));
+  const earlierInstall = !state && fs.readdirSync(hooksDir).some(f => f.startsWith('kirograph-'));
+  const installed = new Set<string>();
+  const keptRemoved: string[] = [];
+  const writeHook = (def: HookDef): void => {
+    const deletedByUser = !restore.has(def.id) && !isPresent(def.id)
+      && (previous.has(def.id) || (earlierInstall && def.id === 'kirograph-compress-hint'));
+    installed.add(def.id); // still counted as written, so it stays deleted next time
+    if (deletedByUser) { keptRemoved.push(def.id); return; }
+    writeHookForFormat(hooksDir, def, format);
+  };
 
   // Remove obsolete hook files from earlier versions
   const obsoleteFiles = [
@@ -236,13 +266,13 @@ export function writeHooks(kiroDir: string, opts?: { enableCompression?: boolean
       removeHookDual(hooksDir, def.id);
       continue;
     }
-    writeHookForFormat(hooksDir, def, format);
+    writeHook(def);
   }
 
   // Watchmen hook — built dynamically based on synthesis mode
   if (opts?.enableWatchmen) {
     const mode = opts.watchmenSynthesisMode ?? 'local';
-    writeHookForFormat(hooksDir, buildWatchmenHook(mode), format);
+    writeHook(buildWatchmenHook(mode));
   } else {
     removeHookDual(hooksDir, 'kirograph-watchmen');
   }
@@ -259,7 +289,7 @@ export function writeHooks(kiroDir: string, opts?: { enableCompression?: boolean
 Skip if the session was trivial (simple bug fix, no new knowledge).`;
 
     if (wikiMode === 'local') {
-      writeHookForFormat(hooksDir, {
+      writeHook({
         id: 'kirograph-wiki-ingest',
         description: 'After each session, run local-model wiki synthesis over queued sources.',
         v2: {
@@ -277,9 +307,9 @@ Skip if the session was trivial (simple bug fix, no new knowledge).`;
           when: { type: 'agentStop' },
           then: { type: 'runCommand', command: WIKI_SYNTH_CMD },
         },
-      }, format);
+      });
     } else {
-      writeHookForFormat(hooksDir, {
+      writeHook({
         id: 'kirograph-wiki-ingest',
         description: 'At the end of each session, prompt the agent to ingest any relevant knowledge into the wiki.',
         v2: {
@@ -297,10 +327,10 @@ Skip if the session was trivial (simple bug fix, no new knowledge).`;
           when: { type: 'agentStop' },
           then: { type: 'askAgent', prompt: wikiIngestPrompt },
         },
-      }, format);
+      });
     }
 
-    writeHookForFormat(hooksDir, {
+    writeHook({
       id: 'kirograph-wiki-lint',
       description: `Run wiki health check every ${lintFreq} sessions to catch broken links, orphan pages, and contradictions.`,
       v2: {
@@ -318,11 +348,15 @@ Skip if the session was trivial (simple bug fix, no new knowledge).`;
         when: { type: 'agentStop' },
         then: { type: 'runCommand', command: WIKI_LINT_CMD },
       },
-    }, format);
+    });
   } else {
     removeHookDual(hooksDir, 'kirograph-wiki-ingest');
     removeHookDual(hooksDir, 'kirograph-wiki-lint');
   }
 
+  updateInstallState(kiroDir, { hooks: [...installed] });
   console.log(`  ✓ Auto-sync hooks written to ${hooksDir}`);
+  if (keptRemoved.length > 0) {
+    console.log(`  · Kept removed (you deleted them): ${keptRemoved.join(', ')}`);
+  }
 }
