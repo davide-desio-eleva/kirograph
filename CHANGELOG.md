@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- **SQL dumps no longer take tens of seconds to index**: the SQL grammar can take very long on data statements (48 s for a 540 KB `pg_dump` of a test fixture), and the extractor reads symbols only from `CREATE` statements. Data statements (`INSERT`, `UPDATE`, `DELETE`, `COPY` with its rows, `SELECT`…) are now blanked out before parsing, keeping lines and positions. On 2,544 SQL files from sqlc, laravel, kong, django and a Prisma project, extraction went from 58 s to 1 s with no symbol lost; 3 files gained tables the grammar's error recovery used to swallow.
 - **A full index no longer parses files without symbols twice**: the retry pass meant to recover files the WASM parser crashed on re-parsed every file recorded without symbols, so SQL migrations, data YAML and similar files were parsed twice. Only the files whose parse crashed are retried now. A workspace of 8 repositories (10,781 files) indexes in 96 s instead of 157 s with the `node` engine.
 - **Writing a large project is no longer quadratic**: every file written first deletes its unresolved references by path, and `unresolved_refs` had no index on the path, so each delete read the whole table. With the TypeScript engine, parsing and writing a first index of django went from 53 s to 22 s. The index is created on the next open.
 ## [1.5.1] - 2026-11-17: status reports only files out of date, excluded files stay out of a sync, and `install` keeps your changes

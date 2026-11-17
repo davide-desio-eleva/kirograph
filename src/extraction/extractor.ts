@@ -11,6 +11,7 @@ import type { Node, Edge, NodeKind, Language } from '../types';
 import { detectLanguage, isSupportedLanguage } from './languages';
 import { initGrammars, getParser, hasWasmGrammar } from './grammars';
 import { extractNotebook } from './notebook';
+import { maskSqlForParsing } from './sql-mask';
 import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
 import { extractHcl, extractYaml, extractHelmTemplate, augmentBash, extractJsonConfig } from './infra';
 
@@ -168,7 +169,8 @@ export async function extractFile(filePath: string, projectRoot: string, content
     // on malformed files like Helm Go templates in .yaml). Skip the file gracefully instead
     // of letting the crash propagate and poison the entire language.
     try {
-      tree = parser.parse(source);
+      // SQL: only CREATE statements give symbols, the others are blanked out (see sql-mask.ts)
+      tree = parser.parse(language === 'sql' ? maskSqlForParsing(source) : source);
     } catch (parseErr: any) {
       const parseMsg = parseErr?.message ?? String(parseErr);
       const isWasmCrash = parseErr?.constructor?.name === 'RuntimeError'

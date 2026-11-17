@@ -150,9 +150,9 @@ Native languages: TypeScript, TSX, JavaScript, JSX, Python, Go, Rust, Java, C, C
 | laravel/framework (PHP) | 3,307 | 10.2 s | 3.6 s |
 | a TypeScript/React monorepo | 3,308 | 10.1 s | 4.7 s |
 | eShop (C#) | 630 | 5.1 s | 1.2 s |
-| a folder of 8 repositories (TS, PHP, Lua, C#, Go, Terraform, Helm) | 10,781 | 96 s | 59 s |
+| a folder of 8 repositories (TS, PHP, Lua, C#, Go, Terraform, Helm) | 10,781 | 46 s | 11 s |
 
-On the folder of 8 repositories, a sync after editing 200 files takes 3.5 s instead of 7.9 s; a sync with nothing changed takes the same 0.65 s with both engines. The native engine helps less there, because of the languages it hands back to TypeScript: 48 of its 59 s go to a single 540 KB SQL fixture, which the WASM SQL grammar takes that long to parse.
+On the folder of 8 repositories, a sync after editing 200 files takes 3.5 s instead of 7.9 s; a sync with nothing changed takes the same 0.65 s with both engines.
 
 Embedding generation is not affected: both engines run the same ONNX model.
 
