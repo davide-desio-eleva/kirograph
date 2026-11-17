@@ -111,3 +111,28 @@ describe('kirograph install run again (#82)', () => {
     expect(fs.existsSync(path.join(kiroDir, 'hooks', 'kirograph-mem-capture.json'))).toBe(true);
   });
 });
+
+describe('kirograph compression', () => {
+  it('keeps the hooks of the other features on, and the installed hook format', async () => {
+    const { Command } = await import('commander');
+    const { register } = await import('../../src/bin/commands/compression');
+    const { updateConfig } = await import('../../src/config');
+    await updateConfig(root, { enableMemory: true, shellCompressionLevel: 'off' } as never);
+    writeHooks(kiroDir, { enableMemory: true, enableCompression: false, kiroHookFormat: 'v1-legacy' });
+    const hooks = () => fs.readdirSync(path.join(kiroDir, 'hooks')).sort();
+    expect(hooks()).toContain('kirograph-mem-capture.kiro.hook');
+
+    const cwd = process.cwd();
+    process.chdir(root);
+    try {
+      const program = new Command();
+      register(program);
+      await program.parseAsync(['node', 'kirograph', 'compression', 'normal']);
+    } finally {
+      process.chdir(cwd);
+    }
+    expect(hooks()).toContain('kirograph-mem-capture.kiro.hook');
+    expect(hooks()).toContain('kirograph-compress-hint.kiro.hook');
+    expect(hooks().filter(f => f.endsWith('.json'))).toEqual([]);
+  });
+});

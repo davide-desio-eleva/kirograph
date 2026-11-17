@@ -206,6 +206,15 @@ function removeHookDual(hooksDir: string, id: string): void {
 
 export type KiroHookFormat = 'v1-legacy' | 'v2';
 
+/** The format of the hooks already installed: legacy when only `.kiro.hook` files are there. */
+export function detectHookFormat(kiroDir: string): KiroHookFormat {
+  let files: string[];
+  try { files = fs.readdirSync(path.join(kiroDir, 'hooks')).filter(f => f.startsWith('kirograph-')); } catch { return 'v2'; }
+  const legacy = files.some(f => f.endsWith(V1_EXT));
+  const current = files.some(f => f.endsWith(V2_EXT));
+  return legacy && !current ? 'v1-legacy' : 'v2';
+}
+
 /**
  * Writes KiroGraph's hooks. A hook the last install wrote and the user deleted is not written
  * again (see install-state.ts); `restore` lists hooks to write anyway, for a command that turns
