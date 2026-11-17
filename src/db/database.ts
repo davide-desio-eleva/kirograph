@@ -14,6 +14,9 @@ const { Database } = require('node-sqlite3-wasm');
 import { BusyRetryDatabase, clearStaleDbLock, dbLockTiming } from './db-lock';
 import { recoverHotJournal } from './journal-recovery';
 
+/** Languages whose references infra.ts resolves by exact qualified name. */
+const INFRA_LANGUAGES = "('hcl', 'yaml', 'json', 'bash')";
+
 const CURRENT_SCHEMA_VERSION = 4;
 
 /** Parameters per multi-row statement. SQLite allows more; a smaller statement is cheaper to parse. */
@@ -486,6 +489,7 @@ export class GraphDatabase {
   deleteNodesByFile(filePath: string): void {
     const ids = this.db.all('SELECT id FROM nodes WHERE file_path = ?', [filePath]).map((r: any) => r.id);
     if (ids.length === 0) return;
+    this.detachIncomingEdges(filePath);
     const placeholders = ids.map(() => '?').join(',');
     this.db.run(`DELETE FROM edges WHERE source IN (${placeholders}) OR target IN (${placeholders})`, [...ids, ...ids]);
     // By rowid: the FTS table has no index on id, so deleting by id scanned the whole table for
@@ -493,6 +497,44 @@ export class GraphDatabase {
     // are deleted: an external-content table reads the old values from them.
     this.db.run(`DELETE FROM nodes_fts WHERE rowid IN (SELECT rowid FROM nodes WHERE file_path = ?)`, [filePath]);
     this.db.run(`DELETE FROM nodes WHERE file_path = ?`, [filePath]);
+  }
+
+  /**
+   * Turns the resolved edges that come into a file's symbols from other files back into
+   * unresolved references, before the file's nodes are deleted. Resolution removes a reference
+   * once it becomes an edge, so without this a file rewritten by a sync lost its callers, imports
+   * and subtypes from every other file until the next full index. Resolution links the references
+   * again to the new symbols, or leaves them unresolved when the symbol is gone, as a full index
+   * of the same files would.
+   *
+   * Only edges made by resolution (confidence 'extracted'): the ones the cross-language bridges
+   * synthesize ('inferred') are rebuilt by the bridges themselves.
+   *
+   * The reference is rebuilt from the edge: an import by its module path (the import node's
+   * name), an infrastructure reference or call by the target's qualified name (resolved by exact
+   * qualified name, as infra.ts emits them), anything else by the target's name.
+   */
+  private detachIncomingEdges(filePath: string): void {
+    this.db.run(
+      `INSERT INTO unresolved_refs (source_id, ref_name, ref_kind, file_path, line, column, metadata)
+       SELECT e.source,
+              CASE WHEN e.kind = 'imports' THEN s.name
+                   WHEN e.kind = 'references' OR (e.kind = 'calls' AND t.language IN ${INFRA_LANGUAGES}) THEN t.qualified_name
+                   ELSE t.name END,
+              CASE e.kind WHEN 'imports' THEN 'import'
+                          WHEN 'references' THEN 'reference'
+                          WHEN 'extends' THEN 'extends'
+                          WHEN 'implements' THEN 'implements'
+                          ELSE CASE WHEN t.language IN ${INFRA_LANGUAGES} THEN 'qualified_call' ELSE 'function' END END,
+              s.file_path, e.line, e.column, e.metadata
+       FROM edges e
+       JOIN nodes t ON t.id = e.target
+       JOIN nodes s ON s.id = e.source
+       WHERE t.file_path = ? AND s.file_path <> ?
+         AND e.kind IN ('calls', 'imports', 'extends', 'implements', 'references')
+         AND e.confidence = 'extracted'`,
+      [filePath, filePath],
+    );
   }
 
   private rowToNode(row: any): Node {
