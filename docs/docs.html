@@ -910,7 +910,7 @@ kirograph install --target cursor      # Install for a specific platform only</c
           <tr><td><code>include</code></td><td>string[]</td><td><code>[]</code></td><td>Glob patterns to include (empty = include everything not excluded)</td></tr>
           <tr><td><code>exclude</code></td><td>string[]</td><td>see below</td><td>Glob patterns to exclude from indexing</td></tr>
           <tr><td><code>maxFileSize</code></td><td>number</td><td><code>1048576</code></td><td>Skip files larger than this (bytes, default 1MB)</td></tr>
-          <tr><td><code>engine</code></td><td>string</td><td><code>"node"</code></td><td>Index engine: <code>node</code> (TypeScript + WASM) or <code>rust</code> (native module in <code>native/kirograph-rust</code>, several times faster on large projects, same graph). Falls back to <code>node</code> when the module is not built.</td></tr>
+          <tr><td><code>engine</code></td><td>string</td><td><code>"node"</code></td><td>Index engine: <code>node</code> (TypeScript + WASM) or <code>rust</code> (native module in <code>native/kirograph-rust</code>, several times faster on large projects, same graph). Prebuilt for macOS (arm64, x64), Linux glibc (x64, arm64) and Windows x64; falls back to <code>node</code> where no binary is installed.</td></tr>
           <tr><td><code>extractDocstrings</code></td><td>boolean</td><td><code>true</code></td><td>Extract JSDoc, docstrings, and comments</td></tr>
           <tr><td><code>trackCallSites</code></td><td>boolean</td><td><code>true</code></td><td>Record line/column for call edges</td></tr>
           <tr><td><code>frameworkHints</code></td><td>string[]</td><td>auto</td><td>Override framework detection (e.g. <code>["react", "express"]</code>)</td></tr>

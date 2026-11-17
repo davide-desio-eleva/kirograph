@@ -150,10 +150,9 @@ Native languages: TypeScript, TSX, JavaScript, JSX, Python, Go, Rust, Java, C, C
 | django (Python) | 3,500 | 42.3 s | 10.7 s |
 | laravel/framework (PHP) | 3,307 | 10.2 s | 3.6 s |
 | a TypeScript/React monorepo | 3,308 | 10.1 s | 4.7 s |
-| eShop (C#) | 630 | 5.1 s | 1.2 s |
 | a folder of 8 repositories (TS, PHP, Lua, C#, Go, Terraform, Helm) | 10,781 | 46 s | 11 s |
 
-On the folder of 8 repositories, a sync after editing 200 files takes 3.5 s instead of 7.9 s; a sync with nothing changed takes the same 0.65 s with both engines.
+On the folder of 8 repositories, a sync after editing 200 files takes 3.5 s instead of 7.9 s; a sync with nothing changed takes the same 0.65 s with both engines. Times vary with the load on the machine, more with the `node` engine.
 
 Embedding generation is not affected: both engines run the same ONNX model.
 

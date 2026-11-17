@@ -24,6 +24,7 @@ The result is fewer tool calls, less context used, and faster responses on compl
 |---------|-------------|
 | <h4>Graph & Analysis (KiroGraph-Core)</h4> | |
 | 🕸️ **Semantic Graph** | tree-sitter AST parsing across 33+ languages — functions, classes, call edges, type hierarchies, all in SQLite. Infrastructure too: Terraform resources, modules, variables and remote states; Helm values and templates; Kubernetes objects; GitHub Actions jobs; shell scripts and JSON configuration |
+| 🦀 **Native Index Engine (opt-in)** | `"engine": "rust"`: parsing, writing and reference resolution in Rust on every core, several times faster on large repositories (a folder of 8 repositories, 10,781 files: full index 46 s → 11 s). Same graph as the default engine, row for row. Prebuilt for macOS, Linux and Windows, nothing to build. See [Index Engine](docs/guide/configuration.md#index-engine). |
 | 🎯 **Context Building** | One tool call returns entry points, related symbols, and code snippets for any task description |
 | 💥 **Impact Analysis** | Blast-radius traversal before making changes — know what breaks at any depth |
 | 🧬 **Type Hierarchy** | Traverse inheritance chains — base types, derived types, implementations |
