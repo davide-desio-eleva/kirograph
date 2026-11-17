@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Native index engine (`"engine": "rust"`)**: a Rust module (`native/kirograph-rust`, napi-rs) takes over extraction and reference resolution, the two phases where an index spends its time. It parses with tree-sitter on every core, writes with native SQLite and resolves references with the same strategies as the TypeScript resolver. The graph is the same row for row: the same grammar versions as the WASM files, parsed as UTF-16 like web-tree-sitter; languages without a native extractor are extracted in TypeScript and handed over in file order. A first index of django (3,500 files) takes 10.7 s instead of 42.3 s. `kirograph install` asks for the engine and builds the module; without it KiroGraph falls back to `node` with a warning. `KIROGRAPH_ENGINE` overrides the setting for one run.
+- **`kirograph index --timings`** prints the time spent in each phase.
+
+### Fixed
+
+- **Writing a large project is no longer quadratic**: every file written first deletes its unresolved references by path, and `unresolved_refs` had no index on the path, so each delete read the whole table. With the TypeScript engine, parsing and writing a first index of django went from 53 s to 22 s. The index is created on the next open.
+
 ## [1.5.0] - 2026-11-13: fast syncs on large workspaces, a killed process no longer breaks the database, symbols for Terraform, Helm, shell and JSON
 
 ### Upgrade notes

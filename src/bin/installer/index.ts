@@ -57,13 +57,29 @@ function _findRustc(): string | null {
   return null;
 }
 
-function _installTurbovecAddon(): void {
-  const nativeDir = path.join(__dirname, '..', '..', '..', 'native', 'turbovec-node');
-  const hasAddon = fs.existsSync(nativeDir) &&
-    fs.readdirSync(nativeDir).some(f => f.startsWith('turbovec_node.') && f.endsWith('.node'));
+interface NativeAddon {
+  /** Folder under native/ */
+  dir: string;
+  /** Prefix of the built .node file */
+  binaryPrefix: string;
+}
+
+const TURBOVEC_ADDON: NativeAddon = { dir: 'turbovec-node', binaryPrefix: 'turbovec_node.' };
+const RUST_ENGINE_ADDON: NativeAddon = { dir: 'kirograph-rust', binaryPrefix: 'kirograph_rust.' };
+
+/** Builds a napi-rs addon from native/<dir>, installing the Rust toolchain first if needed. */
+function _installNativeAddon(addon: NativeAddon): void {
+  const nativeDir = path.join(__dirname, '..', '..', '..', 'native', addon.dir);
+  const manual = `cd native/${addon.dir} && npm install && npm run build`;
+  if (!fs.existsSync(nativeDir)) {
+    console.warn(`  ✗ native/${addon.dir} is not part of this installation (it ships with the source repository).`);
+    console.warn(`    Clone https://github.com/davide-desio-eleva/kirograph and run: ${manual}`);
+    return;
+  }
+  const hasAddon = fs.readdirSync(nativeDir).some(f => f.startsWith(addon.binaryPrefix) && f.endsWith('.node'));
 
   if (hasAddon) {
-    console.log(`  ✓ turbovec-node addon already built`);
+    console.log(`  ✓ ${addon.dir} addon already built`);
     return;
   }
 
@@ -84,7 +100,7 @@ function _installTurbovecAddon(): void {
     );
     if (rustup.status !== 0) {
       console.warn(`  ✗ rustup install failed. Install Rust manually: https://rustup.rs`);
-      console.warn(`    Then: cd native/turbovec-node && npm install && npm run build`);
+      console.warn(`    Then: ${manual}`);
       return;
     }
     rustc = _findRustc();
@@ -100,24 +116,24 @@ function _installTurbovecAddon(): void {
   // Ensure ~/.cargo/bin is on PATH for child processes so cargo/napi-rs cli can find it
   if (!process.env.PATH?.includes('.cargo')) {
     const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
-    process.env.PATH = `${path.join(home, '.cargo', 'bin')}:${process.env.PATH ?? ''}`;
+    process.env.PATH = `${path.join(home, '.cargo', 'bin')}${path.delimiter}${process.env.PATH ?? ''}`;
   }
 
-  console.log(`\n  Building turbovec-node native addon (Rust/napi-rs)...`);
+  console.log(`\n  Building ${addon.dir} native addon (Rust/napi-rs)...`);
   console.log(`  This may take a few minutes on first build.`);
 
   const npmInstall = spawnSync('npm', ['install'], { cwd: nativeDir, stdio: 'inherit', shell: true });
   if (npmInstall.status !== 0) {
-    console.warn(`  ✗ npm install failed in native/turbovec-node`);
+    console.warn(`  ✗ npm install failed in native/${addon.dir}`);
     return;
   }
 
   const build = spawnSync('npm', ['run', 'build'], { cwd: nativeDir, stdio: 'inherit', shell: true });
   if (build.status === 0) {
-    console.log(`  ✓ turbovec-node addon built`);
+    console.log(`  ✓ ${addon.dir} addon built`);
   } else {
     console.warn(`  ✗ Build failed (exit ${build.status}). Run manually:`);
-    console.warn(`    cd native/turbovec-node && npm install && npm run build`);
+    console.warn(`    ${manual}`);
   }
 }
 
@@ -223,8 +239,10 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
           }
         }
         if (config.enableEmbeddings && config.semanticEngine === 'turbovec') {
-          _installTurbovecAddon();
+          _installNativeAddon(TURBOVEC_ADDON);
         }
+        console.log(`  • engine: ${config.engine}`);
+        if (config.engine === 'rust') _installNativeAddon(RUST_ENGINE_ADDON);
         console.log(`  • enableArchitecture: ${config.enableArchitecture}`);
         console.log(`  • cavemanMode: ${cavemanMode}`);
         console.log(`  • shellCompressionLevel: ${shellCompressionLevel}`);
@@ -343,9 +361,11 @@ export async function runInstaller(target: InstallTarget = 'kiro', opts: { yes?:
               console.warn(`    npm install --prefix ~/.kirograph/engines turboquant-js`);
             }
           } else if (patch.semanticEngine === 'turbovec') {
-            _installTurbovecAddon();
+            _installNativeAddon(TURBOVEC_ADDON);
           }
         }
+        console.log(`  • engine: ${patch.engine}`);
+        if (patch.engine === 'rust') _installNativeAddon(RUST_ENGINE_ADDON);
         console.log(`  • extractDocstrings: ${patch.extractDocstrings}`);
         console.log(`  • trackCallSites: ${patch.trackCallSites}`);
         console.log(`  • enableArchitecture: ${patch.enableArchitecture}`);

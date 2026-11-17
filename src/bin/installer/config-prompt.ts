@@ -13,6 +13,7 @@ export interface PromptConfigOptions {
   offerHookImport?: boolean;
 }
 export type ConfigPatch = Pick<KiroGraphConfig,
+  'engine' |
   'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' |
   'turboquantMemDocs' | 'turboquantBits' | 'turbovecMemDocs' | 'turbovecBits' |
   'typesenseDashboard' | 'qdrantDashboard' |
@@ -101,6 +102,19 @@ type EmbeddingPatch = Pick<ConfigPatch,
   'turboquantMemDocs' | 'turboquantBits' | 'turbovecMemDocs' | 'turbovecBits' |
   'typesenseDashboard' | 'qdrantDashboard'
 >;
+
+/**
+ * The engine that parses and resolves during index and sync. Asked in every install mode: it
+ * changes nothing but speed, and matters most on large repositories.
+ */
+async function promptIndexEngine(rl: readline.Interface): Promise<Pick<ConfigPatch, 'engine'>> {
+  printSection('⚡', 'Index Engine');
+  const engine = await arrowSelect<KiroGraphConfig['engine']>(rl, 'Index engine:', [
+    { value: 'node', label: 'node', description: 'TypeScript + WASM. Works everywhere, nothing to build.' },
+    { value: 'rust', label: 'rust', description: 'Native engine (tree-sitter + SQLite in Rust, all cores). Same graph, several times faster on large repositories. Built from source (needs the Rust toolchain); falls back to node if unavailable.' },
+  ]);
+  return { engine };
+}
 
 /**
  * Semantic embeddings are a core feature, not a "custom"-only extra — asked
@@ -265,6 +279,7 @@ export async function promptConfigOptions(
   ]);
 
   const basePatch: ConfigPatch = {
+    engine: 'node',
     enableEmbeddings: false, useVecIndex: false, semanticEngine: 'cosine',
     turboquantMemDocs: false, turboquantBits: 3, turbovecMemDocs: false, turbovecBits: 4,
     typesenseDashboard: false, qdrantDashboard: false,
@@ -284,14 +299,17 @@ export async function promptConfigOptions(
 
   if (installMode === 'core') {
     const embeddingPatch = await promptEmbeddings(rl);
-    return { patch: { ...basePatch, ...embeddingPatch }, hooksToImport: null };
+    const enginePatch = await promptIndexEngine(rl);
+    return { patch: { ...basePatch, ...embeddingPatch, ...enginePatch }, hooksToImport: null };
   }
 
   if (installMode === 'full') {
     const embeddingPatch = await promptEmbeddings(rl);
+    const enginePatch = await promptIndexEngine(rl);
     const fullPatch: ConfigPatch = {
       ...basePatch,
       ...embeddingPatch,
+      ...enginePatch,
       extractDocstrings: true, trackCallSites: true,
       enableArchitecture: true, shellCompressionLevel: 'normal',
       enableCodeHealth: true, enableNavigation: true, enableComplexity: true,
@@ -314,14 +332,16 @@ export async function promptConfigOptions(
     })));
     const profile = PROFILES[profileKey];
     const embeddingPatch = await promptEmbeddings(rl);
-    const patch: ConfigPatch = { ...basePatch, ...profile.patch, ...embeddingPatch };
+    const enginePatch = await promptIndexEngine(rl);
+    const patch: ConfigPatch = { ...basePatch, ...profile.patch, ...embeddingPatch, ...enginePatch };
     await promptJevClassification(rl, patch);
     return { patch, hooksToImport: null };
   }
 
   // ── Custom: ask all questions individually ─────────────────────────────────
   const embeddingPatch = await promptEmbeddings(rl);
-  const patch: ConfigPatch = { ...basePatch, ...embeddingPatch };
+  const enginePatch = await promptIndexEngine(rl);
+  const patch: ConfigPatch = { ...basePatch, ...embeddingPatch, ...enginePatch };
 
   // ── Graph Features ──────────────────────────────────────────────────────────
   printSection('📊', 'Graph Features');

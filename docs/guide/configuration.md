@@ -11,6 +11,7 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `include` | string[] | `[]` | Glob patterns to include (empty = include everything not excluded) |
 | `exclude` | string[] | see below | Glob patterns to exclude |
 | `maxFileSize` | number | `1048576` | Skip files larger than this (bytes) |
+| `engine` | string | `node` | Engine that parses files and resolves references during index and sync: `node` (TypeScript + WASM) or `rust` (native, see [Index Engine](#index-engine)). Same graph either way. |
 | `extractDocstrings` | boolean | `true` | Extract JSDoc, docstrings, and comments |
 | `trackCallSites` | boolean | `true` | Record line/column for call edges |
 | `frameworkHints` | string[] | auto | Override framework detection (e.g. `["react", "express"]`) |
@@ -113,8 +114,45 @@ A workspace can be a repository, a folder inside one, or a plain folder that hol
 |----------|---------|-------------|
 | `KIROGRAPH_WORKERS` | cores − 1, up to 6 | Worker threads that parse files during a full index of 100 files or more. `0` or `1` parses in-process. |
 | `KIROGRAPH_ENGINES_DIR` | `~/.kirograph/engines` | Where optional packages (semantic engines, data parsers, pattern matching) are installed and loaded from. |
+| `KIROGRAPH_ENGINE` | (config) | `node` or `rust`: overrides `engine` for one run without writing it to `config.json`. |
 
 ---
+
+## Index Engine
+
+`"engine": "rust"` hands the two phases where an index spends its time to a native engine (`native/kirograph-rust`, Rust + napi-rs):
+
+- **extraction**: files are read, parsed with tree-sitter on every core and written with native SQLite;
+- **reference resolution**: the same strategies as the TypeScript resolver, in the same order.
+
+Everything else (scanning, frameworks, embeddings, architecture, security, docs, MCP tools) is unchanged, and the database is the same file with the same rows, so it can be switched at any time without re-indexing.
+
+```json
+{ "engine": "rust" }
+```
+
+```bash
+# Build the native module once (requires the Rust toolchain: https://rustup.rs)
+cd native/kirograph-rust && npm install && npm run build
+```
+
+`kirograph install` asks for the engine and builds the module when `rust` is chosen. When the module is missing or does not load, KiroGraph uses `node` and says so (`kirograph status`, and a warning after `index` and `sync`).
+
+**Same graph.** The native engine compiles the same grammar versions as the WASM files and parses as UTF-16, as web-tree-sitter does, so even files with syntax errors produce the same tree. Its extractor and resolver are ports of the TypeScript ones. Languages it has no extractor for (YAML, HCL, JSON, shell, notebooks, Swift, Dart, Vue, Svelte and the other WASM-only grammars) are extracted by the TypeScript engine and handed to it, so every file is still written in order and rows get the same ids. `test/rust/` compares both engines file by file, table by table and after a sync.
+
+Native languages: TypeScript, TSX, JavaScript, JSX, Python, Go, Rust, Java, C, C++, C#, PHP, Ruby, Kotlin, Scala, Lua, Elixir, OCaml, CSS, HTML, Objective-C, Zig.
+
+**When it helps.** On small projects the difference is a fraction of a second. On large ones a full index is several times faster (Apple M-series, first index, `kirograph index --timings` shows the phases):
+
+| Project | Files | node | rust |
+|---------|------:|-----:|-----:|
+| django (Python) | 3,500 | 42.3 s | 10.7 s |
+| laravel/framework (PHP) | 3,307 | 10.2 s | 3.6 s |
+| a TypeScript/React monorepo | 3,308 | 10.1 s | 4.7 s |
+| eShop (C#) | 630 | 5.1 s | 1.2 s |
+
+Embedding generation is not affected: both engines run the same ONNX model.
+
 
 ## Semantic Search
 

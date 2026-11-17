@@ -26,6 +26,11 @@ export function register(program: Command): void {
       console.log(`  ${label('Files')}      ${value(String(stats.files))}`);
       console.log(`  ${label('Symbols')}    ${value(String(stats.nodes))}`);
       console.log(`  ${label('Edges')}      ${value(String(stats.edges))}`);
+      if (stats.indexEngine) {
+        const rustFallback = stats.engineFallback?.split('; ').find(r => r.startsWith('engine "rust"'));
+        console.log(`  ${label('Engine')}     ${value(rustFallback ? 'node' : stats.indexEngine)}`);
+        if (rustFallback) console.log(`  ${'\x1b[33m'}⚠ ${rustFallback}${reset}`);
+      }
 
       if (stats.frameworks.length > 0) {
         console.log(`  ${label('Frameworks')} ${value(stats.frameworks.join(', '))}`);
