@@ -107,4 +107,7 @@ pub struct ExtractedFile {
     pub unresolved_refs: Vec<UnresolvedRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub route_mounts: Option<Vec<RouteMountFact>>,
+    /// The file's stat key when it was read (TypeScript FileRecord.statKey); recorded with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stat_key: Option<String>,
 }

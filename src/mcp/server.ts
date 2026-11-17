@@ -10,6 +10,7 @@ import { tools, ToolHandler, LIVE_SEARCH_TOOL_DEFINITION } from './tools';
 import { FEATURE_TOOL_SETS } from './tool-names';
 import { PatternRunner } from '../patterns/runner';
 import { serveSync } from '../sync/remote';
+import { watchEnabled, watchProject } from './watcher';
 import type { JsonRpcMessage } from './transport';
 
 const SERVER_INFO = { name: 'kirograph', version: '0.1.0' };
@@ -40,6 +41,9 @@ export class MCPServer {
   private enabledTools: typeof tools = [];
   private enabledToolNames = new Set<string>();
   private stopServingSync: (() => void) | null = null;
+  private stopWatching: (() => void) | null = null;
+  /** The sync started when the server opened a project that had changed since (see tryInit). */
+  private catchUp: Promise<unknown> | null = null;
 
   constructor(projectPath?: string) {
     // Normalize to absolute path immediately to prevent any path traversal
@@ -79,6 +83,16 @@ export class MCPServer {
       // config is optional — proceed without it
     }
     this.setEnabledTools();
+    if (this.cg) {
+      const cg = this.cg;
+      // Edits made while no server was running (a pull from a terminal, another editor): synced
+      // now, and the first tool call waits a little for it (see handleMessage)
+      this.catchUp = cg.syncIfDirty().catch(() => null).finally(() => { this.catchUp = null; });
+      if (this.config && watchEnabled(this.config)) {
+        this.stopWatching = watchProject(root, this.config, files => cg.sync({ files }));
+        if (!this.stopWatching) process.stderr.write('[KiroGraph MCP] watch is on, but this platform cannot watch a folder tree (Linux needs Node 20 or later)\n');
+      }
+    }
   }
 
   private async handleMessage(msg: JsonRpcMessage): Promise<unknown> {
@@ -108,6 +122,9 @@ export class MCPServer {
 
       case 'tools/call': {
         const { name, arguments: args = {} } = req.params ?? {};
+        // The catch-up sync started at open: waited for up to 5 s, then the call goes ahead (its
+        // response flags the files that are still out of date)
+        if (this.catchUp) await Promise.race([this.catchUp, new Promise(r => setTimeout(r, 5_000).unref())]);
         if (!this.enabledToolNames.has(name)) {
           return {
             content: [{ type: 'text', text: `Tool "${name}" is not available. The feature it belongs to is not enabled in .kirograph/config.json.` }],
@@ -200,6 +217,7 @@ export class MCPServer {
   }
 
   private stop(): void {
+    this.stopWatching?.();
     this.stopServingSync?.();
     this.cg?.close();
     this.toolHandler.closeAll();

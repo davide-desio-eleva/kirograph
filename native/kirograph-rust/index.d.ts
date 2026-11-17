@@ -6,6 +6,8 @@ export interface IndexEntry {
   language?: string
   /** An ExtractedFile from the TypeScript extractor, as JSON. */
   extracted?: string
+  /** The file's stat key, taken before it was read; recorded with the file. */
+  statKey?: string
 }
 
 export interface IndexOptions {
@@ -36,6 +38,7 @@ export interface IndexResult {
   nodesCreated: number
   edgesCreated: number
   unchanged: number
+  unchangedPaths: string[]
   errors: string[]
   files: FileWriteResult[]
   removedNodeIds: string[]

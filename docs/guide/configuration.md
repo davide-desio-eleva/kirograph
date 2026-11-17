@@ -12,6 +12,7 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `exclude` | string[] | see below | Glob patterns to exclude |
 | `maxFileSize` | number | `1048576` | Skip files larger than this (bytes) |
 | `engine` | string | `node` | Engine that parses files and resolves references during index and sync: `node` (TypeScript + WASM) or `rust` (native, see [Index Engine](#index-engine)). Same graph either way. |
+| `watch` | boolean | `false` | The MCP server watches the project and syncs changed files after the last save. For integrations without hooks. See [Keeping the graph fresh](integrations.md#keeping-the-graph-fresh) |
 | `extractDocstrings` | boolean | `true` | Extract JSDoc, docstrings, and comments |
 | `trackCallSites` | boolean | `true` | Record line/column for call edges |
 | `frameworkHints` | string[] | auto | Override framework detection (e.g. `["react", "express"]`) |
@@ -115,6 +116,8 @@ A workspace can be a repository, a folder inside one, or a plain folder that hol
 | `KIROGRAPH_WORKERS` | cores − 1, up to 6 | Worker threads that parse files during a full index of 100 files or more. `0` or `1` parses in-process. |
 | `KIROGRAPH_ENGINES_DIR` | `~/.kirograph/engines` | Where optional packages (semantic engines, data parsers, pattern matching) are installed and loaded from. |
 | `KIROGRAPH_ENGINE` | (config) | `node` or `rust`: overrides `engine` for one run without writing it to `config.json`. |
+| `KIROGRAPH_WATCH` | (config) | `1` or `0`: turns `watch` on or off for one run. |
+| `KIROGRAPH_WATCH_DEBOUNCE_MS` | `2000` | With `watch`, how long after the last change the sync starts (100 to 60000). |
 
 ---
 

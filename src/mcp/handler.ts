@@ -20,6 +20,7 @@ import { handleSecurity } from './handlers/security';
 import { handlePatterns } from './handlers/patterns';
 import { handleWiki } from './handlers/wiki';
 import { handleBranch } from './handlers/branch';
+import { NO_STALENESS_CHECK, staleFiles, stalenessNotice } from './staleness';
 
 const CORE_TOOLS = new Set([
   'kirograph_search', 'kirograph_context', 'kirograph_callers', 'kirograph_callees',
@@ -143,11 +144,36 @@ export class ToolHandler {
         } catch { /* non-critical */ }
       }
 
-      return { content: [{ type: 'text', text: truncated + metricsTrailer }] };
+      const notice = args.projectPath || NO_STALENESS_CHECK.has(toolName) ? '' : this.stalenessNoticeFor(truncated);
+      return { content: [{ type: 'text', text: notice + truncated + metricsTrailer }] };
     } catch (err) {
       logError('MCP tool error', { tool: toolName, error: err });
       const message = err instanceof Error ? err.message : String(err);
       return { content: [{ type: 'text', text: `Error: ${message}` }], isError: true };
+    }
+  }
+
+  /** Indexed files of the default project, reloaded when an index or sync wrote any (see staleness.ts). */
+  private indexedFiles: { stamp: number; files: Map<string, { statKey: string | null; indexedAt: number }> } | null = null;
+
+  /** The notice for the files `text` names that changed after the graph read them, or ''. */
+  private stalenessNoticeFor(text: string): string {
+    const cg = this.defaultCg;
+    if (!cg) return '';
+    try {
+      const raw = (cg as any).db.getRawDb();
+      const stamp = raw.get('SELECT max(indexed_at) AS m, count(*) AS c FROM files');
+      const key = (stamp?.m ?? 0) * 1e6 + (stamp?.c ?? 0);
+      if (!this.indexedFiles || this.indexedFiles.stamp !== key) {
+        const files = new Map<string, { statKey: string | null; indexedAt: number }>();
+        for (const r of raw.all('SELECT path, stat_key, indexed_at FROM files')) {
+          files.set(r.path, { statKey: r.stat_key ?? null, indexedAt: r.indexed_at });
+        }
+        this.indexedFiles = { stamp: key, files };
+      }
+      return stalenessNotice(staleFiles(text, cg.getProjectRoot(), this.indexedFiles.files));
+    } catch {
+      return ''; // a notice is a help, never a reason to fail the call
     }
   }
 

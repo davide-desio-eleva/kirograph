@@ -16,9 +16,9 @@ use crate::types::ExtractedFile;
 /// One file to index, in the order the files are written.
 pub enum Entry {
     /// Parsed here.
-    Native { path: String, language: String },
+    Native { path: String, language: String, stat_key: Option<String> },
     /// Extracted by the TypeScript engine (a language without a native extractor), as JSON.
-    Extracted { json: String },
+    Extracted { json: String, stat_key: Option<String> },
 }
 
 pub struct IndexParams {
@@ -42,6 +42,7 @@ pub struct IndexOutcome {
     pub nodes_created: i64,
     pub edges_created: i64,
     pub unchanged: i64,
+    pub unchanged_paths: Vec<String>,
     pub errors: Vec<String>,
     pub files: Vec<FileWrite>,
     pub removed_node_ids: Vec<String>,
@@ -50,7 +51,8 @@ pub struct IndexOutcome {
 
 enum Prepared {
     Write(ExtractedFile),
-    Unchanged,
+    /// Unchanged: its relative path (its stat key is recorded by the caller).
+    Unchanged(String),
     Skip,
     Error(String),
 }
@@ -106,24 +108,32 @@ fn prepare_native(
     p: &IndexParams,
     root: &Path,
     real_root: Option<&Path>,
-    hashes: &HashMap<String, String>,
+    hashes: &HashMap<String, (String, Option<String>)>,
     abs: &str,
     language: &str,
+    stat_key: Option<&str>,
 ) -> Prepared {
     let file = Path::new(abs);
+    let rel = rel_path(root, file);
+    let known = hashes.get(&rel);
+    // The stat key the index recorded is the file's current one: unchanged, not even read
+    if let (Some((_, Some(recorded))), Some(current)) = (known, stat_key) {
+        if recorded == current && (p.track_oversize || !p.force) {
+            return Prepared::Unchanged(rel);
+        }
+    }
+    let known = known.map(|(h, _)| h);
     let bytes = match std::fs::read(file) {
         Ok(b) => b,
         Err(_) => return Prepared::Skip,
     };
-    let rel = rel_path(root, file);
-    let known = hashes.get(&rel);
     let oversize = bytes.len() as u64 > p.max_file_size;
 
     if p.track_oversize {
         // sync: an unchanged file is skipped by the hash of its bytes, before it is parsed
         if let Some(h) = known {
             if !oversize && sha256_hex(&bytes) == *h {
-                return Prepared::Unchanged;
+                return Prepared::Unchanged(rel);
             }
         }
     } else {
@@ -133,7 +143,7 @@ fn prepare_native(
         if !p.force {
             if let Some(h) = known {
                 if sha256_hex(&bytes) == *h {
-                    return Prepared::Unchanged;
+                    return Prepared::Unchanged(rel);
                 }
             }
         }
@@ -176,10 +186,12 @@ fn prepare_native(
     if p.track_oversize {
         if let Some(h) = known {
             if *h == extracted.content_hash {
-                return Prepared::Unchanged;
+                return Prepared::Unchanged(rel);
             }
         }
     }
+    let mut extracted = extracted;
+    extracted.stat_key = stat_key.map(str::to_string);
     Prepared::Write(extracted)
 }
 
@@ -219,11 +231,14 @@ pub fn run_index(p: &IndexParams, entries: Vec<Entry>, mut progress: impl FnMut(
                     chunk
                         .par_iter()
                         .map(|e| match e {
-                            Entry::Native { path, language } => {
-                                prepare_native(p, root, real_root.as_deref(), hashes, path, language)
+                            Entry::Native { path, language, stat_key } => {
+                                prepare_native(p, root, real_root.as_deref(), hashes, path, language, stat_key.as_deref())
                             }
-                            Entry::Extracted { json } => match serde_json::from_str::<ExtractedFile>(json) {
-                                Ok(f) => Prepared::Write(f),
+                            Entry::Extracted { json, stat_key } => match serde_json::from_str::<ExtractedFile>(json) {
+                                Ok(mut f) => {
+                                    f.stat_key = stat_key.clone();
+                                    Prepared::Write(f)
+                                }
                                 Err(err) => Prepared::Error(format!("invalid extraction result: {err}")),
                             },
                         })
@@ -243,14 +258,19 @@ pub fn run_index(p: &IndexParams, entries: Vec<Entry>, mut progress: impl FnMut(
             let mut errors = Vec::new();
             let mut removed = Vec::new();
             let mut unchanged = 0i64;
+        let mut unchanged_paths: Vec<String> = Vec::new();
             for prep in &prepared {
                 match prep {
-                    Prepared::Unchanged => unchanged += 1,
+                    Prepared::Unchanged(rel) => {
+                        unchanged += 1;
+                        unchanged_paths.push(rel.clone());
+                    }
                     Prepared::Error(e) => errors.push(e.clone()),
                     _ => {}
                 }
             }
             out.unchanged += unchanged;
+            out.unchanged_paths.extend(unchanged_paths);
             // Fast path: the whole round in one transaction. A savepoint per file (so that one file
             // that fails does not undo the others) makes FTS5 flush its pending index each time, so
             // savepoints are used only when the fast path fails, to find and skip the failing file.

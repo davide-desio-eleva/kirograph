@@ -154,6 +154,7 @@ pub fn extract_source(
         edges: out.edges,
         unresolved_refs: out.refs,
         route_mounts,
+        stat_key: None,
     })
 }
 

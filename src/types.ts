@@ -72,6 +72,11 @@ export interface FileRecord {
   fileSize: number;
   symbolCount: number;
   indexedAt: number;
+  /**
+   * Size, mtime and ctime of the file when it was read (`statKey`). A sync takes a file whose
+   * key is unchanged as unchanged, without reading it. Null when not recorded.
+   */
+  statKey?: string | null;
 }
 
 export interface SearchResult {
@@ -156,7 +161,7 @@ export interface IndexResult {
   edgesCreated: number;
   errors: string[];
   duration: number;
-  /** Wall-clock milliseconds per phase (scan, read, extract, resolve, embeddings…). */
+  /** Wall-clock milliseconds per phase (fingerprint, scan, read, extract, write, resolve...). */
   timings?: Record<string, number>;
 }
 

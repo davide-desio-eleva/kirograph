@@ -5,12 +5,25 @@
 ### Added
 
 - **Native index engine (`"engine": "rust"`)**: a Rust module (`native/kirograph-rust`, napi-rs) takes over extraction and reference resolution, the two phases where an index spends its time. It parses with tree-sitter on every core, writes with native SQLite and resolves references with the same strategies as the TypeScript resolver. The graph is the same row for row: the same grammar versions as the WASM files, parsed as UTF-16 like web-tree-sitter; languages without a native extractor are extracted in TypeScript and handed over in file order. A first index of django (3,500 files) takes 10.7 s instead of 42.3 s. The module ships prebuilt as optional npm packages for macOS (arm64, x64), Linux glibc (x64, arm64) and Windows (x64), so no Rust toolchain is needed; `kirograph install` asks for the engine, and without the module KiroGraph falls back to `node` with a warning. `KIROGRAPH_ENGINE` overrides the setting for one run.
-- **`kirograph index --timings`** prints the time spent in each phase.
+
+## [1.5.4] - 2026-11-17: a sync keeps the graph a full index gives, faster syncs and indexes, and a notice when a file changed after the last sync
 
 ### Fixed
 
-- **A full index no longer parses files without symbols twice**: the retry pass meant to recover files the WASM parser crashed on re-parsed every file recorded without symbols, so SQL migrations, data YAML and similar files were parsed twice. Only the files whose parse crashed are retried now. A workspace of 8 repositories (10,781 files) indexes in 96 s instead of 157 s with the `node` engine.
-- **Writing a large project is no longer quadratic**: every file written first deletes its unresolved references by path, and `unresolved_refs` had no index on the path, so each delete read the whole table. With the TypeScript engine, parsing and writing a first index of django went from 53 s to 22 s. The index is created on the next open.
+- **A sync no longer loses the edges coming into a file it rewrites** ([#101](https://github.com/davide-desio-eleva/kirograph/issues/101)): resolution removes a reference once it becomes an edge, so when a sync rewrote a file, the edges into its symbols from other files (callers, imports, subclasses) were deleted and never made again until the next full index. `callers`, `impact`, `path` and the dependency tools were wrong after each edit. Those edges now go back to the unresolved references of the files they come from, and resolution links them again, or leaves them unresolved when the symbol is gone. After any sync the graph is the one a full index of the same files gives: on fastify, after 15 edits and 3 removals, 19,135 edges and 13,148 references identical.
+- **Writing a large project is no longer quadratic** ([#93](https://github.com/davide-desio-eleva/kirograph/issues/93)): every file written deletes its references by path first, and `unresolved_refs` had no index on the path, so each delete read the whole table. On django (3,500 files) the parse-and-write phase of a first index went from 53 s to 22 s. The index is created on the next open.
+- **A full index no longer parses files without symbols twice** ([#97](https://github.com/davide-desio-eleva/kirograph/issues/97)): the pass that recovers files the WASM parser crashed on re-parsed every file recorded without symbols (SQL migrations, data YAML, some configuration). Only the files whose parse crashed are retried now. On a folder of 8 repositories (10,781 files) that pass went from 48–51 s to 20 ms.
+- **`kirograph install` can change the configuration of a project already set up** ([#99](https://github.com/davide-desio-eleva/kirograph/issues/99)): it asked nothing and kept `config.json`, so running it again could not turn a feature on or off. It now asks whether to keep the configuration or answer the questions again (`--yes` keeps it). On Windows, the Rust toolchain folder is added to `PATH` with the right separator when a native addon is built.
+
+### Changed
+
+- **Faster syncs** ([#89](https://github.com/davide-desio-eleva/kirograph/issues/89)): resolution reads only the fields of each node it uses, and the bridge resolvers load whole nodes only when they apply to the project. Each indexed file records its size, mtime and ctime (`stat_key`), as git does. A sync takes a file whose key is unchanged as unchanged without reading it, and reads the index of files once. On django, a sync where git shows no change (every file compared) went from 4.5 s to 1.4 s, and a one-file sync from 2.3 s to 2.0 s. Keys are recorded from the next index or sync on.
+
+### Added
+
+- **Notice on stale files** ([#90](https://github.com/davide-desio-eleva/kirograph/issues/90)): a tool response that names a file changed or deleted after the graph last read it starts with a `⚠️` notice naming the file and asking the agent to read it directly. When the MCP server opens a project that changed while no server was running, it syncs first; the first tool call waits for it for up to 5 seconds.
+- **Watch** ([#90](https://github.com/davide-desio-eleva/kirograph/issues/90)): with `"watch": true` (or `KIROGRAPH_WATCH=1`), the MCP server watches the project and syncs the changed files 2 seconds after the last change (`KIROGRAPH_WATCH_DEBOUNCE_MS`). Off by default: it is meant for integrations without hooks; with Kiro the hooks already sync. On Linux it needs Node 20 or later.
+- **`kirograph index --timings`** ([#95](https://github.com/davide-desio-eleva/kirograph/issues/95)) prints the time spent in each phase of a full index, like `sync --timings`.
 
 ## [1.5.3] - 2026-11-17: SQL tables, views and functions get their real names, and SQL dumps index in a fraction of a second
 

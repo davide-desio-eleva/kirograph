@@ -104,21 +104,54 @@ impl Db {
         }
     }
 
-    /// path → content hash of every indexed file.
-    pub fn file_hashes(&mut self) -> Result<HashMap<String, String>, String> {
+    /// path → (content hash, stat key) of every indexed file.
+    pub fn file_hashes(&mut self) -> Result<HashMap<String, (String, Option<String>)>, String> {
         self.transaction(|conn, _| {
-            let mut stmt = conn.prepare("SELECT path, content_hash FROM files").map_err(to_err)?;
+            let mut stmt = conn.prepare("SELECT path, content_hash, stat_key FROM files").map_err(to_err)?;
             let rows = stmt
-                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?)))
                 .map_err(to_err)?;
             let mut map = HashMap::new();
             for r in rows {
-                let (p, h) = r.map_err(to_err)?;
-                map.insert(p, h);
+                let (p, h, k) = r.map_err(to_err)?;
+                map.insert(p, (h, k));
             }
             Ok(map)
         })
     }
+}
+
+/// Languages whose references the TypeScript infra extractor resolves by exact qualified name.
+const INFRA_LANGUAGES: &str = "('hcl', 'yaml', 'json', 'bash')";
+
+/// Port of GraphDatabase.detachIncomingEdges (src/db/database.ts): the resolution edges coming
+/// into the file's symbols from other files go back to unresolved references, filed under the file
+/// they come from, so a rewritten file keeps its callers. The same statement, so both engines
+/// write the same rows.
+pub fn detach_incoming_edges(conn: &Connection, path: &str) -> Result<(), String> {
+    let sql = format!(
+        "INSERT INTO unresolved_refs (source_id, ref_name, ref_kind, file_path, line, column, metadata)
+         SELECT e.source,
+                CASE WHEN e.kind = 'imports' THEN s.name
+                     WHEN e.kind = 'references' OR (e.kind = 'calls' AND t.language IN {infra}) THEN t.qualified_name
+                     ELSE t.name END,
+                CASE e.kind WHEN 'imports' THEN 'import'
+                            WHEN 'references' THEN 'reference'
+                            WHEN 'extends' THEN 'extends'
+                            WHEN 'implements' THEN 'implements'
+                            ELSE CASE WHEN t.language IN {infra} THEN 'qualified_call' ELSE 'function' END END,
+                s.file_path, e.line, e.column, e.metadata
+         FROM edges e
+         JOIN nodes t ON t.id = e.target
+         JOIN nodes s ON s.id = e.source
+         WHERE t.file_path = ?1 AND s.file_path <> ?1
+           AND e.kind IN ('calls', 'imports', 'extends', 'implements', 'references')
+           AND e.confidence = 'extracted'
+         ORDER BY e.id",
+        infra = INFRA_LANGUAGES
+    );
+    conn.prepare_cached(&sql).and_then(|mut s| s.execute([path])).map_err(to_err)?;
+    Ok(())
 }
 
 /// Writes one file inside a savepoint: if anything fails, only this file's writes are undone.
@@ -187,6 +220,7 @@ pub fn write_file(
         rows.collect::<Result<_, _>>().map_err(to_err)?
     };
     if !old_ids.is_empty() {
+        detach_incoming_edges(conn, path)?;
         conn.prepare_cached(
             "DELETE FROM edges WHERE source IN (SELECT id FROM nodes WHERE file_path = ?1) OR target IN (SELECT id FROM nodes WHERE file_path = ?1)",
         )
@@ -207,9 +241,9 @@ pub fn write_file(
 
     // upsertFile
     conn.prepare_cached(
-        "INSERT OR REPLACE INTO files (path, content_hash, language, file_size, symbol_count, indexed_at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO files (path, content_hash, language, file_size, symbol_count, indexed_at, stat_key) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
-    .and_then(|mut s| s.execute(params![path, f.content_hash, f.language, f.file_size, f.nodes.len() as i64, indexed_at]))
+    .and_then(|mut s| s.execute(params![path, f.content_hash, f.language, f.file_size, f.nodes.len() as i64, indexed_at, f.stat_key]))
     .map_err(to_err)?;
 
     // upsertNodes: when an id appears twice the later node wins, at the place of the first

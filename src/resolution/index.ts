@@ -40,6 +40,8 @@ export class ReferenceResolver {
   private namespacePrefixCache: Map<string, string> = new Map();
 
   private cacheWarmed = false;
+  /** The caches hold whole nodes (false: only what resolution reads, see warmCaches). */
+  private cacheFull = false;
 
   constructor(db: GraphDatabase, config: KiroGraphConfig, projectRoot?: string) {
     this.db = db;
@@ -50,8 +52,12 @@ export class ReferenceResolver {
   /**
    * Pre-load all nodes into Maps for O(1) lookup.
    * Must be called before resolveUnresolvedRefs() for best performance.
+   *
+   * With `full` false, each node holds only what resolution reads (id, kind, name, qualified
+   * name, file): reading every column of every node was most of the time a resolution took. The
+   * bridge resolvers need whole nodes and load them when they first ask (see _buildBridgeContext).
    */
-  warmCaches(): void {
+  warmCaches(full = true): void {
     this.nameCache.clear();
     this.qualifiedNameCache.clear();
     this.kindCache.clear();
@@ -63,13 +69,17 @@ export class ReferenceResolver {
     const rawDb = (this.db as any).db;
     // Every column but the docstring, which nothing in resolution reads and which is a third of
     // the bytes of the table
-    const rows: any[] = rawDb.all(
-      `SELECT id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column,
-              end_column, signature, visibility, is_exported, is_async, is_static, is_abstract,
-              decorators, type_parameters, updated_at FROM nodes`);
+    const rows: any[] = full
+      ? rawDb.all(
+        `SELECT id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column,
+                end_column, signature, visibility, is_exported, is_async, is_static, is_abstract,
+                decorators, type_parameters, updated_at FROM nodes`)
+      : rawDb.all('SELECT id, kind, name, qualified_name, file_path FROM nodes');
 
     for (const row of rows) {
-      const node: Node = this._rowToNode(row);
+      const node: Node = full
+        ? this._rowToNode(row)
+        : { id: row.id, kind: row.kind, name: row.name, qualifiedName: row.qualified_name, filePath: row.file_path } as Node;
 
       // nameCache
       const nameList = this.nameCache.get(node.name) ?? [];
@@ -112,7 +122,8 @@ export class ReferenceResolver {
     }
 
     this.cacheWarmed = true;
-    logDebug(`ReferenceResolver: warmed caches with ${rows.length} nodes`);
+    this.cacheFull = full;
+    logDebug(`ReferenceResolver: warmed caches with ${rows.length} nodes${full ? '' : ' (resolution fields)'}`);
   }
 
   /**
@@ -128,7 +139,7 @@ export class ReferenceResolver {
     const start = Date.now();
 
     // engine "rust": the native engine resolves the references (same strategies, same order). The
-    // caches below are then needed only by the bridges, and warmed only if they run.
+    // caches are then needed only by the bridges, which load them when they first ask.
     const rust = this.projectRoot ? rustEngineFor(this.config) : null;
     let resolvedCount: number;
     if (rust) {
@@ -142,7 +153,7 @@ export class ReferenceResolver {
       resolvedCount = native.resolved;
       this.cacheWarmed = false;
     } else {
-      this.warmCaches();
+      this.warmCaches(false);
       resolvedCount = await this.resolveUnresolvedRefs(onProgress);
     }
 
@@ -154,8 +165,6 @@ export class ReferenceResolver {
     // The bridges read only the file types below (and package.json to decide whether they apply),
     // and the edges they made survive a sync that touched none of those
     const runBridges = !!this.projectRoot && (!changedFiles || changedFiles.some(f => BRIDGE_FILE.test(f)));
-    // Warmed before the route prefixes rename routes, as on the TypeScript path
-    if (runBridges && !this.cacheWarmed) this.warmCaches();
 
     this.applyRoutePrefixes();
 
@@ -676,9 +685,15 @@ export class ReferenceResolver {
     // nodes in table order, so each file's nodes come in the order the query returned them.
     let nodesByFile: Map<string, Node[]> | null = null;
     let allFiles: string[] | null = null;
+    // Whole nodes are loaded the first time a bridge asks for one: resolution warms only the
+    // fields it reads, and most projects have no bridge that applies (detect() reads files only)
+    const ensureFull = (): void => {
+      if (!this.cacheFull) this.warmCaches(true);
+    };
 
     return {
       getNodesInFile(filePath: string): Node[] {
+        ensureFull();
         if (!nodesByFile) {
           nodesByFile = new Map();
           for (const node of nodeByIdCache.values()) {
@@ -689,9 +704,11 @@ export class ReferenceResolver {
         return nodesByFile.get(filePath) ?? [];
       },
       getNodesByName(name: string): Node[] {
+        ensureFull();
         return nameCache.get(name) ?? [];
       },
       getNodesByKind(kind: Node['kind']): Node[] {
+        ensureFull();
         return kindCache.get(kind) ?? [];
       },
       fileExists(filePath: string): boolean {

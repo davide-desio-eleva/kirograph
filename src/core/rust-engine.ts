@@ -24,6 +24,8 @@ export interface RustIndexEntry {
   language?: string;
   /** An ExtractedFile from the TypeScript extractor, as JSON. */
   extracted?: string;
+  /** The file's stat key, taken before it was read (FileRecord.statKey); recorded with the file. */
+  statKey?: string;
 }
 
 export interface RustIndexOptions {
@@ -58,6 +60,8 @@ export interface RustIndexResult {
   nodesCreated: number;
   edgesCreated: number;
   unchanged: number;
+  /** Paths (relative) of the files found unchanged by their hash, whose stat key should be recorded. */
+  unchangedPaths: string[];
   errors: string[];
   files: RustFileWrite[];
   removedNodeIds: string[];

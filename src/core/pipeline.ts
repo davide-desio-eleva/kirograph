@@ -33,6 +33,7 @@ import { rustEngineFor, rustDbPaths, type RustEngine, type RustIndexEntry, type 
 import { detectLanguage } from '../extraction/languages';
 import { WriteBatch } from './write-batch';
 import { Mutex } from '../utils';
+import { statKey } from '../sync/stat-key';
 
 const FILE_IO_BATCH_SIZE = 10;
 /** Below this many files starting worker threads costs more than parsing in-process saves. */
@@ -150,7 +151,6 @@ export class IndexPipeline {
     // Syncs keep the normal setting.
     this.db.getRawDb().run('PRAGMA synchronous=OFF');
     const start = Date.now();
-    const fingerprintStart = Date.now();
     // Taken before anything is read, so an edit made during the index is seen by the next sync
     const fingerprint = workspaceFingerprint(this.projectRoot);
     const heads: Record<string, string> = {};
@@ -158,13 +158,12 @@ export class IndexPipeline {
       const head = currentHead(gitRoot);
       if (head) heads[headKey(this.projectRoot, gitRoot)] = head;
     }
-    const fingerprintMs = Date.now() - fingerprintStart;
     const errors: string[] = [];
     let filesIndexed = 0;
     let nodesCreated = 0;
     let edgesCreated = 0;
     // Wall-clock time per phase, in milliseconds (IndexResult.timings)
-    const timings: Record<string, number> = { fingerprint: fingerprintMs };
+    const timings: Record<string, number> = { fingerprint: Date.now() - start };
     let phaseStart = Date.now();
     const endPhase = (name: string): void => {
       const now = Date.now();
@@ -186,13 +185,20 @@ export class IndexPipeline {
       opts?.onProgress?.({ phase: 'scanning', current: files.length, total: files.length });
       endPhase('scan');
 
-      // Batch-read files in parallel
+      // Batch-read files in parallel. Each file's stat key is taken before it is read (see
+      // FileRecord.statKey), so a write made during the read shows as a change at the next sync.
       const contentMap = new Map<string, Buffer>();
+      const statKeys = new Map<string, string>();
       for (let b = 0; b < files.length; b += FILE_IO_BATCH_SIZE) {
         const batch = files.slice(b, b + FILE_IO_BATCH_SIZE);
-        const results = await Promise.all(batch.map(f => fs.promises.readFile(f).catch(() => null)));
+        const results = await Promise.all(batch.map(async f => {
+          const st = await fs.promises.stat(f).catch(() => null);
+          const content = await fs.promises.readFile(f).catch(() => null);
+          return { st, content };
+        }));
         for (let i = 0; i < batch.length; i++) {
-          if (results[i]) contentMap.set(batch[i], results[i]!);
+          if (results[i].content) contentMap.set(batch[i], results[i].content!);
+          if (results[i].st) statKeys.set(batch[i], statKey(results[i].st!));
         }
       }
 
@@ -232,6 +238,7 @@ export class IndexPipeline {
       };
 
       const batch = new WriteBatch(this.db);
+      // Time spent writing, within the parse-and-write loop (reported apart from parsing)
       let writeMs = 0;
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -240,7 +247,7 @@ export class IndexPipeline {
 
         try {
           if (rust && nativeLangs.has(detectLanguage(file))) {
-            rustEntries.push({ path: file, language: detectLanguage(file) });
+            rustEntries.push({ path: file, language: detectLanguage(file), statKey: statKeys.get(file) });
             continue;
           }
           const content = contentMap.get(file);
@@ -272,7 +279,7 @@ export class IndexPipeline {
 
           if (rust) {
             // Written by the native engine, in file order (its replaced embeddings are removed after)
-            rustEntries.push({ extracted: JSON.stringify(extracted) });
+            rustEntries.push({ extracted: JSON.stringify(extracted), statKey: statKeys.get(file) });
             crashCounts.set(lang, 0);
             continue;
           }
@@ -291,6 +298,7 @@ export class IndexPipeline {
               fileSize: extracted.fileSize,
               symbolCount: extracted.nodes.length,
               indexedAt: Date.now(),
+              statKey: statKeys.get(file) ?? null,
             });
             this.db.upsertNodes(extracted.nodes); nodesCreated += extracted.nodes.length;
             this.db.insertEdges(extracted.edges); edgesCreated += extracted.edges.length;
@@ -341,8 +349,8 @@ export class IndexPipeline {
       batch.flush();
       writeMs += Date.now() - flushStart;
       endPhase('extract');
-      timings.write = writeMs;
       timings.extract -= writeMs;
+      timings.write = writeMs;
       // Parsing is over: release the workers before resolution and embeddings, which need the memory
       await pool?.close();
       pool = null;
@@ -710,12 +718,24 @@ export class IndexPipeline {
       const nativeLangs = new Set(rust?.nativeLanguages() ?? []);
       const rustEntries: RustIndexEntry[] = [];
 
+      // Unchanged files whose stat key was not recorded yet: recorded after the loop, in one go
+      const unchangedKeys: Array<[string, string]> = [];
+      // What the index knows of each file, read once: a query per file was most of the time a
+      // sync spent going over every file (the fallback scan)
+      const knownFiles = new Map(this.db.getAllFiles().map(f => [f.path, f] as const));
+      // Stats taken in parallel, a few at a time, before the loop needs them
+      const stats = new Map<string, fs.Stats | null>();
+      for (let b = 0; b < filesToProcess.length; b += 64) {
+        const slice = filesToProcess.slice(b, b + 64);
+        const got = await Promise.all(slice.map(f => fs.promises.stat(f).catch(() => null)));
+        slice.forEach((f, k) => stats.set(f, got[k]));
+      }
       const batch = new WriteBatch(this.db);
       for (let i = 0; i < filesToProcess.length; i++) {
         const file = filesToProcess[i];
         onProgress?.({ phase: 'parsing', current: i + 1, total: filesToProcess.length, currentFile: file });
 
-        if (!fs.existsSync(file)) {
+        if (!stats.get(file) && !fs.existsSync(file)) {
           const rel = path.relative(this.projectRoot, file).replace(/\\/g, '/');
           await removeFile(rel);
           continue;
@@ -726,18 +746,28 @@ export class IndexPipeline {
           const lang = detectLanguage(file);
           if (poisonedLanguages.has(lang)) continue;
 
+          // Skip an unchanged file before parsing it. Parsing is the expensive step, and when git
+          // reports no changes (clean tree, after a pull or a branch switch) the fallback scan
+          // reaches every indexed file. A file whose stat key (size, mtime, ctime) is the one
+          // recorded is not even read; otherwise its hash decides, and the key is recorded.
+          const relFile = path.relative(this.projectRoot, file).replace(/\\/g, '/');
+          const st = stats.get(file) ?? null;
+          const key = st ? statKey(st) : null;
+          const known = knownFiles.get(relFile);
+          if (known && st && st.size <= this.config.maxFileSize && key && known.statKey === key) continue;
+
+          // engine "rust": the native engine compares the hash and writes the file (with this key)
           if (rust && nativeLangs.has(lang)) {
-            rustEntries.push({ path: file, language: lang });
+            rustEntries.push({ path: file, language: lang, statKey: key ?? undefined });
             continue;
           }
 
-          // Skip an unchanged file by hash before parsing it. Parsing is the expensive step, and
-          // when git reports no changes (clean tree, after a pull or a branch switch) the
-          // fallback scan reaches every indexed file.
-          const known = this.db.getFile(path.relative(this.projectRoot, file).replace(/\\/g, '/'));
-          if (known && (await fs.promises.stat(file)).size <= this.config.maxFileSize) {
+          if (known && st && st.size <= this.config.maxFileSize) {
             const content = await fs.promises.readFile(file).catch(() => null);
-            if (content && hashContent(content) === known.contentHash) continue;
+            if (content && hashContent(content) === known.contentHash) {
+              if (key) unchangedKeys.push([relFile, key]);
+              continue;
+            }
           }
 
           const extracted = await extractFile(file, this.projectRoot, undefined, { enableComplexity: !!(this.config as any).enableComplexity, maxFileSize: this.config.maxFileSize });
@@ -749,7 +779,7 @@ export class IndexPipeline {
 
           if (rust) {
             // Written by the native engine, which also counts what it replaces
-            rustEntries.push({ extracted: JSON.stringify(extracted) });
+            rustEntries.push({ extracted: JSON.stringify(extracted), statKey: key ?? undefined });
             crashCounts.set(lang, 0);
             continue;
           }
@@ -771,6 +801,7 @@ export class IndexPipeline {
               fileSize: extracted.fileSize,
               symbolCount: extracted.nodes.length,
               indexedAt: Date.now(),
+              statKey: key,
             });
             this.db.upsertNodes(extracted.nodes); result.nodesCreated += extracted.nodes.length;
             this.db.insertEdges(extracted.edges); result.edgesCreated += extracted.edges.length;
@@ -816,11 +847,17 @@ export class IndexPipeline {
       }
 
       batch.flush();
-
       if (rust && rustEntries.length > 0) {
         const native = await this.runRust(rust, rustEntries, {
           force: false, trackOversize: true, synchronousOff: false, collectStats: true,
         }, (current, total) => onProgress?.({ phase: 'parsing', current, total }));
+        // Files the native engine found unchanged by their hash: their stat key is recorded too
+        const keyOf = new Map(rustEntries.filter(e => e.path && e.statKey)
+          .map(e => [path.relative(this.projectRoot, e.path!).replace(/\\/g, '/'), e.statKey!] as const));
+        for (const p of native.unchangedPaths) {
+          const k = keyOf.get(p);
+          if (k) unchangedKeys.push([p, k]);
+        }
         for (const f of native.files) {
           result.nodesRemoved += f.oldNodes;
           result.edgesRemoved += f.oldEdges;
@@ -831,6 +868,7 @@ export class IndexPipeline {
         }
         result.errors.push(...native.errors);
       }
+      this.db.setFileStatKeys(unchangedKeys);
 
       // Resolve cross-file references. When no file was added, changed or removed, no node or
       // reference is new, so resolution has nothing to find: every unresolved reference was

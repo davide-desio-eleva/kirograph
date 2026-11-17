@@ -47,6 +47,8 @@ pub struct IndexEntry {
     pub language: Option<String>,
     /// An ExtractedFile from the TypeScript engine, as JSON.
     pub extracted: Option<String>,
+    /// The file's stat key, taken before it was read; recorded with the file.
+    pub stat_key: Option<String>,
 }
 
 #[napi(object)]
@@ -80,6 +82,7 @@ pub struct IndexResult {
     pub nodes_created: i64,
     pub edges_created: i64,
     pub unchanged: i64,
+    pub unchanged_paths: Vec<String>,
     pub errors: Vec<String>,
     pub files: Vec<FileWriteResult>,
     pub removed_node_ids: Vec<String>,
@@ -128,6 +131,7 @@ impl Task for IndexTask {
             nodes_created: out.nodes_created,
             edges_created: out.edges_created,
             unchanged: out.unchanged,
+            unchanged_paths: out.unchanged_paths,
             errors: out.errors,
             files: out
                 .files
@@ -171,9 +175,9 @@ pub fn index_files(options: IndexOptions, entries: Vec<IndexEntry>, on_progress:
     let mut list = Vec::with_capacity(entries.len());
     for e in entries {
         if let Some(json) = e.extracted {
-            list.push(engine::Entry::Extracted { json });
+            list.push(engine::Entry::Extracted { json, stat_key: e.stat_key });
         } else if let (Some(path), Some(language)) = (e.path, e.language) {
-            list.push(engine::Entry::Native { path, language });
+            list.push(engine::Entry::Native { path, language, stat_key: e.stat_key });
         }
     }
     Ok(AsyncTask::new(IndexTask { params: Some((params, list)), progress: make_progress(on_progress)? }))
