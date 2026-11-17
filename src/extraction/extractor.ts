@@ -11,6 +11,7 @@ import type { Node, Edge, NodeKind, Language } from '../types';
 import { detectLanguage, isSupportedLanguage } from './languages';
 import { initGrammars, getParser, hasWasmGrammar } from './grammars';
 import { extractNotebook } from './notebook';
+import { extractSql } from './sql';
 import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
 import { extractHcl, extractYaml, extractHelmTemplate, augmentBash, extractJsonConfig } from './infra';
 
@@ -113,6 +114,17 @@ export async function extractFile(filePath: string, projectRoot: string, content
   // Delegate Jupyter notebooks to the dedicated notebook extractor
   if (language === 'jupyter') {
     return extractNotebook(filePath, projectRoot, source);
+  }
+
+  // SQL: CREATE statements read from their text, without a grammar (see sql.ts)
+  if (language === 'sql') {
+    const relSql = path.relative(projectRoot, filePath).replace(/\\/g, '/');
+    return {
+      filePath: relSql, language,
+      contentHash: crypto.createHash('sha256').update(source).digest('hex'),
+      fileSize: Buffer.byteLength(source, 'utf8'),
+      ...extractSql(source, relSql, Date.now()),
+    };
   }
 
   // JSON configuration: read without a grammar
