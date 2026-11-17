@@ -72,6 +72,11 @@ export interface FileRecord {
   fileSize: number;
   symbolCount: number;
   indexedAt: number;
+  /**
+   * Size, mtime and ctime of the file when it was read (`statKey`). A sync takes a file whose
+   * key is unchanged as unchanged, without reading it. Null when not recorded.
+   */
+  statKey?: string | null;
 }
 
 export interface SearchResult {

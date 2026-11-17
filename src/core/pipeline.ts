@@ -31,6 +31,7 @@ import { workspaceFingerprint, isUpToDate, writeSyncState, writeSyncErrors, hasT
 import { LockManager } from './lock-manager';
 import { WriteBatch } from './write-batch';
 import { Mutex } from '../utils';
+import { statKey } from '../sync/stat-key';
 
 const FILE_IO_BATCH_SIZE = 10;
 /** Below this many files starting worker threads costs more than parsing in-process saves. */
@@ -173,13 +174,20 @@ export class IndexPipeline {
       const files = await scanDirectory(this.projectRoot, this.config, opts?.signal);
       opts?.onProgress?.({ phase: 'scanning', current: files.length, total: files.length });
 
-      // Batch-read files in parallel
+      // Batch-read files in parallel. Each file's stat key is taken before it is read (see
+      // FileRecord.statKey), so a write made during the read shows as a change at the next sync.
       const contentMap = new Map<string, Buffer>();
+      const statKeys = new Map<string, string>();
       for (let b = 0; b < files.length; b += FILE_IO_BATCH_SIZE) {
         const batch = files.slice(b, b + FILE_IO_BATCH_SIZE);
-        const results = await Promise.all(batch.map(f => fs.promises.readFile(f).catch(() => null)));
+        const results = await Promise.all(batch.map(async f => {
+          const st = await fs.promises.stat(f).catch(() => null);
+          const content = await fs.promises.readFile(f).catch(() => null);
+          return { st, content };
+        }));
         for (let i = 0; i < batch.length; i++) {
-          if (results[i]) contentMap.set(batch[i], results[i]!);
+          if (results[i].content) contentMap.set(batch[i], results[i].content!);
+          if (results[i].st) statKeys.set(batch[i], statKey(results[i].st!));
         }
       }
 
@@ -256,6 +264,7 @@ export class IndexPipeline {
               fileSize: extracted.fileSize,
               symbolCount: extracted.nodes.length,
               indexedAt: Date.now(),
+              statKey: statKeys.get(file) ?? null,
             });
             this.db.upsertNodes(extracted.nodes); nodesCreated += extracted.nodes.length;
             this.db.insertEdges(extracted.edges); edgesCreated += extracted.edges.length;
@@ -615,12 +624,24 @@ export class IndexPipeline {
       const crashCounts = new Map<string, number>();
       const POISON_THRESHOLD = 3;
 
+      // Unchanged files whose stat key was not recorded yet: recorded after the loop, in one go
+      const unchangedKeys: Array<[string, string]> = [];
+      // What the index knows of each file, read once: a query per file was most of the time a
+      // sync spent going over every file (the fallback scan)
+      const knownFiles = new Map(this.db.getAllFiles().map(f => [f.path, f] as const));
+      // Stats taken in parallel, a few at a time, before the loop needs them
+      const stats = new Map<string, fs.Stats | null>();
+      for (let b = 0; b < filesToProcess.length; b += 64) {
+        const slice = filesToProcess.slice(b, b + 64);
+        const got = await Promise.all(slice.map(f => fs.promises.stat(f).catch(() => null)));
+        slice.forEach((f, k) => stats.set(f, got[k]));
+      }
       const batch = new WriteBatch(this.db);
       for (let i = 0; i < filesToProcess.length; i++) {
         const file = filesToProcess[i];
         onProgress?.({ phase: 'parsing', current: i + 1, total: filesToProcess.length, currentFile: file });
 
-        if (!fs.existsSync(file)) {
+        if (!stats.get(file) && !fs.existsSync(file)) {
           const rel = path.relative(this.projectRoot, file).replace(/\\/g, '/');
           await removeFile(rel);
           continue;
@@ -632,13 +653,21 @@ export class IndexPipeline {
           const lang = detectLanguage(file);
           if (poisonedLanguages.has(lang)) continue;
 
-          // Skip an unchanged file by hash before parsing it. Parsing is the expensive step, and
-          // when git reports no changes (clean tree, after a pull or a branch switch) the
-          // fallback scan reaches every indexed file.
-          const known = this.db.getFile(path.relative(this.projectRoot, file).replace(/\\/g, '/'));
-          if (known && (await fs.promises.stat(file)).size <= this.config.maxFileSize) {
+          // Skip an unchanged file before parsing it. Parsing is the expensive step, and when git
+          // reports no changes (clean tree, after a pull or a branch switch) the fallback scan
+          // reaches every indexed file. A file whose stat key (size, mtime, ctime) is the one
+          // recorded is not even read; otherwise its hash decides, and the key is recorded.
+          const relFile = path.relative(this.projectRoot, file).replace(/\\/g, '/');
+          const st = stats.get(file) ?? null;
+          const key = st ? statKey(st) : null;
+          const known = knownFiles.get(relFile);
+          if (known && st && st.size <= this.config.maxFileSize) {
+            if (key && known.statKey === key) continue;
             const content = await fs.promises.readFile(file).catch(() => null);
-            if (content && hashContent(content) === known.contentHash) continue;
+            if (content && hashContent(content) === known.contentHash) {
+              if (key) unchangedKeys.push([relFile, key]);
+              continue;
+            }
           }
 
           const extracted = await extractFile(file, this.projectRoot, undefined, { enableComplexity: !!(this.config as any).enableComplexity, maxFileSize: this.config.maxFileSize });
@@ -665,6 +694,7 @@ export class IndexPipeline {
               fileSize: extracted.fileSize,
               symbolCount: extracted.nodes.length,
               indexedAt: Date.now(),
+              statKey: key,
             });
             this.db.upsertNodes(extracted.nodes); result.nodesCreated += extracted.nodes.length;
             this.db.insertEdges(extracted.edges); result.edgesCreated += extracted.edges.length;
@@ -711,6 +741,7 @@ export class IndexPipeline {
       }
 
       batch.flush();
+      this.db.setFileStatKeys(unchangedKeys);
 
       // Resolve cross-file references. When no file was added, changed or removed, no node or
       // reference is new, so resolution has nothing to find: every unresolved reference was
