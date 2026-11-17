@@ -251,9 +251,20 @@ export interface ChangedFiles {
 }
 
 /**
+ * Whether a file git reports belongs in the index: a known language, and not left out by the
+ * `include`/`exclude` rules, as for the directory scan. Without the rules, a file edited under an
+ * excluded folder was indexed by a sync, and removed again by the next full one.
+ */
+function isIndexable(root: string, absPath: string, config: KiroGraphConfig): boolean {
+  if (detectLanguage(absPath) === 'unknown') return false;
+  return shouldIncludeFile(path.relative(root, absPath).replace(/\\/g, '/'), config);
+}
+
+/**
  * Classifies changed files into added / modified / removed across all nested git roots: the
  * uncommitted changes (`git status`), and the files changed by commits since `knownHeads`.
- * Returns absolute paths. Excludes paths whose detected language is 'unknown'.
+ * Returns absolute paths. Leaves out files of an unknown language and files `include`/`exclude`
+ * leave out.
  */
 export async function getChangedFiles(
   root: string,
@@ -286,7 +297,7 @@ export async function getChangedFiles(
           rel = rel.slice(prefix.length);
         }
         const absPath = path.join(gitRoot, rel);
-        if (detectLanguage(absPath) === 'unknown') continue;
+        if (!isIndexable(root, absPath, config)) continue;
         touched.add(absPath);
         if (line.startsWith('??')) added.add(absPath);
       }
@@ -306,7 +317,7 @@ export async function getChangedFiles(
     if (!diff) { complete = false; continue; }
     for (const { status, rel } of diff) {
       const absPath = path.join(gitRoot, rel);
-      if (detectLanguage(absPath) === 'unknown') continue;
+      if (!isIndexable(root, absPath, config)) continue;
       touched.add(absPath);
       if (status === 'A') added.add(absPath);
     }
