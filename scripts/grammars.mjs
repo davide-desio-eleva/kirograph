@@ -82,6 +82,26 @@ function inlineParentIncludes(srcDir) {
   }
 }
 
+/**
+ * The WASM runtime gives a scanner no stdio and no exit. A scanner that reports running out of
+ * memory (`fprintf(stderr, …); exit(1);`, Swift's) would not link: in a WASM build that report is
+ * dropped and the exit becomes a trap. Nothing else in the scanner changes.
+ */
+function shimStdio(srcDir) {
+  const file = join(srcDir, 'scanner.c');
+  if (!existsSync(file)) return;
+  const text = readFileSync(file, 'utf8');
+  if (text.startsWith('/* kirograph-wasm-shim */') || !/\b(stderr|exit\s*\()/.test(text)) return;
+  writeFileSync(file, [
+    '/* kirograph-wasm-shim */',
+    '#include <stdio.h>',
+    '#include <stdlib.h>',
+    '#define fprintf(...) ((void)0)',
+    '#define exit(code) __builtin_trap()',
+    text,
+  ].join('\n'));
+}
+
 /** Compiles one language to its WASM file. */
 async function build(lang, spec) {
   const src = await fetchSources(spec);
@@ -95,6 +115,7 @@ async function build(lang, spec) {
     }));
   }
   inlineParentIncludes(join(dir, 'src'));
+  shimStdio(join(dir, 'src'));
   mkdirSync(wasmDir, { recursive: true });
   execFileSync(cli, ['build', '--wasm', '-o', wasmPath(lang), dir], { stdio: ['ignore', 'ignore', 'inherit'] });
 }

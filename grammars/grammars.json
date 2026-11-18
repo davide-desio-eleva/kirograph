@@ -50,14 +50,14 @@
     },
     "csharp": {
       "package": "tree-sitter-c-sharp",
-      "version": "0.20.0",
+      "version": "0.23.5",
       "symbol": "c_sharp",
       "fingerprint": {
-        "abi": 13,
-        "states": 8554,
-        "kinds": 490,
-        "fields": 25,
-        "hash": "cbd2816da1ea2087"
+        "abi": 15,
+        "states": 8053,
+        "kinds": 533,
+        "fields": 26,
+        "hash": "fbbf525f1d7ae1ca"
       }
     },
     "css": {
@@ -74,14 +74,14 @@
     },
     "dart": {
       "github": "UserNobody14/tree-sitter-dart",
-      "version": "d4d8f3e337d8be23be27ffc35a0aef972343cd54",
+      "version": "0038280b774b65c1b89ba7fec50624d8baed9fe1",
       "symbol": "dart",
       "fingerprint": {
         "abi": 15,
-        "states": 3640,
-        "kinds": 525,
-        "fields": 22,
-        "hash": "7ba13fba01ec5d02"
+        "states": 4292,
+        "kinds": 529,
+        "fields": 23,
+        "hash": "0ea52a49dc8d686d"
       }
     },
     "elixir": {
@@ -273,15 +273,15 @@
     },
     "php": {
       "package": "tree-sitter-php",
-      "version": "0.22.8",
+      "version": "0.24.2",
       "dir": "php",
       "symbol": "php",
       "fingerprint": {
-        "abi": 14,
-        "states": 2820,
-        "kinds": 410,
-        "fields": 28,
-        "hash": "f580600714595d72"
+        "abi": 15,
+        "states": 3371,
+        "kinds": 432,
+        "fields": 31,
+        "hash": "68d92fcbc9279f7c"
       }
     },
     "powershell": {
@@ -332,14 +332,14 @@
     },
     "ruby": {
       "package": "tree-sitter-ruby",
-      "version": "0.20.1",
+      "version": "0.23.1",
       "symbol": "ruby",
       "fingerprint": {
         "abi": 14,
-        "states": 5875,
-        "kinds": 353,
+        "states": 5989,
+        "kinds": 351,
         "fields": 32,
-        "hash": "016b61e7b1dd6a75"
+        "hash": "5e7b3bf8de84340e"
       }
     },
     "rust": {
@@ -356,14 +356,14 @@
     },
     "scala": {
       "package": "tree-sitter-scala",
-      "version": "0.19.0",
+      "version": "0.24.0",
       "symbol": "scala",
       "fingerprint": {
-        "abi": 13,
-        "states": 2400,
-        "kinds": 171,
-        "fields": 28,
-        "hash": "50a597e50671179a"
+        "abi": 14,
+        "states": 20285,
+        "kinds": 353,
+        "fields": 32,
+        "hash": "a426de56dc4fc875"
       }
     },
     "scss": {
@@ -402,14 +402,14 @@
     },
     "swift": {
       "github": "alex-pinkus/tree-sitter-swift",
-      "version": "0.4.3-with-generated-files",
+      "version": "0.7.4-with-generated-files",
       "symbol": "swift",
       "fingerprint": {
         "abi": 14,
-        "states": 7936,
-        "kinds": 540,
-        "fields": 45,
-        "hash": "7ce7b7a060163288"
+        "states": 11522,
+        "kinds": 579,
+        "fields": 47,
+        "hash": "fae28b7af533b920"
       }
     },
     "tsx": {

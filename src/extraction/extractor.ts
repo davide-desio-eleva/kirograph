@@ -937,8 +937,12 @@ function extractImportSource(node: any, source: string, language: Language): str
 
   // C#: using Namespace.Name;
   if (node.type === 'using_directive') {
+    // `using Alias = Foo.Bar;`: the import is Foo.Bar, not the alias (the `name` field since
+    // tree-sitter-c-sharp 0.21, a name_equals before)
+    const alias = node.childForFieldName?.('name');
     for (let i = 0; i < node.childCount; i++) {
       const child = node.child(i);
+      if (alias && child.startIndex === alias.startIndex && child.endIndex === alias.endIndex) continue;
       if (child.type === 'qualified_name' || child.type === 'identifier') {
         return source.slice(child.startIndex, child.endIndex);
       }
