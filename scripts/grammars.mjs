@@ -83,21 +83,32 @@ function inlineParentIncludes(srcDir) {
 }
 
 /**
- * The WASM runtime gives a scanner no stdio and no exit. A scanner that reports running out of
- * memory (`fprintf(stderr, …); exit(1);`, Swift's) would not link: in a WASM build that report is
- * dropped and the exit becomes a trap. Nothing else in the scanner changes.
+ * The WASM runtime gives a scanner a few C library functions only: no stdio, no exit, no strchr.
+ * A scanner that reports running out of memory (`fprintf(stderr, …); exit(1);`, Swift's) would not
+ * link: in a WASM build that report is dropped and the exit becomes a trap. strchr (Perl's) gets a
+ * plain implementation. Nothing else in the scanner changes.
  */
 function shimStdio(srcDir) {
   const file = join(srcDir, 'scanner.c');
   if (!existsSync(file)) return;
   const text = readFileSync(file, 'utf8');
-  if (text.startsWith('/* kirograph-wasm-shim */') || !/\b(stderr|exit\s*\()/.test(text)) return;
+  if (text.startsWith('/* kirograph-wasm-shim */')) return;
+  const stdio = /\b(stderr|exit\s*\()/.test(text);
+  // strchr is not among the C library functions the runtime gives a scanner (Perl's uses it)
+  const strchr = /\bstrchr\s*\(/.test(text);
+  if (!stdio && !strchr) return;
   writeFileSync(file, [
     '/* kirograph-wasm-shim */',
     '#include <stdio.h>',
     '#include <stdlib.h>',
-    '#define fprintf(...) ((void)0)',
-    '#define exit(code) __builtin_trap()',
+    '#include <string.h>',
+    ...(stdio ? ['#define fprintf(...) ((void)0)', '#define exit(code) __builtin_trap()'] : []),
+    ...(strchr ? [
+      'static char *kirograph_strchr(const char *s, int c) {',
+      '  for (;; s++) { if (*s == (char)c) return (char *)s; if (!*s) return 0; }',
+      '}',
+      '#define strchr kirograph_strchr',
+    ] : []),
     text,
   ].join('\n'));
 }
@@ -117,8 +128,14 @@ async function build(lang, spec) {
   // repository). Links do not change the parser
   if (existsSync(join(dir, 'tree-sitter.json'))) {
     const config = JSON.parse(readFileSync(join(dir, 'tree-sitter.json'), 'utf8'));
-    const links = config.metadata?.links;
     let changed = false;
+    // The CLI requires a repository link (SQL's has none): the pinned source's
+    if (config.metadata && !config.metadata.links?.repository) {
+      config.metadata.links = { ...config.metadata.links, repository: spec.github
+        ? `https://github.com/${spec.github}` : `https://www.npmjs.com/package/${spec.package}` };
+      changed = true;
+    }
+    const links = config.metadata?.links;
     for (const [k, v] of Object.entries(links ?? {})) {
       if (typeof v !== 'string' || /^[a-z]+:\/\//i.test(v)) continue;
       if (/^[\w.-]+\/[\w.-]+$/.test(v)) links[k] = `https://github.com/${v}`; else delete links[k];
