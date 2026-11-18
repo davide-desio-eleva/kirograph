@@ -13,7 +13,7 @@ import { initGrammars, getParser, hasWasmGrammar } from './grammars';
 import { extractNotebook } from './notebook';
 import { extractSql } from './sql';
 import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
-import { receiverInfo, declaredReturnType, calleeOf } from './receiver-types';
+import { receiverInfo, declaredReturnType, calleeOf, memberObject } from './receiver-types';
 import { extractHcl, extractYaml, extractHelmTemplate, augmentBash, extractJsonConfig } from './infra';
 
 export interface UnresolvedRef {
@@ -453,9 +453,6 @@ const KIND_MAP: Record<string, NodeKind> = {
   // Ruby
   method: 'method',            // Ruby def (top-level and in class body)
   class: 'class',              // Ruby class
-  // Lua
-  local_function_definition_statement: 'function',
-  function_definition_statement: 'function',
   // Import statements (all handled via extractImport)
 };
 
@@ -524,6 +521,7 @@ const IMPORT_NODE_TYPES = new Set([
   'import_or_export',         // Dart
   'include_statement',        // Pascal
   'preproc_include',          // C/C++
+  'open_module',              // OCaml `open Base`
 ]);
 
 // ── Main tree walker ──────────────────────────────────────────────────────────
@@ -568,6 +566,24 @@ function walkTree(
 
   // Python/Go/Rust/Java/C# variable and constant types
   if (!kind) kind = getLanguageSpecificKind(node.type, language);
+
+  // Lua: `local x = …` and `x = …` are variables, functions when the value is one (`M.f = function() … end`);
+  // the assignment inside a `local` is the declaration's, and a field of a table (`t.x = 1`) is no symbol
+  if (language === 'lua' && (node.type === 'variable_declaration' || node.type === 'assignment_statement')) {
+    const assignment = node.type === 'assignment_statement' ? node : node.namedChildren.find((c: any) => c.type === 'assignment_statement');
+    const target = assignment?.namedChildren.find((c: any) => c.type === 'variable_list')?.childForFieldName('name')
+      ?? (node.type === 'variable_declaration' ? node.namedChildren.find((c: any) => c.type === 'variable_list')?.childForFieldName('name') ?? node.namedChild(0) : null);
+    const value = assignment?.namedChildren.find((c: any) => c.type === 'expression_list')?.childForFieldName('value');
+    if (node.type === 'assignment_statement' && node.parent?.type === 'variable_declaration') kind = null;
+    else if (value?.type === 'function_definition') kind = 'function';
+    else if (target?.type !== 'identifier') kind = null;
+  }
+
+  // OCaml: a let with parameters, or whose value is a `fun`, is a function
+  if (language === 'ocaml' && node.type === 'let_binding' && kind === 'variable') {
+    const body = node.childForFieldName('body');
+    if (node.namedChildren.some((c: any) => c.type === 'parameter') || body?.type === 'fun_expression' || body?.type === 'function_expression') kind = 'function';
+  }
 
   // Kotlin: a constructor parameter with val / var is a property of the class (`data class User(val id: Int)`)
   if (language === 'kotlin' && node.type === 'class_parameter' && node.namedChildren.some((c: any) => c.type === 'binding_pattern_kind')) {
@@ -721,9 +737,9 @@ function getLanguageSpecificKind(type: string, lang: Language): NodeKind | null 
       if (type === 'type_definition') return 'type_alias';
       break;
     case 'lua':
-      if (type === 'local_function') return 'function';
-      if (type === 'local_variable_declaration') return 'variable';
-      if (type === 'variable_assignment') return 'variable';
+      // function_declaration is a function for every language (KIND_MAP); `local x = …` and
+      // `x = …` are refined in walkTree (a function value makes them functions)
+      if (type === 'variable_declaration' || type === 'assignment_statement') return 'variable';
       break;
     case 'zig':
       if (type === 'VarDecl') return 'variable';
@@ -733,6 +749,7 @@ function getLanguageSpecificKind(type: string, lang: Language): NodeKind | null 
       if (type === 'variable_assignment') return 'variable';
       break;
     case 'ocaml':
+      // `let f x = …` / `let f = fun x -> …` are functions (refined in walkTree), `let v = …` variables
       if (type === 'let_binding') return 'variable';
       if (type === 'type_binding') return 'type_alias';
       if (type === 'module_binding') return 'namespace';
@@ -910,6 +927,12 @@ function extractImportSource(node: any, source: string, language: Language): str
     }
   }
 
+  // OCaml: open Base
+  if (node.type === 'open_module') {
+    const mod = node.childForFieldName?.('module') ?? node.namedChild(0);
+    return mod ? source.slice(mod.startIndex, mod.endIndex) : null;
+  }
+
   // Go: import "path" or import ( "path" )
   if (node.type === 'import_declaration') {
     for (let i = 0; i < node.childCount; i++) {
@@ -1055,6 +1078,31 @@ function extractName(node: any, source: string, _lang: Language, kind: NodeKind)
         if (gc.type === 'identifier') return source.slice(gc.startIndex, gc.endIndex);
       }
     }
+  }
+
+  // OCaml: `let name …` (its pattern), `type name = …`, `module Name = …`
+  if (_lang === 'ocaml') {
+    const id = node.type === 'let_binding' ? node.childForFieldName('pattern')
+      : node.type === 'type_binding' ? node.childForFieldName('name')
+      : node.type === 'module_binding' ? node.namedChildren.find((c: any) => c.type === 'module_name')
+      : null;
+    if (id && (id.type === 'value_name' || id.type === 'type_constructor' || id.type === 'module_name')) {
+      return source.slice(id.startIndex, id.endIndex);
+    }
+    if (node.type === 'let_binding' || node.type === 'type_binding' || node.type === 'module_binding') return null;
+  }
+
+  // Lua: a function's name (`M.greet` → greet, `M:method` → method), a variable's first target
+  if (_lang === 'lua') {
+    let target = node.childForFieldName?.('name');
+    if (!target && (node.type === 'variable_declaration' || node.type === 'assignment_statement')) {
+      const assignment = node.type === 'assignment_statement' ? node : node.namedChildren.find((c: any) => c.type === 'assignment_statement');
+      const list = (assignment ?? node).namedChildren.find((c: any) => c.type === 'variable_list');
+      target = list?.childForFieldName('name') ?? null;
+    }
+    if (target?.type === 'dot_index_expression') target = target.childForFieldName('field');
+    else if (target?.type === 'method_index_expression') target = target.childForFieldName('method');
+    return target?.type === 'identifier' ? source.slice(target.startIndex, target.endIndex) : null;
   }
 
   // Lua function_definition_statement: name lives inside a `variable` child (e.g. M.greet)
@@ -1293,6 +1341,8 @@ const CALL_NODE_TYPES = new Set([
   'method_invocation',        // Java
   'call',                     // Python/Ruby/Elixir (function calls in bodies)
   'function_call_expression', // PHP
+  'function_call',            // Lua
+  'application_expression',   // OCaml `f x y`, `Module.f x`
 ]);
 
 /**
@@ -1305,8 +1355,9 @@ export function navigationMember(nav: any): any {
   return last?.type === 'navigation_suffix' ? last.childForFieldName('suffix') ?? last.lastNamedChild : last;
 }
 
-/** Member access expressions: `a.b` in JS/TS, Python, Rust and C, Go, Kotlin, Swift. */
-const MEMBER_ACCESS = new Set(['member_expression', 'attribute', 'field_expression', 'selector_expression', 'navigation_expression']);
+/** Member access expressions: `a.b` in JS/TS, Python, Rust and C, Go, Kotlin, Swift, Lua (`a.b`, `a:b`). */
+const MEMBER_ACCESS = new Set(['member_expression', 'attribute', 'field_expression', 'selector_expression', 'navigation_expression',
+  'dot_index_expression', 'method_index_expression']);
 
 function extractCallName(node: any, source: string): string | null {
   // Named fields — Java uses 'name', Python/Ruby use 'function'/'method', Elixir uses 'target'
@@ -1325,9 +1376,14 @@ function extractCallName(node: any, source: string): string | null {
   if (fn && fn !== (node.childForFieldName?.('function') ?? node.child(0)) && fn.type === 'identifier') {
     return source.slice(fn.startIndex, fn.endIndex);
   }
+  // OCaml: `Cohttp.Header.iter` is a value_path ending in its value_name
+  if (fn?.type === 'value_path') {
+    const name = fn.namedChildren.find((c: any) => c.type === 'value_name');
+    return name ? source.slice(name.startIndex, name.endIndex) : null;
+  }
   const member = fn && MEMBER_ACCESS.has(fn.type)
     ? fn.childForFieldName('property') ?? fn.childForFieldName('attribute') ?? fn.childForFieldName('field')
-      ?? (fn.type === 'navigation_expression' ? navigationMember(fn) : null)
+      ?? fn.childForFieldName('method') ?? (fn.type === 'navigation_expression' ? navigationMember(fn) : null)
     : null;
   if (member) {
     const text = source.slice(member.startIndex, member.endIndex).trim();
@@ -1354,8 +1410,13 @@ export function callReceiver(node: any, source: string): string | undefined {
   const named = node.childForFieldName?.('object') ?? node.childForFieldName?.('receiver');
   if (named) return source.slice(named.startIndex, named.endIndex).trim() || undefined;
   const fn = calleeOf(node);
+  // OCaml: the module a value is taken from (`Cohttp.Header` in `Cohttp.Header.iter`)
+  if (fn?.type === 'value_path') {
+    const mod = fn.namedChildren.find((c: any) => c.type === 'module_path');
+    return mod ? source.slice(mod.startIndex, mod.endIndex) : undefined;
+  }
   if (fn && MEMBER_ACCESS.has(fn.type)) {
-    const obj = fn.childForFieldName('object') ?? fn.childForFieldName('operand') ?? fn.namedChild(0);
+    const obj = memberObject(fn.childForFieldName('object') ?? fn.childForFieldName('operand') ?? fn.childForFieldName('table') ?? fn.namedChild(0));
     if (obj) return source.slice(obj.startIndex, obj.endIndex).trim() || undefined;
   }
   for (const field of ['name', 'method', 'function', 'target']) {

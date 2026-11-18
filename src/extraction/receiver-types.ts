@@ -267,6 +267,8 @@ function enclosing(node: any, kinds: Set<string>): any {
  */
 export function calleeOf(call: any): any {
   let fn = call.childForFieldName?.('function') ?? call.child(0);
+  // Solidity wraps every expression in an `expression` node
+  while (fn?.type === 'expression' && fn.namedChildCount === 1) fn = fn.namedChild(0);
   // and without its C++ scope: `helper` in `ns::helper<int>(1)`
   while (fn && (fn.type === 'generic_function' || fn.type === 'index_expression'
     || fn.type === 'qualified_identifier' || fn.type === 'template_function')) {
@@ -277,14 +279,31 @@ export function calleeOf(call: any): any {
   return fn;
 }
 
+/**
+ * The object of a member access, as written. Solidity's grammar wraps expressions in `expression`
+ * nodes, and since 1.2.6 reads `a || super.f()` as `(a || super).f()` (and `c ? 0 : super.f()`,
+ * `!x.f()` alike): an object that is a binary, conditional or unary expression without parentheses
+ * (which would be a node of their own) is always that misreading, and the object is its last operand.
+ */
+export function memberObject(obj: any): any {
+  for (let i = 0; obj && i < 16; i++) {
+    if (obj.type === 'expression' && obj.namedChildCount === 1) obj = obj.namedChild(0);
+    else if (obj.type === 'binary_expression') obj = obj.childForFieldName('right') ?? obj.lastNamedChild;
+    else if (obj.type === 'ternary_expression' || obj.type === 'conditional_expression' || obj.type === 'unary_expression') obj = obj.lastNamedChild;
+    else break;
+  }
+  return obj;
+}
+
 /** The receiver expression of a call: `repo` in `repo.save()`, `getRepo()` in `getRepo().save()`. */
 function receiverNode(call: any): any {
   const named = call.childForFieldName('object') ?? call.childForFieldName('receiver');
   if (named) return named;
   const fn = calleeOf(call);
   if (!fn) return null;
-  if (fn.type === 'member_expression' || fn.type === 'attribute' || fn.type === 'field_expression' || fn.type === 'selector_expression' || fn.type === 'navigation_expression') {
-    return fn.childForFieldName('object') ?? fn.childForFieldName('operand') ?? fn.namedChild(0);
+  if (fn.type === 'member_expression' || fn.type === 'attribute' || fn.type === 'field_expression' || fn.type === 'selector_expression'
+    || fn.type === 'navigation_expression' || fn.type === 'dot_index_expression' || fn.type === 'method_index_expression') {
+    return memberObject(fn.childForFieldName('object') ?? fn.childForFieldName('operand') ?? fn.childForFieldName('table') ?? fn.namedChild(0));
   }
   return null;
 }
@@ -295,7 +314,7 @@ function calledName(call: any, source: string): string | undefined {
   if (named) return text(named, source);
   const fn = calleeOf(call);
   if (!fn) return undefined;
-  const last = fn.childForFieldName('property') ?? fn.childForFieldName('attribute') ?? fn.childForFieldName('field')
+  const last = fn.childForFieldName('property') ?? fn.childForFieldName('attribute') ?? fn.childForFieldName('field') ?? fn.childForFieldName('method')
     ?? (fn.type === 'navigation_expression'
       ? (fn.lastNamedChild?.type === 'navigation_suffix' ? fn.lastNamedChild.childForFieldName('suffix') ?? fn.lastNamedChild.lastNamedChild : fn.lastNamedChild)
       : fn);

@@ -79,7 +79,8 @@ describe('lua', () => {
 const WASM_DIR = path.resolve(__dirname, '../../src/extraction/wasm');
 
 describe('zeroMallocInBinary', () => {
-  const lua = fs.readFileSync(path.join(WASM_DIR, 'tree-sitter-lua.wasm'));
+  // A grammar whose scanner allocates with malloc (Lua's did until its 0.4 grammar, which uses calloc)
+  const lua = fs.readFileSync(path.join(WASM_DIR, 'tree-sitter-python.wasm'));
 
   it('renames the malloc import and nothing else', () => {
     const out = zeroMallocInBinary(new Uint8Array(lua));

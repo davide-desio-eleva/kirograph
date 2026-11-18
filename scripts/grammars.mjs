@@ -112,6 +112,20 @@ async function build(lang, spec) {
     execFileSync(cli, ['generate'], { cwd: dir, stdio: ['ignore', 'ignore', 'inherit'] });
   }
   if (!existsSync(join(dir, 'src', 'parser.c'))) throw new Error(`${lang}: no generated parser in ${dir}/src`);
+  // Metadata the CLI refuses: a link that is not an absolute URL (Vue's `"repository":
+  // "tree-sitter-grammars/tree-sitter-vue"`, which becomes its GitHub URL: the CLI requires a
+  // repository). Links do not change the parser
+  if (existsSync(join(dir, 'tree-sitter.json'))) {
+    const config = JSON.parse(readFileSync(join(dir, 'tree-sitter.json'), 'utf8'));
+    const links = config.metadata?.links;
+    let changed = false;
+    for (const [k, v] of Object.entries(links ?? {})) {
+      if (typeof v !== 'string' || /^[a-z]+:\/\//i.test(v)) continue;
+      if (/^[\w.-]+\/[\w.-]+$/.test(v)) links[k] = `https://github.com/${v}`; else delete links[k];
+      changed = true;
+    }
+    if (changed) writeFileSync(join(dir, 'tree-sitter.json'), JSON.stringify(config, null, 2));
+  }
   // Grammars older than tree-sitter 0.24 have no tree-sitter.json, which the CLI needs
   if (!existsSync(join(dir, 'tree-sitter.json'))) {
     writeFileSync(join(dir, 'tree-sitter.json'), JSON.stringify({
