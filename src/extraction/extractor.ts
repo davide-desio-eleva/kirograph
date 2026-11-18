@@ -13,6 +13,7 @@ import { initGrammars, getParser, hasWasmGrammar } from './grammars';
 import { extractNotebook } from './notebook';
 import { extractSql } from './sql';
 import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
+import { receiverType } from './receiver-types';
 import { extractHcl, extractYaml, extractHelmTemplate, augmentBash, extractJsonConfig } from './infra';
 
 export interface UnresolvedRef {
@@ -603,8 +604,8 @@ function walkTree(
       // Collect call references within this symbol
       collectCallRefs(node, source, id, unresolvedRefs, language);
 
-      // Extract inheritance edges for C# and Java class/interface nodes
-      if ((kind === 'class' || kind === 'interface') && (language === 'csharp' || language === 'java')) {
+      // Extract inheritance edges for class/interface nodes
+      if ((kind === 'class' || kind === 'interface') && INHERITANCE_LANGUAGES.has(language)) {
         extractInheritance(node, source, language, id, unresolvedRefs);
       }
 
@@ -1250,7 +1251,11 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
     if (calleeName) {
       const metadata: Record<string, unknown> = {};
       const receiver = callReceiver(node, source);
-      if (receiver) metadata.receiver = receiver;
+      if (receiver) {
+        metadata.receiver = receiver;
+        const type = receiverType(node, receiver, source, language);
+        if (type) metadata.receiverType = type;
+      }
       if (JS_TS_LANGUAGES.has(language)) {
         const argKind = classifyFirstArgument(node, source);
         if (argKind) metadata.argKind = argKind;
@@ -1493,6 +1498,8 @@ function extractTypeName(node: any, source: string): string | null {
  * C#:  base_list  children → all are either base class or interface (can't distinguish without types)
  * Java: superclass → extends; super_interfaces / extends_interfaces → implements / extends
  */
+const INHERITANCE_LANGUAGES = new Set<Language>(['csharp', 'java', 'typescript', 'tsx', 'javascript', 'jsx', 'python']);
+
 function extractInheritance(
   node: any,
   source: string,
@@ -1500,6 +1507,41 @@ function extractInheritance(
   classNodeId: string,
   unresolvedRefs: UnresolvedRef[],
 ): void {
+  // A supertype by its last name: `m.Base<T>` → Base. A call (`mixin(Base)`) names none
+  const push = (typeNode: any, refKind: 'extends' | 'implements') => {
+    let n = typeNode;
+    if (n?.type === 'generic_type') n = n.childForFieldName('name') ?? n.namedChild(0);
+    if (!n || !['identifier', 'type_identifier', 'member_expression', 'nested_type_identifier', 'attribute'].includes(n.type)) return;
+    const name = source.slice(n.startIndex, n.endIndex).split('.').pop()!.trim();
+    if (/^[A-Za-z_$][\w$]*$/.test(name)) {
+      unresolvedRefs.push({ sourceId: classNodeId, refName: name, refKind, line: n.startPosition.row + 1, column: n.startPosition.column });
+    }
+  };
+
+  // TypeScript / JavaScript: class_heritage → extends_clause (value) / implements_clause; JS has the value directly
+  if (JS_TS_LANGUAGES.has(language) || language === 'jsx') {
+    for (const child of node.namedChildren) {
+      if (child.type === 'class_heritage') {
+        for (const clause of child.namedChildren) {
+          if (clause.type === 'extends_clause') push(clause.childForFieldName('value') ?? clause.namedChild(0), 'extends');
+          else if (clause.type === 'implements_clause') for (const ty of clause.namedChildren) push(ty, 'implements');
+          else push(clause, 'extends');
+        }
+      } else if (child.type === 'extends_type_clause') {
+        for (const ty of child.namedChildren) push(ty, 'extends');
+      }
+    }
+    return;
+  }
+
+  // Python: class A(B, m.C, metaclass=M)
+  if (language === 'python') {
+    for (const arg of node.childForFieldName('superclasses')?.namedChildren ?? []) {
+      if (arg.type === 'identifier' || arg.type === 'attribute') push(arg, 'extends');
+    }
+    return;
+  }
+
   for (let i = 0; i < node.childCount; i++) {
     const child = node.child(i);
 

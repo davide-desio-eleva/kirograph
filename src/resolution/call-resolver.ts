@@ -20,6 +20,8 @@ import type { Node } from '../types';
 export interface CallRef {
   name: string;
   receiver?: string;
+  /** The receiver's declared type, when the code says it (see extraction/receiver-types). */
+  receiverType?: string;
   sourceId: string;
   filePath: string;
 }
@@ -30,7 +32,9 @@ export interface CallContext {
   /** Files whose symbols the file imports (resolved import edges). */
   importedFiles(filePath: string): Set<string> | undefined;
   /** The class, struct, module or namespace a node is declared in. */
-  owner(id: string): { name: string; kind: string } | undefined;
+  owner(id: string): { id: string; name: string; kind: string } | undefined;
+  /** The types a type extends or implements (resolved edges). */
+  supertypes(id: string): string[];
 }
 
 const LANGUAGE_FAMILY: Record<string, string> = {
@@ -133,6 +137,35 @@ const only = (nodes: Node[]): Node | null => (nodes.length === 1 ? nodes[0] : nu
 const TEST_PATH = /(^|\/)(tests?|__tests__|__mocks__|spec|specs|e2e|testing\/fixtures)\/|(^|\/)(test_[^/]*|[^/]*_test\.[^/.]+|[^/]*\.(test|spec)\.[^/]+|conftest\.py)$/;
 export const isTestPath = (filePath: string): boolean => TEST_PATH.test(filePath);
 
+/**
+ * The member of the name declared nearest to the given types: in the type itself, else in what it
+ * extends or implements, breadth first. Null when neither declares it (a library supertype's).
+ */
+function memberOf(typeIds: string[], candidates: Node[], ctx: CallContext): Node | null {
+  const byOwner = new Map<string, Node[]>();
+  for (const n of candidates) {
+    const owner = ctx.owner(n.id);
+    if (!owner) continue;
+    const list = byOwner.get(owner.id);
+    if (list) list.push(n); else byOwner.set(owner.id, [n]);
+  }
+  if (byOwner.size === 0) return null;
+  const seen = new Set<string>(typeIds);
+  let level = [...typeIds];
+  for (let depth = 0; level.length > 0 && depth < 8; depth++) {
+    const found = level.flatMap(id => byOwner.get(id) ?? []);
+    // Overloads of one type are one method; the same name in two unrelated types is a guess
+    if (found.length > 0) {
+      const owners = new Set(found.map(n => ctx.owner(n.id)!.id));
+      return owners.size === 1 ? first(found) : null;
+    }
+    const next: string[] = [];
+    for (const id of level) for (const s of ctx.supertypes(id)) if (!seen.has(s)) { seen.add(s); next.push(s); }
+    level = next;
+  }
+  return null;
+}
+
 export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
   const source = ctx.node(ref.sourceId);
   const language = source?.language;
@@ -145,8 +178,26 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
   const imported = ctx.importedFiles(ref.filePath);
   const inImported = (nodes: Node[]) => (imported ? nodes.filter(n => imported.has(n.filePath)) : []);
 
+  // A receiver whose type the code declares: the method of that type, or of its supertypes
+  if (ref.receiverType !== undefined) {
+    const types = ctx.byName(ref.receiverType).filter(n => TYPE_KINDS.has(n.kind) &&
+      isCallTarget(n, language) && (fromTest || !isTestPath(n.filePath)));
+    // A type outside the project (a library's): its methods are not the project's
+    if (types.length === 0) return null;
+    const local = sameFile(types);
+    const fromImports = inImported(types);
+    const pool = local.length > 0 ? local : fromImports.length > 0 ? fromImports : types;
+    return memberOf(pool.map(n => n.id), candidates, ctx);
+  }
+
   // A call on `this` / `self`: a member of the caller's own type, or the one member of the name
   if (ref.receiver !== undefined && SELF_RECEIVERS.test(ref.receiver.trim())) {
+    // The caller's class and its supertypes
+    const callerType = ctx.owner(ref.sourceId);
+    if (callerType && TYPE_KINDS.has(callerType.kind)) {
+      const inherited = memberOf([callerType.id], candidates, ctx);
+      if (inherited) return inherited;
+    }
     const members = candidates.filter(n => isMember(n, ctx));
     const own = sameFile(members);
     if (own.length > 0) {

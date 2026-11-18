@@ -8,7 +8,9 @@
 import type { Node, NodeKind, Edge } from '../types';
 import type { GraphDatabase } from '../db/database';
 import type { KiroGraphConfig } from '../config';
-import { resolveCall, type CallContext } from './call-resolver';
+import { resolveCall, isCallTarget, type CallContext } from './call-resolver';
+
+const SUPERTYPE_KINDS = new Set<string>(['class', 'interface', 'struct', 'trait', 'protocol', 'component']);
 import { logDebug, logWarn } from '../errors';
 import { runBridgeResolvers, type BridgeResolutionResult } from './bridges';
 
@@ -178,8 +180,10 @@ export class ReferenceResolver {
     }
 
     const rawDb = (this.db as any).db;
-    // Imports first: a call prefers the functions of the files its file imports
-    const refs: any[] = rawDb.all(`SELECT * FROM unresolved_refs ORDER BY ref_kind <> 'import', id`);
+    // Imports first, then supertypes: a call prefers the functions of the files its file imports,
+    // and looks a method up in the supertypes of the receiver's type
+    const refs: any[] = rawDb.all(`SELECT * FROM unresolved_refs ORDER BY
+      CASE ref_kind WHEN 'import' THEN 0 WHEN 'extends' THEN 1 WHEN 'implements' THEN 1 ELSE 2 END, id`);
     const calls = this.callContext();
     let resolved = 0;
     const total = refs.length;
@@ -235,7 +239,7 @@ export class ReferenceResolver {
             }
           } else if (refKind === 'extends' || refKind === 'implements') {
             attemptedStrategies.push('type-name');
-            targetId = this._resolveTypeName(refName);
+            targetId = this._resolveSupertype(refName, sourceId, filePath, calls);
           } else {
             attemptedStrategies.push('framework');
 
@@ -252,7 +256,7 @@ export class ReferenceResolver {
               const dot = refName.lastIndexOf('.');
               const name = dot > 0 ? refName.slice(dot + 1) : refName;
               const receiver: string | undefined = meta?.receiver ?? (dot > 0 ? refName.slice(0, dot) : undefined);
-              const call = { name, receiver, sourceId, filePath };
+              const call = { name, receiver, receiverType: meta?.receiverType as string | undefined, sourceId, filePath };
               attemptedStrategies.push(receiver !== undefined ? 'method' : 'exact');
               targetId = resolveCall(call, calls)?.id ?? null;
 
@@ -287,6 +291,7 @@ export class ReferenceResolver {
             }
             resolvedIds.push(refId);
             if (edgeKind === 'imports') calls.addImport(filePath, targetId);
+            if (edgeKind === 'extends' || edgeKind === 'implements') calls.addSupertype(sourceId, targetId);
             resolved++;
           } else {
             // Nothing to write when the same list is already recorded: a reference that stays
@@ -643,7 +648,7 @@ export class ReferenceResolver {
    * What the call resolver reads: nodes by name and id, the files each file imports (the import
    * edges already in the graph, and those this pass makes), and each node's owner.
    */
-  private callContext(): CallContext & { addImport(filePath: string, targetId: string): void } {
+  private callContext(): CallContext & { addImport(filePath: string, targetId: string): void; addSupertype(id: string, superId: string): void } {
     const rawDb = (this.db as any).db;
     const imports = new Map<string, Set<string>>();
     const add = (from: string, to: string) => {
@@ -656,7 +661,13 @@ export class ReferenceResolver {
       SELECT s.file_path AS f, t.file_path AS t FROM edges e
       JOIN nodes s ON s.id = e.source JOIN nodes t ON t.id = e.target
       WHERE e.kind = 'imports'`) as any[]) add(r.f, r.t);
-    let owners: Map<string, { name: string; kind: string }> | null = null;
+    let owners: Map<string, { id: string; name: string; kind: string }> | null = null;
+    const supers = new Map<string, string[]>();
+    const addSuper = (id: string, s: string) => {
+      const list = supers.get(id);
+      if (!list) supers.set(id, [s]); else if (!list.includes(s)) list.push(s);
+    };
+    for (const r of rawDb.all(`SELECT source, target FROM edges WHERE kind IN ('extends', 'implements')`) as any[]) addSuper(r.source, r.target);
     return {
       byName: name => this.nameCache.get(name) ?? [],
       node: id => this.nodeByIdCache.get(id),
@@ -680,12 +691,14 @@ export class ReferenceResolver {
         if (!owners) {
           owners = new Map();
           for (const r of rawDb.all(`
-            SELECT e.target AS id, s.name AS name, s.kind AS kind FROM edges e JOIN nodes s ON s.id = e.source
+            SELECT e.target AS id, s.id AS owner, s.name AS name, s.kind AS kind FROM edges e JOIN nodes s ON s.id = e.source
             WHERE e.kind = 'contains' AND s.kind IN ('class', 'struct', 'interface', 'trait', 'protocol',
-              'module', 'namespace', 'component', 'enum')`) as any[]) owners.set(r.id, { name: r.name, kind: r.kind });
+              'module', 'namespace', 'component', 'enum')`) as any[]) owners.set(r.id, { id: r.owner, name: r.name, kind: r.kind });
         }
         return owners.get(id);
       },
+      supertypes: id => supers.get(id) ?? [],
+      addSupertype: addSuper,
       addImport: (filePath, targetId) => {
         const target = this.nodeByIdCache.get(targetId);
         if (target) add(filePath, target.filePath);
@@ -694,22 +707,21 @@ export class ReferenceResolver {
   }
 
   /**
-   * Resolve a bare type name to a node ID.
-   * Used for extends/implements refs where we have only the unqualified type name.
-   * Prefers class/interface/trait/protocol nodes over other kinds.
+   * The type a class extends or implements, by name: in the class's language family, in its own
+   * file, else in a file it imports, else the one type of the name. Several left: none, rather than
+   * a wrong supertype for the methods looked up through it.
    */
-  private _resolveTypeName(name: string): string | null {
-    const candidates = this.nameCache.get(name) ?? [];
-    if (candidates.length > 0) {
-      const preferred = candidates.find(n =>
-        n.kind === 'class' || n.kind === 'interface' || n.kind === 'trait' || n.kind === 'protocol'
-      );
-      return (preferred ?? candidates[0]).id;
-    }
-    // Try as a fully-qualified name
-    const qualified = this.qualifiedNameCache.get(name);
-    if (qualified) return qualified.id;
-    return null;
+  private _resolveSupertype(name: string, sourceId: string, filePath: string, calls: CallContext): string | null {
+    const source = this.nodeByIdCache.get(sourceId);
+    const types = (this.nameCache.get(name) ?? []).filter(n =>
+      SUPERTYPE_KINDS.has(n.kind) && n.id !== sourceId && isCallTarget(n, source?.language));
+    if (types.length === 0) return null;
+    const local = types.filter(n => n.filePath === filePath);
+    if (local.length > 0) return local[0].id;
+    const imported = calls.importedFiles(filePath);
+    const fromImports = imported ? types.filter(n => imported.has(n.filePath)) : [];
+    if (fromImports.length > 0) return fromImports.length === 1 ? fromImports[0].id : null;
+    return types.length === 1 ? types[0].id : null;
   }
 
   /**
