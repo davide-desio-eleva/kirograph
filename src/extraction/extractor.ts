@@ -177,6 +177,8 @@ export async function extractFile(filePath: string, projectRoot: string, content
 
   // A `.h` file is C by its extension; one written in C++ (fmt, gtest) is parsed as C++
   if (language === 'c' && filePath.endsWith('.h') && CPP_HEADER.test(source)) language = 'cpp';
+  // … and one written in Objective-C (@interface, @protocol, #import) as Objective-C
+  if (language === 'c' && filePath.endsWith('.h') && /^\s*(@interface|@protocol|@import|#import)\b/m.test(source)) language = 'objc';
 
   // Defensive size guard (issue #33): even though the scanner enforces
   // maxFileSize via fs.stat, some callers (e.g. git-changed-file sync) bypass
@@ -622,7 +624,8 @@ function walkTree(
   now: number,
   parentId?: string
 ): void {
-  if (TRANSPARENT_TYPES.has(node.type)) {
+  // `module` is Python's root, walked through; Ruby's `module Foo` is a namespace (see lang-specs)
+  if (TRANSPARENT_TYPES.has(node.type) && !(language === 'ruby' && node.type === 'module')) {
     for (let i = 0; i < node.childCount; i++) {
       walkTree(node.child(i), source, filePath, language, nodes, edges, unresolvedRefs, now, parentId);
     }
@@ -639,8 +642,10 @@ function walkTree(
   const spec = LANG_SPECS[language];
   const specImport = spec?.importOf?.(node, source);
   if (specImport) {
-    const importNode = extractImport(node, source, filePath, language, unresolvedRefs, now, parentId, specImport);
-    if (importNode) nodes.push(importNode);
+    for (const modulePath of Array.isArray(specImport) ? specImport : [specImport]) {
+      const importNode = extractImport(node, source, filePath, language, unresolvedRefs, now, parentId, modulePath);
+      if (importNode) nodes.push(importNode);
+    }
     return;
   }
 

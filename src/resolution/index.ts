@@ -11,6 +11,7 @@ import type { Node, NodeKind, Edge } from '../types';
 import type { GraphDatabase } from '../db/database';
 import type { KiroGraphConfig } from '../config';
 import { resolveCall, isCallTarget, type CallContext } from './call-resolver';
+import { ImportResolver } from './import-resolver';
 
 const SUPERTYPE_KINDS = new Set<string>(['class', 'interface', 'struct', 'trait', 'protocol', 'component', 'type_alias']);
 import { logDebug, logWarn } from '../errors';
@@ -62,6 +63,8 @@ export class ReferenceResolver {
    */
   warmCaches(full = true): void {
     this.pythonModules = null;
+    this.importResolverOf = null;
+    this.fileNodes = null;
     this.cIncludeGraph = null;
     this.nameCache.clear();
     this.qualifiedNameCache.clear();
@@ -237,6 +240,14 @@ export class ReferenceResolver {
               // prototypes) has no node to point at: its include stays a reference, and the
               // include graph the call resolver reads has it anyway
               targetId = this.cIncludes().nodeIn(this.cIncludes().resolve(refName, filePath));
+            } else if (!filePath.endsWith('.py') && this.importResolver().handles(filePath)) {
+              // Java / Kotlin / Scala packages, C# namespaces, Go modules, Rust crates, PHP PSR-4,
+              // JS / TS paths and workspace packages, … (see import-resolver)
+              const lang = this.nodeByIdCache.get(sourceId)?.language ?? '';
+              const targets = this.importResolver().resolve(refName, filePath, lang)
+                .map(f => this.importTargetIn(f)).filter((id): id is string => !!id);
+              targetId = targets[0] ?? null;
+              extraTargets = targets.slice(1);
             } else if (filePath.endsWith('.py')) {
               // A module, and the submodules among the names it imports (`from django.db import models`)
               const targets = this._resolvePythonImport(refName, filePath, refMetadata ? JSON.parse(refMetadata).names : undefined);
@@ -540,6 +551,31 @@ export class ReferenceResolver {
       if (row) return row.path;
     }
     return null;
+  }
+
+  /** The import resolver of this pass, and a node of each file for an import edge to point at. */
+  private importResolverOf: ImportResolver | null = null;
+  private fileNodes: Map<string, Node[]> | null = null;
+
+  private importResolver(): ImportResolver {
+    if (!this.importResolverOf) {
+      const rawDb = (this.db as any).db;
+      const files = (rawDb.all('SELECT path FROM files') as any[]).map(r => String(r.path));
+      const byFile = new Map<string, Node[]>();
+      for (const n of this.nodeByIdCache.values()) {
+        const list = byFile.get(n.filePath);
+        if (list) list.push(n); else byFile.set(n.filePath, [n]);
+      }
+      this.fileNodes = byFile;
+      this.importResolverOf = new ImportResolver(this.projectRoot, files, f => byFile.get(f) ?? []);
+    }
+    return this.importResolverOf;
+  }
+
+  /** The node an import of a file points at: a declaration of it, else any of its nodes. */
+  private importTargetIn(file: string): string | null {
+    const nodes = this.fileNodes?.get(file) ?? [];
+    return (nodes.find(n => n.kind !== 'import') ?? nodes[0])?.id ?? null;
   }
 
   /** The C / C++ include graph of this pass (see cIncludes). */
@@ -973,7 +1009,7 @@ export class ReferenceResolver {
 
 /** Files the bridge resolvers look at (see resolution/bridges). */
 /** C and C++ sources and headers. */
-const C_FAMILY_FILE = /\.(c|h|cc|cpp|cxx|c\+\+|hpp|hh|hxx|h\+\+|ipp|inl|tpp)$/;
+const C_FAMILY_FILE = /\.(c|h|cc|cpp|cxx|c\+\+|hpp|hh|hxx|h\+\+|ipp|inl|tpp|m|mm)$/;
 const C_HEADER_FILE = /\.(h|hpp|hh|hxx|h\+\+|ipp|inl|tpp)$/;
 
 const expandedCache = new Map<string, string>();
