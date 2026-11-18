@@ -15,8 +15,8 @@ export interface LangSpec {
   symbol?(node: any, source: string): Symbol | null | undefined;
   /** The node as a call, `null` if it is none, `undefined` for the generic rules. */
   call?(node: any, source: string): Call | null | undefined;
-  /** The module a node imports, if it is an import. */
-  importOf?(node: any, source: string): string | undefined;
+  /** The module (or modules: Go's `import ( … )`) a node imports, if it is an import. */
+  importOf?(node: any, source: string): string | string[] | undefined;
 }
 
 const text = (n: any, source: string): string => source.slice(n.startIndex, n.endIndex);
@@ -213,6 +213,13 @@ const julia: LangSpec = {
     return jlName(node.namedChild(0), source);
   },
   importOf(node, source) {
+    // include("helpers.jl") brings a file in
+    if (node.type === 'call_expression') {
+      const fn = node.namedChild(0);
+      if (fn?.type !== 'identifier' || text(fn, source) !== 'include') return undefined;
+      const arg = node.namedChild(1)?.namedChild(0);
+      return arg?.type === 'string_literal' ? `./${unquote(text(arg, source))}` : undefined;
+    }
     if (node.type !== 'using_statement' && node.type !== 'import_statement') return undefined;
     const first = node.namedChild(0);
     const mod = first?.type === 'selected_import' ? first.namedChild(0) : first;
@@ -393,6 +400,16 @@ const php: LangSpec = {
 // ── Objective-C ──────────────────────────────────────────────────────────────
 
 const objc: LangSpec = {
+  symbol(node) {
+    // A method an @interface declares is a prototype of the @implementation's (as a C prototype is):
+    // two nodes of one method would make every call to it ambiguous. A @protocol's are the only ones
+    if (node.type !== 'method_declaration') return undefined;
+    for (let p = node.parent; p; p = p.parent) {
+      if (p.type === 'class_interface' || p.type === 'category_interface') return null;
+      if (p.type === 'protocol_declaration') return undefined;
+    }
+    return undefined;
+  },
   call(node, source) {
     // [obj run:1 with:2] is `run` (the selector's first part, as the method is named), on obj
     if (node.type !== 'message_expression') return undefined;
@@ -407,6 +424,13 @@ const objc: LangSpec = {
 const DART_MEMBER = new Set(['unconditional_assignable_selector', 'conditional_assignable_selector']);
 
 const dart: LangSpec = {
+  importOf(node, source) {
+    // import 'package:http/http.dart' as http;  export 'src/base.dart';
+    if (node.type !== 'import_or_export') return undefined;
+    const uri = find(node, new Set(['uri']), 16);
+    const lit = uri ? named(uri, 'string_literal') ?? uri : null;
+    return lit ? unquote(text(lit, source)) : undefined;
+  },
   call(node, source) {
     // A call is a selector with arguments after what it calls: `run(1)` is an identifier and a
     // selector, `obj.m(2)` an identifier, a `.m` selector, and a selector with the arguments
@@ -424,4 +448,70 @@ const dart: LangSpec = {
   },
 };
 
-export const LANG_SPECS: Partial<Record<Language, LangSpec>> = { r, perl, powershell, julia, nix, pascal, verilog, scss, php, objc, dart };
+// ── Go ───────────────────────────────────────────────────────────────────────
+
+const go: LangSpec = {
+  importOf(node, source) {
+    // Every spec of `import ( "fmt"; m "github.com/x/y" )`, not the first only
+    if (node.type !== 'import_declaration') return undefined;
+    const specs = node.namedChildren.flatMap((c: any) => c.type === 'import_spec_list' ? c.namedChildren : [c])
+      .filter((c: any) => c.type === 'import_spec');
+    const paths = specs.map((s: any) => s.childForFieldName('path')).filter(Boolean).map((p: any) => unquote(text(p, source)));
+    return paths.length > 0 ? paths : undefined;
+  },
+};
+
+// ── Ruby ─────────────────────────────────────────────────────────────────────
+
+const ruby: LangSpec = {
+  symbol(node, source) {
+    // module Foo / module Foo::Bar: a namespace
+    if (node.type !== 'module') return undefined;
+    const name = node.childForFieldName('name');
+    return name ? { kind: 'module', name: text(name, source).split('::').pop()! } : null;
+  },
+  importOf(node, source) {
+    // require 'json'; require_relative 'lib/helper' (as ./lib/helper: relative to the file)
+    if (node.type !== 'call' || node.childForFieldName('receiver')) return undefined;
+    const method = node.childForFieldName('method');
+    const name = method ? text(method, source) : '';
+    if (!/^(require|require_relative|load)$/.test(name)) return undefined;
+    const arg = node.childForFieldName('arguments')?.namedChild(0);
+    if (arg?.type !== 'string') return undefined;
+    const path = unquote(text(arg, source));
+    return name === 'require_relative' && !path.startsWith('.') ? `./${path}` : path;
+  },
+};
+
+// ── Lua ──────────────────────────────────────────────────────────────────────
+
+const lua: LangSpec = {
+  importOf(node, source) {
+    // require("telescope.utils"), require "plenary.async"
+    if (node.type !== 'function_call') return undefined;
+    const name = node.childForFieldName('name');
+    if (name?.type !== 'identifier' || text(name, source) !== 'require') return undefined;
+    const arg = find(node.childForFieldName('arguments') ?? node, new Set(['string']), 4);
+    const content = arg ? named(arg, 'string_content') : null;
+    return content ? text(content, source) : undefined;
+  },
+};
+
+// ── JavaScript / TypeScript ──────────────────────────────────────────────────
+
+const js: LangSpec = {
+  importOf(node, source) {
+    // CommonJS `require('./x')` and dynamic `import('./x')` (ES `import` statements are read as such)
+    if (node.type !== 'call_expression') return undefined;
+    const fn = node.childForFieldName('function');
+    const callee = fn ? text(fn, source) : '';
+    if (callee !== 'require' && callee !== 'import') return undefined;
+    const arg = node.childForFieldName('arguments')?.namedChild(0);
+    return arg?.type === 'string' ? unquote(text(arg, source)) : undefined;
+  },
+};
+
+export const LANG_SPECS: Partial<Record<Language, LangSpec>> = {
+  r, perl, powershell, julia, nix, pascal, verilog, scss, php, objc, dart, go, ruby, lua,
+  javascript: js, typescript: js, tsx: js, jsx: js,
+};
