@@ -37,6 +37,11 @@ export interface CallContext {
   owner(id: string): { id: string; name: string; kind: string } | undefined;
   /** The types a type extends or implements (resolved edges). */
   supertypes(id: string): string[];
+  /**
+   * C / C++: whether a function of another file is visible from a file — in a header it includes,
+   * directly or not, or declared by one (`jv.h` declares what `jv_print.c` defines).
+   */
+  cVisible?(filePath: string, candidate: Node): boolean;
 }
 
 const LANGUAGE_FAMILY: Record<string, string> = {
@@ -222,8 +227,9 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
     const inScope = (n: Node) => isMember(n, ctx) || !imported || imported.size === 0 || imported.has(n.filePath) || n.filePath === ref.filePath;
     const reached = candidates.filter(n => receiverReaches(ref.receiver!, n, ctx) && inScope(n));
     if (reached.length === 0) {
-      // A class through its module (`models.CharField(…)`): the one of the name the file imports,
-      // or the one in the project
+      // A class through its module (`models.CharField(…)`), in the languages where a module is a
+      // value: the one of the name the file imports, or the one in the project
+      if (language === undefined || !(language === 'python' || JS_FAMILY.has(language))) return null;
       const types = candidates.filter(n => CONSTRUCTORS.has(n.kind) && !isMember(n, ctx));
       const importedTypes = inImported(types);
       return importedTypes.length > 0 ? only(importedTypes) : only(types);
@@ -234,9 +240,13 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
     return only(inImported(exact.length > 0 ? exact : reached));
   }
 
-  // A bare call: a function in scope. A member only where a bare name can be `this`'s, in its file
-  const bare = candidates.filter(n => !isMember(n, ctx) ||
-    (language !== undefined && IMPLICIT_SELF.has(language) && n.filePath === ref.filePath));
+  // A bare call: a function in scope. A member only where a bare name can be `this`'s, in its file.
+  // In C / C++, only what the file's includes declare: gtest's `memcpy` is the C library's, not
+  // fmt's `memcpy` in a header gtest never includes
+  const cFamily = language === 'c' || language === 'cpp';
+  const bare = candidates.filter(n => (!isMember(n, ctx) ||
+    (language !== undefined && IMPLICIT_SELF.has(language) && n.filePath === ref.filePath)) &&
+    (!cFamily || n.filePath === ref.filePath || !ctx.cVisible || ctx.cVisible(ref.filePath, n)));
   if (bare.length === 0) return null;
   const local = sameFile(bare);
   if (local.length > 0) return first(local);

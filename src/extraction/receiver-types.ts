@@ -261,11 +261,27 @@ function enclosing(node: any, kinds: Set<string>): any {
   return null;
 }
 
+/**
+ * The function a call calls, without its type arguments: `getTyped` in Go's `getTyped[bool](c)`,
+ * `parse` in Rust's `parse::<u8>(s)`, `x.collect` in `x.collect::<Vec<_>>()`.
+ */
+export function calleeOf(call: any): any {
+  let fn = call.childForFieldName?.('function') ?? call.child(0);
+  // and without its C++ scope: `helper` in `ns::helper<int>(1)`
+  while (fn && (fn.type === 'generic_function' || fn.type === 'index_expression'
+    || fn.type === 'qualified_identifier' || fn.type === 'template_function')) {
+    fn = fn.type === 'qualified_identifier' || fn.type === 'template_function'
+      ? fn.childForFieldName('name')
+      : fn.childForFieldName('function') ?? fn.childForFieldName('operand') ?? fn.namedChild(0);
+  }
+  return fn;
+}
+
 /** The receiver expression of a call: `repo` in `repo.save()`, `getRepo()` in `getRepo().save()`. */
 function receiverNode(call: any): any {
   const named = call.childForFieldName('object') ?? call.childForFieldName('receiver');
   if (named) return named;
-  const fn = call.childForFieldName('function') ?? call.child(0);
+  const fn = calleeOf(call);
   if (!fn) return null;
   if (fn.type === 'member_expression' || fn.type === 'attribute' || fn.type === 'field_expression' || fn.type === 'selector_expression') {
     return fn.childForFieldName('object') ?? fn.childForFieldName('operand') ?? fn.namedChild(0);
@@ -277,7 +293,7 @@ function receiverNode(call: any): any {
 function calledName(call: any, source: string): string | undefined {
   const named = call.childForFieldName('name');
   if (named) return text(named, source);
-  const fn = call.childForFieldName('function') ?? call.child(0);
+  const fn = calleeOf(call);
   if (!fn) return undefined;
   const last = fn.childForFieldName('property') ?? fn.childForFieldName('attribute') ?? fn.childForFieldName('field') ?? fn;
   const name = text(last, source);

@@ -5,6 +5,8 @@
  * Mirrors CodeGraph src/resolution/index.ts
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import type { Node, NodeKind, Edge } from '../types';
 import type { GraphDatabase } from '../db/database';
 import type { KiroGraphConfig } from '../config';
@@ -60,6 +62,7 @@ export class ReferenceResolver {
    */
   warmCaches(full = true): void {
     this.pythonModules = null;
+    this.cIncludeGraph = null;
     this.nameCache.clear();
     this.qualifiedNameCache.clear();
     this.kindCache.clear();
@@ -229,7 +232,12 @@ export class ReferenceResolver {
             targetId = this.qualifiedNameCache.get(refName)?.id ?? null;
           } else if (refKind === 'import') {
             attemptedStrategies.push('import-path');
-            if (filePath.endsWith('.py')) {
+            if (C_FAMILY_FILE.test(filePath)) {
+              // `#include "jv.h"`: the header's file. A header with no symbol of its own (only
+              // prototypes) has no node to point at: its include stays a reference, and the
+              // include graph the call resolver reads has it anyway
+              targetId = this.cIncludes().nodeIn(this.cIncludes().resolve(refName, filePath));
+            } else if (filePath.endsWith('.py')) {
               // A module, and the submodules among the names it imports (`from django.db import models`)
               const targets = this._resolvePythonImport(refName, filePath, refMetadata ? JSON.parse(refMetadata).names : undefined);
               targetId = targets[0] ?? null;
@@ -534,6 +542,133 @@ export class ReferenceResolver {
     return null;
   }
 
+  /** The C / C++ include graph of this pass (see cIncludes). */
+  private cIncludeGraph: CIncludeGraph | null = null;
+
+  /**
+   * The project's C / C++ include graph: what each file's `#include`s resolve to (from the include
+   * nodes and the files table, which lists headers with no symbol too), the files a file reaches
+   * through them, and whether one of those headers declares a name. `#include "x.h"` is looked
+   * for next to the including file, then as a path suffix (`fmt/format.h` →
+   * `include/fmt/format.h`); a system header (`<string.h>`) is not a project file.
+   */
+  private cIncludes(): CIncludeGraph {
+    if (this.cIncludeGraph) return this.cIncludeGraph;
+    const rawDb = (this.db as any).db;
+    const files: string[] = (rawDb.all('SELECT path FROM files') as any[]).map(r => String(r.path)).filter(f => C_FAMILY_FILE.test(f));
+    const fileSet = new Set(files);
+    const bySuffix = new Map<string, string[]>();
+    for (const f of files) {
+      const parts = f.split('/');
+      for (let i = 0; i < parts.length; i++) {
+        const key = parts.slice(i).join('/');
+        const list = bySuffix.get(key);
+        if (list) list.push(f); else bySuffix.set(key, [f]);
+      }
+    }
+    const nodeOf = new Map<string, string>();
+    const includesOf = new Map<string, string[]>();
+    for (const n of this.nodeByIdCache.values()) {
+      if (!C_FAMILY_FILE.test(n.filePath)) continue;
+      if (n.kind === 'import') {
+        const list = includesOf.get(n.filePath);
+        if (list) list.push(n.name); else includesOf.set(n.filePath, [n.name]);
+      } else if (!nodeOf.has(n.filePath)) {
+        nodeOf.set(n.filePath, n.id);
+      }
+    }
+    const resolve = (include: string, from: string): string | undefined => {
+      const dir = from.split('/').slice(0, -1);
+      const joined: string[] = [];
+      for (const seg of [...dir, ...include.split('/')]) {
+        if (seg === '..') joined.pop(); else if (seg !== '.' && seg !== '') joined.push(seg);
+      }
+      const local = joined.join('/');
+      if (fileSet.has(local)) return local;
+      const found = bySuffix.get(include.replace(/^(\.\.?\/)+/, ''));
+      if (!found || found.length === 0) return undefined;
+      // Several files with the path: the one nearest the including file
+      const shared = (f: string) => { let i = 0; while (i < f.length && f[i] === from[i]) i++; return i; };
+      return found.reduce((a, b) => (shared(b) > shared(a) ? b : a));
+    };
+    const direct = new Map<string, string[]>();
+    for (const [file, includes] of includesOf) {
+      direct.set(file, includes.map(i => resolve(i, file)).filter((f): f is string => !!f && f !== file));
+    }
+    const closures = new Map<string, Set<string>>();
+    const reach = (file: string): Set<string> => {
+      const cached = closures.get(file);
+      if (cached) return cached;
+      const seen = new Set<string>();
+      const stack = [...(direct.get(file) ?? [])];
+      while (stack.length > 0) {
+        const f = stack.pop()!;
+        if (seen.has(f)) continue;
+        seen.add(f);
+        stack.push(...(direct.get(f) ?? []));
+      }
+      closures.set(file, seen);
+      return seen;
+    };
+    // A source another file includes (decNumber's decBasic.c, in decDouble.c and decQuad.c) is
+    // compiled as part of it: it sees what its includers see. Not a header, which is included
+    // nearly everywhere and would see the whole project
+    const includers = new Map<string, string[]>();
+    for (const [file, targets] of direct) {
+      for (const target of targets) {
+        const list = includers.get(target);
+        if (list) list.push(file); else includers.set(target, [file]);
+      }
+    }
+    const visibleCache = new Map<string, Set<string>>();
+    const visible = (file: string): Set<string> => {
+      const cached = visibleCache.get(file);
+      if (cached) return cached;
+      const out = new Set(reach(file));
+      const queue = C_HEADER_FILE.test(file) ? [] : [...(includers.get(file) ?? [])];
+      const seen = new Set<string>([file]);
+      while (queue.length > 0) {
+        const g = queue.shift()!;
+        if (seen.has(g)) continue;
+        seen.add(g);
+        out.add(g);
+        for (const f of reach(g)) out.add(f);
+        if (!C_HEADER_FILE.test(g)) queue.push(...(includers.get(g) ?? []));
+      }
+      out.delete(file);
+      visibleCache.set(file, out);
+      return out;
+    };
+    const texts = new Map<string, string>();
+    const textOf = (f: string): string => {
+      let text = texts.get(f);
+      if (text === undefined) {
+        try { text = fs.readFileSync(path.join(this.projectRoot, f), 'utf8'); } catch { text = ''; }
+        texts.set(f, text);
+      }
+      return text;
+    };
+    const declared = new Map<string, boolean>();
+    this.cIncludeGraph = {
+      resolve,
+      nodeIn: f => (f ? nodeOf.get(f) ?? null : null),
+      reach: visible,
+      declares: (from, name) => {
+        const key = from + '\0' + name;
+        let yes = declared.get(key);
+        if (yes === undefined) {
+          const id = name.replace(/[^\w~]/g, '');
+          const re = new RegExp(`\\b${id}\\s*\\(`);
+          yes = declaresItself(textOf(from), id) || [...visible(from)].some(h => C_HEADER_FILE.test(h) &&
+            (re.test(textOf(h)) || re.test(expandPastingMacros(textOf(h)))));
+          declared.set(key, yes);
+        }
+        return yes;
+      },
+    };
+    return this.cIncludeGraph;
+  }
+
   /** Python modules by every dotted suffix of their path (`db.models`, `django.db.models`), and a node of each file. */
   private pythonModules: { byKey: Map<string, string[]>; nodeOf: Map<string, string> } | null = null;
 
@@ -698,6 +833,11 @@ export class ReferenceResolver {
         return owners.get(id);
       },
       supertypes: id => supers.get(id) ?? [],
+      cVisible: (filePath, candidate) => {
+        if (!C_FAMILY_FILE.test(filePath)) return true;
+        const g = this.cIncludes();
+        return g.reach(filePath).has(candidate.filePath) || g.declares(filePath, candidate.name);
+      },
       addSupertype: addSuper,
       addImport: (filePath, targetId) => {
         const target = this.nodeByIdCache.get(targetId);
@@ -832,6 +972,86 @@ export class ReferenceResolver {
 }
 
 /** Files the bridge resolvers look at (see resolution/bridges). */
+/** C and C++ sources and headers. */
+const C_FAMILY_FILE = /\.(c|h|cc|cpp|cxx|c\+\+|hpp|hh|hxx|h\+\+|ipp|inl|tpp)$/;
+const C_HEADER_FILE = /\.(h|hpp|hh|hxx|h\+\+|ipp|inl|tpp)$/;
+
+const expandedCache = new Map<string, string>();
+
+/**
+ * A header's text with its token-pasting macros expanded, for the declarations they write:
+ * `#define BINOP(name) jv binop_ ## name(jv, jv);` applied by a list `BINOPS` of `BINOP(plus)`,
+ * `BINOP(multiply)`, … declares `binop_multiply(`. Only macros whose body pastes (`##`), and the
+ * object-like macros that apply them; arguments without parentheses. Other text is unchanged.
+ */
+function expandPastingMacros(text: string): string {
+  const cached = expandedCache.get(text);
+  if (cached !== undefined) return cached;
+  let out = text;
+  if (text.includes('##')) {
+    const joined = text.replace(/\\\r?\n/g, ' ');
+    const fns = new Map<string, { params: string[]; body: string }>();
+    const objects = new Map<string, string>();
+    const define = /^[ \t]*#[ \t]*define[ \t]+(\w+)(\(([^)]*)\))?[ \t]*(.*)$/gm;
+    for (let m = define.exec(joined); m; m = define.exec(joined)) {
+      if (m[2] !== undefined) fns.set(m[1], { params: m[3].split(',').map(s => s.trim()).filter(Boolean), body: m[4] });
+      else objects.set(m[1], m[4]);
+    }
+    const pasting = [...fns].filter(([, f]) => f.body.includes('##')).map(([n]) => n);
+    if (pasting.length > 0) {
+      const lists = [...objects].filter(([, body]) => pasting.some(n => new RegExp(`\\b${n}\\s*\\(`).test(body)));
+      // Text outside the directives, with the lists written out
+      let body = joined.split('\n').filter(l => !/^[ \t]*#/.test(l)).join('\n');
+      for (const [name, value] of lists) body = body.replace(new RegExp(`\\b${name}\\b`, 'g'), value);
+      for (const name of pasting) {
+        const f = fns.get(name)!;
+        body = body.replace(new RegExp(`\\b${name}\\s*\\(([^()]*)\\)`, 'g'), (_m, args: string) => {
+          const values = args.split(',').map(s => s.trim());
+          let r = f.body;
+          f.params.forEach((p, i) => { r = r.replace(new RegExp(`\\b${p}\\b`, 'g'), values[i] ?? ''); });
+          return r.replace(/\s*##\s*/g, '');
+        });
+      }
+      out = body;
+    }
+  }
+  expandedCache.set(text, out);
+  return out;
+}
+
+/** Words a statement that calls a function can start with: not a declaration's type. */
+const C_STATEMENT_WORDS = new Set(['return', 'else', 'case', 'if', 'while', 'for', 'do', 'goto', 'sizeof',
+  'delete', 'new', 'throw', 'co_return', 'co_await', 'co_yield']);
+
+/**
+ * Whether a C / C++ file declares a function itself: an `extern` prototype
+ * (`extern jv _jq_path_append(…);`), or a prototype line (`GTEST_API_ TestInfo* Make(…);`) — a type
+ * before the name, a parameter list, a semicolon. Its own call (`x = Make(…);`) is neither.
+ */
+function declaresItself(text: string, id: string): boolean {
+  if (new RegExp(`\\bextern\\b[^;{}]*\\b${id}\\s*\\(`).test(text)) return true;
+  const proto = new RegExp(`^[ \\t]*([A-Za-z_][\\w:<>, \\t*&]*?)[ \\t*&]${id}\\s*\\([^;{}()]*(?:\\([^;{}()]*\\)[^;{}()]*)*\\)[^;{}=]*;`, 'gm');
+  for (let m = proto.exec(text); m; m = proto.exec(text)) {
+    const first = m[1].trim().split(/[\s*&]/)[0];
+    if (!C_STATEMENT_WORDS.has(first) && !/[=(]/.test(m[1])) return true;
+  }
+  return false;
+}
+
+interface CIncludeGraph {
+  /** The project file an `#include` names, seen from a file. */
+  resolve(include: string, from: string): string | undefined;
+  /** A node of the file, for an include edge to point at. */
+  nodeIn(file: string | undefined): string | null;
+  /**
+   * The files a file sees: those it reaches through its includes, transitively, and, for a source
+   * other files include, what they see.
+   */
+  reach(file: string): Set<string>;
+  /** Whether a header the file reaches declares the name as a function (`name(`), or the file an `extern` prototype of it. */
+  declares(file: string, name: string): boolean;
+}
+
 /** Files that gather and re-export a package's symbols. */
 const BARREL_FILE = /(^|\/)(__init__\.py|index\.(ts|tsx|js|jsx|mjs|cjs))$/;
 

@@ -13,7 +13,7 @@ import { initGrammars, getParser, hasWasmGrammar } from './grammars';
 import { extractNotebook } from './notebook';
 import { extractSql } from './sql';
 import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
-import { receiverInfo, declaredReturnType } from './receiver-types';
+import { receiverInfo, declaredReturnType, calleeOf } from './receiver-types';
 import { extractHcl, extractYaml, extractHelmTemplate, augmentBash, extractJsonConfig } from './infra';
 
 export interface UnresolvedRef {
@@ -77,8 +77,14 @@ function validatePath(filePath: string, projectRoot: string): boolean {
  * Extract symbols from a single file.
  * Optionally accepts pre-read content for batch I/O efficiency.
  */
+/**
+ * Constructs only C++ has, at the start of a line: a namespace, a template, a class with a body or
+ * a base, an access specifier. `extern "C"` and `#ifdef __cplusplus` are in C headers too.
+ */
+const CPP_HEADER = /^\s*(?:namespace\s+[\w:]+\s*\{|template\s*<|class\s+\w+(?:\s+final)?\s*[:{]|(?:public|private|protected)\s*:)/m;
+
 export async function extractFile(filePath: string, projectRoot: string, content?: Buffer | string, opts?: { enableComplexity?: boolean; maxFileSize?: number }): Promise<ExtractedFile | null> {
-  const language = detectLanguage(filePath);
+  let language = detectLanguage(filePath);
   if (!isSupportedLanguage(language)) return null;
 
   // Path traversal protection
@@ -94,6 +100,9 @@ export async function extractFile(filePath: string, projectRoot: string, content
   } catch {
     return null;
   }
+
+  // A `.h` file is C by its extension; one written in C++ (fmt, gtest) is parsed as C++
+  if (language === 'c' && filePath.endsWith('.h') && CPP_HEADER.test(source)) language = 'cpp';
 
   // Defensive size guard (issue #33): even though the scanner enforces
   // maxFileSize via fs.stat, some callers (e.g. git-changed-file sync) bypass
@@ -560,6 +569,22 @@ function walkTree(
   // Python/Go/Rust/Java/C# variable and constant types
   if (!kind) kind = getLanguageSpecificKind(node.type, language);
 
+  // C / C++: a struct, class or enum is a declaration only with a body (`struct node *p` names
+  // one); a function inside a class body, or defined as `Class::name`, is a method; a member
+  // function a class body declares (its definition is elsewhere) is a method too
+  if (language === 'c' || language === 'cpp') {
+    if (kind === 'struct' || kind === 'class' || kind === 'enum') {
+      if (!node.childForFieldName('body')) kind = null;
+    } else if (kind === 'function') {
+      const inClass = node.parent?.type === 'field_declaration_list';
+      const qualified = cDeclaratorName(node)?.parent?.type === 'qualified_identifier';
+      if (inClass || qualified) kind = 'method';
+    } else if (!kind && (node.type === 'field_declaration' || node.type === 'declaration')
+      && node.parent?.type === 'field_declaration_list' && hasFunctionDeclarator(node)) {
+      kind = 'method';
+    }
+  }
+
   // ReScript: `let f = (x) => …` is a function, any other let a variable
   if (language === 'rescript' && node.type === 'let_binding') {
     kind = node.childForFieldName('body')?.type === 'function' ? 'function' : 'variable';
@@ -653,6 +678,14 @@ function getLanguageSpecificKind(type: string, lang: Language): NodeKind | null 
     case 'java':
       if (type === 'field_declaration') return 'property';
       if (type === 'local_variable_declaration') return 'variable';
+      break;
+    case 'c':
+    case 'cpp':
+      if (type === 'struct_specifier' || type === 'union_specifier') return 'struct';
+      if (type === 'class_specifier') return 'class';
+      if (type === 'enum_specifier') return 'enum';
+      if (type === 'namespace_definition') return 'namespace';
+      if (type === 'type_definition') return 'type_alias';
       break;
     case 'csharp':
       if (type === 'field_declaration') return 'property';
@@ -955,9 +988,36 @@ function stripQuotes(s: string): string {
 
 // ── Name extraction ───────────────────────────────────────────────────────────
 
+/** The declarators a C / C++ name can be wrapped in. */
+const C_WRAPPERS = new Set(['function_declarator', 'pointer_declarator', 'reference_declarator',
+  'parenthesized_declarator', 'attributed_declarator', 'array_declarator']);
+/** The name a C / C++ declarator ends in. */
+const C_NAMES = new Set(['identifier', 'field_identifier', 'destructor_name', 'operator_name', 'type_identifier']);
+
+/** The name node of a C / C++ function or method declaration: `name` in `int *name(…)`, `Class::name`. */
+function cDeclaratorName(node: any): any {
+  let d = node.childForFieldName('declarator');
+  for (let i = 0; d && i < 12; i++) {
+    if (C_NAMES.has(d.type)) return d;
+    if (d.type === 'qualified_identifier' || d.type === 'template_function') { d = d.childForFieldName('name'); continue; }
+    if (!C_WRAPPERS.has(d.type)) return null;
+    d = d.childForFieldName('declarator') ?? d.namedChild(0);
+  }
+  return null;
+}
+
+/** Whether a C / C++ declaration declares a function (`int width() const;`), not a variable. */
+function hasFunctionDeclarator(node: any): boolean {
+  for (let d = node.childForFieldName('declarator'); d; d = d.childForFieldName('declarator')) {
+    if (d.type === 'function_declarator') return true;
+    if (!C_WRAPPERS.has(d.type)) return false;
+  }
+  return false;
+}
+
 /** Node types that are a plain name. */
 const NAME_TYPES = new Set(['identifier', 'property_identifier', 'type_identifier', 'simple_identifier',
-  'word', 'name', 'constant', 'field_identifier', 'private_property_identifier']);
+  'word', 'name', 'constant', 'field_identifier', 'private_property_identifier', 'namespace_identifier']);
 
 function extractName(node: any, source: string, _lang: Language, kind: NodeKind): string | null {
   // For variable/constant declarations (lexical_declaration, variable_declaration),
@@ -975,8 +1035,9 @@ function extractName(node: any, source: string, _lang: Language, kind: NodeKind)
   }
 
   // For Go const_declaration / var_declaration → look inside var_spec / const_spec
-  for (let i = 0; i < node.childCount; i++) {
-    const child = node.child(i);
+  // (grouped `var ( … )` puts them in a var_spec_list since tree-sitter-go 0.23)
+  const specs = node.children.flatMap((c: any) => c.type === 'var_spec_list' ? c.children : [c]);
+  for (const child of specs) {
     if (child.type === 'var_spec' || child.type === 'const_spec') {
       for (let j = 0; j < child.childCount; j++) {
         const gc = child.child(j);
@@ -999,6 +1060,16 @@ function extractName(node: any, source: string, _lang: Language, kind: NodeKind)
         if (lastId) return lastId;
       }
     }
+  }
+
+  // C / C++: a function's name is inside its declarator (`*name(…)`, `Class::name`, `~Name`)
+  if ((_lang === 'c' || _lang === 'cpp') && (kind === 'function' || kind === 'method')) {
+    const id = cDeclaratorName(node);
+    return id ? source.slice(id.startIndex, id.endIndex) : null;
+  }
+  if ((_lang === 'c' || _lang === 'cpp') && node.type === 'type_definition') {
+    const d = node.childForFieldName('declarator');
+    return d?.type === 'type_identifier' ? source.slice(d.startIndex, d.endIndex) : null;
   }
 
   // ReScript: the name is the let's pattern, or in the type or module binding
@@ -1233,7 +1304,10 @@ function extractCallName(node: any, source: string): string | null {
     }
   }
   // A member access: the member's name (`save` in `makeRepo().save()`, `repo.save()`, `self.x.save()`)
-  const fn = node.childForFieldName?.('function') ?? node.child(0);
+  const fn = calleeOf(node);
+  if (fn && fn !== (node.childForFieldName?.('function') ?? node.child(0)) && fn.type === 'identifier') {
+    return source.slice(fn.startIndex, fn.endIndex);
+  }
   const member = fn && MEMBER_ACCESS.has(fn.type)
     ? fn.childForFieldName('property') ?? fn.childForFieldName('attribute') ?? fn.childForFieldName('field')
     : null;
@@ -1261,7 +1335,7 @@ function extractCallName(node: any, source: string): string | null {
 export function callReceiver(node: any, source: string): string | undefined {
   const named = node.childForFieldName?.('object') ?? node.childForFieldName?.('receiver');
   if (named) return source.slice(named.startIndex, named.endIndex).trim() || undefined;
-  const fn = node.childForFieldName?.('function') ?? node.child(0);
+  const fn = calleeOf(node);
   if (fn && MEMBER_ACCESS.has(fn.type)) {
     const obj = fn.childForFieldName('object') ?? fn.childForFieldName('operand') ?? fn.namedChild(0);
     if (obj) return source.slice(obj.startIndex, obj.endIndex).trim() || undefined;
