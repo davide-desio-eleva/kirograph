@@ -62,7 +62,7 @@ export class ImportResolver {
 
   private static HANDLED = new Set(['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'vue', 'svelte', 'astro',
     'java', 'kt', 'kts', 'scala', 'sc', 'cs', 'go', 'rs', 'php', 'rb', 'dart', 'swift', 'pl', 'pm', 'pas', 'pp',
-    'dpr', 'lpr', 'ex', 'exs', 'lua', 'ml', 'mli', 'jl']);
+    'dpr', 'lpr', 'ex', 'exs', 'lua', 'ml', 'mli', 'jl', 'sol', 'scss', 'sass']);
 
   /** The project files an import names, from a file of a language. */
   resolve(spec: string, from: string, language: Lang): string[] {
@@ -88,6 +88,8 @@ export class ImportResolver {
       case 'lua': return this.lua(spec);
       case 'ocaml': return this.ocaml(spec);
       case 'julia': return spec.startsWith('./') ? this.relative(spec, from, ['jl']) : [];
+      case 'solidity': return this.solidity(spec, from);
+      case 'scss': return this.scss(spec, from);
       default: return [];
     }
   }
@@ -511,6 +513,48 @@ export class ImportResolver {
     });
     const dir = targets.get(name) ?? `Sources/${name}`;
     return this.files.filter(f => extOf(f) === 'swift' && (f.startsWith(`${dir}/`) || new RegExp(`(^|/)Sources/${name}/`).test(f)));
+  }
+
+  // ── Solidity, SCSS ─────────────────────────────────────────────────────────
+
+  /** Solidity: relative paths, remappings (`@openzeppelin/contracts/=contracts/`), project-root paths. */
+  private solidity(spec: string, from: string): string[] {
+    if (spec.startsWith('.')) return this.relative(spec, from, []);
+    const remaps = this.memo('sol', 'remappings', () => {
+      const out: Array<{ prefix: string; dir: string }> = [];
+      for (const f of ['remappings.txt', ...this.files.filter(f => /(^|\/)remappings\.txt$/.test(f))]) {
+        for (const line of this.text(f).split('\n')) {
+          const m = /^\s*([^=\s]+)=(\S+)\s*$/.exec(line);
+          if (m) out.push({ prefix: m[1], dir: normalize(`${dirOf(f)}/${m[2]}`) ?? m[2] });
+        }
+      }
+      return out.sort((a, b) => b.prefix.length - a.prefix.length);
+    });
+    for (const { prefix, dir } of remaps) {
+      if (!spec.startsWith(prefix)) continue;
+      const f = normalize(`${dir}/${spec.slice(prefix.length)}`);
+      if (f && this.fileSet.has(f)) return [f];
+    }
+    return this.fileSet.has(spec) ? [spec] : [];
+  }
+
+  /** SCSS: `@use 'base'` is base.scss, the partial _base.scss, or base/_index.scss; next to the file, else by path. */
+  private scss(spec: string, from: string): string[] {
+    const s = spec.replace(/^sass:.*$/, '');
+    if (!s || /^(https?:)?\/\//.test(s)) return [];
+    const variants = (p: string): string[] => {
+      const dir = dirOf(p), base = p.slice(p.lastIndexOf('/') + 1).replace(/\.(scss|sass|css)$/, '');
+      const prefix = dir ? `${dir}/` : '';
+      return [`${prefix}${base}.scss`, `${prefix}_${base}.scss`, `${prefix}${base}.sass`, `${prefix}_${base}.sass`, `${prefix}${base}.css`,
+        `${prefix}${base}/_index.scss`, `${prefix}${base}/index.scss`];
+    };
+    const local = normalize(`${dirOf(from)}/${s}`);
+    for (const f of local ? variants(local) : []) if (this.fileSet.has(f)) return [f];
+    for (const f of variants(s)) {
+      const found = this.suffix(f.replace(/\.[^./]+$/, ''), ['scss', 'sass', 'css']);
+      if (found.length > 0) return found;
+    }
+    return [];
   }
 
   // ── Pascal, Elixir, Lua, OCaml ─────────────────────────────────────────────

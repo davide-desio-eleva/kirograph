@@ -71,7 +71,7 @@ const CALLABLE = new Set<string>(['function', 'method', 'class', 'struct', 'comp
 const JS_FAMILY = new Set<string>(['typescript', 'tsx', 'javascript', 'jsx', 'svelte', 'vue', 'astro']);
 const VALUE_KINDS = new Set<string>(['constant', 'variable', 'property']);
 /** Languages where a bare name inside a class can be one of its methods (implicit `this`). */
-const IMPLICIT_SELF = new Set<string>(['java', 'kotlin', 'scala', 'swift', 'csharp', 'dart', 'cpp', 'objc', 'ruby', 'rescript', 'elixir']);
+const IMPLICIT_SELF = new Set<string>(['java', 'kotlin', 'scala', 'swift', 'csharp', 'dart', 'cpp', 'objc', 'ruby', 'rescript', 'elixir', 'solidity']);
 /** Receivers that are the object the caller belongs to. */
 const SELF_RECEIVERS = /^(?:this|self|super|cls|Self|base|static|\$this|@)$/;
 /** Owners whose members are reached through an instance or the type, not by a bare name. */
@@ -204,6 +204,14 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
     return memberOf(pool.map(n => n.id), candidates, ctx);
   }
 
+  // A call on `super`: the member the caller's supertypes have, never the caller's own override
+  // (`super.supportsInterface()` inside supportsInterface); a library parent's: nothing
+  if (ref.receiver !== undefined && /^(super|super\(\)|parent|base)$/.test(ref.receiver.trim())) {
+    const callerType = ctx.owner(ref.sourceId);
+    if (!callerType || !TYPE_KINDS.has(callerType.kind)) return null;
+    return memberOf(ctx.supertypes(callerType.id), candidates, ctx);
+  }
+
   // A call on `this` / `self`: a member of the caller's own type, or the one member of the name
   if (ref.receiver !== undefined && SELF_RECEIVERS.test(ref.receiver.trim())) {
     // The caller's class and its supertypes
@@ -240,6 +248,16 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
     const exact = reached.filter(n => squash(ctx.owner(n.id)?.name ?? baseName(n.filePath)) === squash(receiverName(ref.receiver!)));
     if (exact.length === 1) return exact[0];
     return only(inImported(exact.length > 0 ? exact : reached));
+  }
+
+  // A bare call where a bare name can be `this`'s: a member of the caller's class or of what it
+  // inherits first (`_mint()` in a contract that extends ERC20)
+  if (language !== undefined && IMPLICIT_SELF.has(language)) {
+    const callerType = ctx.owner(ref.sourceId);
+    if (callerType && TYPE_KINDS.has(callerType.kind)) {
+      const inherited = memberOf([callerType.id], candidates, ctx);
+      if (inherited) return inherited;
+    }
   }
 
   // A bare call: a function in scope. A member only where a bare name can be `this`'s, in its file.

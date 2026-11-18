@@ -16,6 +16,7 @@ let calls: Record<string, string[]>;
 const files: Record<string, string> = {
   'src/base-repo.ts': 'export class BaseRepo {\n  find(id: string) { return id; }\n}\n',
   'src/user-repo.ts': 'import { BaseRepo } from "./base-repo";\nexport class UserRepo extends BaseRepo {\n  save(u: unknown) { return u; }\n}\n',
+  'src/audit-repo.ts': 'import { UserRepo } from "./user-repo";\nexport class AuditRepo extends UserRepo {\n  save(u: unknown) { return super.save(u); }\n}\n',
   'src/order-store.ts': 'export class OrderStore {\n  save(o: unknown) { return o; }\n  find(id: string) { return id; }\n}\n',
   'src/service.ts': [
     'import { UserRepo } from "./user-repo";',
@@ -120,6 +121,12 @@ afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 describe('receivers with a declared type', () => {
   it('TypeScript: a constructor parameter property', () => {
     expect(calls.persist).toEqual(['src/user-repo.ts::save']);
+  });
+
+  it('super.m() inside an override reaches the parent, not the override itself', () => {
+    const fromAudit = Object.entries(calls).find(([k]) => k === 'save')?.[1] ?? [];
+    expect(fromAudit).toContain('src/user-repo.ts::save');
+    expect(fromAudit).not.toContain('src/audit-repo.ts::save');
   });
 
   it('TypeScript: a method the type inherits', () => {

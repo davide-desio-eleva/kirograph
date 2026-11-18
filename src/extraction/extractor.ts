@@ -877,6 +877,7 @@ function getLanguageSpecificKind(type: string, lang: Language): NodeKind | null 
       break;
     case 'solidity':
       if (type === 'contract_declaration') return 'class';
+      if (type === 'library_declaration') return 'class';   // `library Errors { … }`: functions of its own
       if (type === 'event_definition') return 'function';
       if (type === 'modifier_definition') return 'function';
       if (type === 'state_variable_declaration') return 'variable';

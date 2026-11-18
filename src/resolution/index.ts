@@ -907,8 +907,7 @@ export class ReferenceResolver {
     if (local.length > 0) return local[0].id;
     const imported = calls.importedFiles(filePath);
     const fromImports = imported ? types.filter(n => imported.has(n.filePath)) : [];
-    if (fromImports.length > 0) return fromImports.length === 1 ? fromImports[0].id : null;
-    return types.length === 1 ? types[0].id : null;
+    return pickSupertype(fromImports.length > 0 ? fromImports : types, filePath);
   }
 
   /**
@@ -1097,6 +1096,26 @@ interface CIncludeGraph {
   reach(file: string): Set<string>;
   /** Whether a header the file reaches declares the name as a function (`name(`), or the file an `extern` prototype of it. */
   declares(file: string, name: string): boolean;
+}
+
+/**
+ * One supertype among candidates of the same name: the one; else those of one file (C#'s
+ * `IRequestHandler<T>` and `IRequestHandler<T, R>` are one concept) by their first; else the one
+ * nearest the class's file by folder (a sample project's own `Ping`, not another sample's), when
+ * a single one is nearest. Otherwise none.
+ */
+function pickSupertype(types: Node[], filePath: string): string | null {
+  if (types.length === 0) return null;
+  if (types.length === 1 || types.every(n => n.filePath === types[0].filePath)) return types[0].id;
+  const shared = (f: string) => {
+    const a = f.split('/'), b = filePath.split('/');
+    let i = 0;
+    while (i < a.length - 1 && i < b.length - 1 && a[i] === b[i]) i++;
+    return i;
+  };
+  const best = Math.max(...types.map(n => shared(n.filePath)));
+  const nearest = types.filter(n => shared(n.filePath) === best);
+  return nearest.length === 1 || nearest.every(n => n.filePath === nearest[0].filePath) ? nearest[0].id : null;
 }
 
 /** Files that gather and re-export a package's symbols. */
