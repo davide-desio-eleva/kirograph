@@ -89,6 +89,10 @@ src/
 └── types.ts         # Shared type definitions
 ```
 
+### Grammars
+
+The tree-sitter grammars are WASM files in `src/extraction/wasm/`, built from the sources pinned in `grammars/grammars.json`. To change a grammar, edit its version there and run `npm run grammars -- build <language>` (it needs `emcc`, e.g. `brew install emscripten`; without it the CLI compiles in Docker, whose VM may not have the memory the Swift parser needs). The command records the new fingerprint in the manifest; `npm test` fails when a WASM file and its fingerprint differ. A grammar upgrade can change the graph: list what it changes in the changelog.
+
 ## Guidelines
 
 ### Code Style
