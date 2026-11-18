@@ -123,6 +123,54 @@ const files: Record<string, string> = {
   ].join('\n'),
   // Ruby: a type of the same name in another gem of the repository is not the one meant
   'other-gem/lib/client.rb': 'class Client\n  def rb_other_gem\n    l = RLedger.new\n    l.save\n  end\nend\n',
+  // Elements of collections, parameters typed by a default or by the file's callers, a field set from a call
+  'el/service.py': [
+    'from typing import List',
+    'from types import Ledger, make_ledger',
+    '',
+    'class Shelf:',
+    '    books: List[Ledger]',
+    '    def __init__(self):',
+    '        self.made = make_ledger()',
+    '    def py_comprehension(self):',
+    '        return [b.save() for b in self.books]',
+    '    def py_field_from_call(self):',
+    '        self.made.save()',
+    '    def py_caller_typed(self):',
+    '        self._store(Ledger())',
+    '    def _store(self, item):',
+    '        item.save()',
+    '',
+    'def py_loop(ledgers: list[Ledger]):',
+    '    for ledger in ledgers:',
+    '        ledger.save()',
+    '',
+    'def py_default(ledger=Ledger()):',
+    '    ledger.save()',
+    '',
+  ].join('\n'),
+  'el/service.ts': [
+    "import { JLedger } from '../js/types';",
+    'function tsLoop(xs: JLedger[]) { for (const x of xs) x.save(); }',
+    'function tsCallback(xs: Array<JLedger>) { xs.forEach(x => x.save()); }',
+    'function tsArrayItself(xs: JLedger[]) { xs.save(); }',
+    '',
+  ].join('\n'),
+  'el/Service.java': [
+    'import java.util.List;',
+    'class JavaLedger { void save() {} }',
+    'class JavaJournal { void save() {} }',
+    'class Service {',
+    '  void javaVar(List<JavaLedger> xs) { for (var x : xs) x.save(); }',
+    '  void javaLambda(List<JavaLedger> xs) { xs.forEach(x -> x.save()); }',
+    '}',
+    '',
+  ].join('\n'),
+  // A receiver named for a collection is not an instance of a class that shares its last word
+  'coll/records.py': 'class RecordSet:\n    def save(self): pass\n',
+  'coll/use.py': 'def py_collection(article_set):\n    article_set.save()\n\ndef py_whole_name(record_set):\n    record_set.save()\n',
+  // A parameter called is the function passed in, not one of the project's of its name
+  'param/lib.js': 'function save() {}\nfunction jsCallsParameter(save) { save(); }\nmodule.exports = { save, jsCallsParameter };\n',
 };
 
 beforeAll(async () => {
@@ -185,5 +233,31 @@ describe('Calls on receivers whose type is inferred', () => {
 
   it('Ruby: a type of another gem of the repository is not the one meant', () => {
     expect(calls.rb_other_gem).toBeUndefined();
+  });
+
+  it('an element of a typed collection: a loop, a comprehension, a callback, Java var and lambdas', () => {
+    expect(calls.py_loop).toEqual(['py/types.py::Ledger']);
+    expect(calls.py_comprehension).toEqual(['py/types.py::Ledger']);
+    expect(calls.tsLoop).toEqual(['js/types.js::JLedger']);
+    expect(calls.tsCallback).toEqual(['js/types.js::JLedger']);
+    expect(calls.javaVar).toEqual(['el/Service.java::JavaLedger']);
+    expect(calls.javaLambda).toEqual(['el/Service.java::JavaLedger']);
+    // The array is no JLedger
+    expect(calls.tsArrayItself).toBeUndefined();
+  });
+
+  it("a parameter typed by its default or by its file's callers; a field set from a call", () => {
+    expect(calls.py_default).toEqual(['py/types.py::Ledger']);
+    expect(calls._store).toEqual(['py/types.py::Ledger']);
+    expect(calls.py_field_from_call).toEqual(['py/types.py::Ledger']);
+  });
+
+  it('a receiver named for a collection reaches only a class of its whole name', () => {
+    expect(calls.py_collection).toBeUndefined();
+    expect(calls.py_whole_name).toEqual(['coll/records.py::RecordSet']);
+  });
+
+  it('a parameter called is the function passed in', () => {
+    expect(calls.jsCallsParameter).toBeUndefined();
   });
 });

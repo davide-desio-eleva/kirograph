@@ -13,7 +13,7 @@ import { initGrammars, getParser, hasWasmGrammar } from './grammars';
 import { extractNotebook } from './notebook';
 import { extractSql } from './sql';
 import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
-import { receiverInfo, declaredReturnType, calleeOf, memberObject } from './receiver-types';
+import { receiverInfo, declaredReturnType, calleeOf, memberObject, callsParameter } from './receiver-types';
 import { LANG_SPECS } from './lang-specs';
 import { moreReceiverType, rubyReturnType, rubyIsLocal } from './receiver-types-more';
 import { extractHcl, extractYaml, extractHelmTemplate, augmentBash, extractJsonConfig } from './infra';
@@ -1631,6 +1631,8 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
         else if (!type && language === 'ruby' && /^[a-z_]\w*[?!]?$/.test(receiver) && !rubyIsLocal(node, receiver, source)) {
           metadata.receiverCall = { name: receiver };
         }
+      } else if (callsParameter(node, calleeName, source, language)) {
+        metadata.parameter = true;
       }
       if (JS_TS_LANGUAGES.has(language)) {
         const argKind = classifyFirstArgument(node, source);

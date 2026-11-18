@@ -28,6 +28,8 @@ export interface CallRef {
   filePath: string;
   /** The line of the call. */
   line?: number;
+  /** A bare call of a parameter of an enclosing function (`done()`): the function passed in. */
+  parameter?: boolean;
 }
 
 export interface CallContext {
@@ -120,6 +122,9 @@ function isMember(n: Node, ctx: CallContext): boolean {
   return owner !== undefined && TYPE_KINDS.has(owner.kind);
 }
 
+/** Words that make a name a collection of what its other words name: `article_set`, `user_list`. */
+const COLLECTION_WORDS = new Set(['set', 'list', 'dict', 'map', 'array', 'arr', 'items', 'ids', 'tuple', 'seq', 'collection', 'queue']);
+
 /**
  * Whether the receiver names what the candidate belongs to. The receiver's last word is the
  * thing it is (`userService` is a service, `onResponseHook` a hook): a member is reached when
@@ -136,6 +141,9 @@ function receiverReaches(receiver: string, candidate: Node, ctx: CallContext): b
   if (VALUE_KINDS.has(candidate.kind)) {
     return squash(owner?.name ?? baseName(candidate.filePath)) === squash(name);
   }
+  // A name that ends in a collection word holds several of what its other words name
+  // (`article_set`, `user_list`): only a class of the whole name is it, not `QuerySet`
+  if (owner && recv.length > 1 && COLLECTION_WORDS.has(head) && /^[a-z_]/.test(name)) return squash(owner.name) === squash(name);
   if (owner) return squash(owner.name) === squash(name) || words(owner.name).includes(head);
   // A function or class of a module: the receiver is the module or one of its packages
   // (`models.CharField()` → django/db/models/fields/__init__.py)
@@ -212,6 +220,8 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
     const producer = resolveCall({ ...ref.receiverCall, sourceId: ref.sourceId, filePath: ref.filePath, line: ref.line }, ctx);
     if (producer?.returnType) ref = { ...ref, receiverType: producer.returnType };
   }
+  // A parameter called (`done()`, `resolve(true)`) is whatever function the caller passed
+  if (ref.parameter && ref.receiver === undefined) return null;
   const source = ctx.node(ref.sourceId);
   const language = source?.language;
   // Code that is not a test never calls into a test: a stub or a fixture of the name is not it

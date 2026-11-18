@@ -49,7 +49,14 @@ export interface ReceiverCall {
 }
 
 /** What is known of a receiver: its declared type, or the call it is the value of. */
-type Known = { type: string } | { call: any };
+type Known =
+  | { type: string }
+  /** The value of a call, typed by what the call returns. */
+  | { call: any }
+  /** A collection of a known element type (`list[Foo]`, `Foo[]`): no type of its own. */
+  | { element: string }
+  /** An element of a collection: a loop variable, a callback's parameter (`for x in xs`). */
+  | { iter: any };
 
 /** Declarations by scope, for the file being read (keyed by the scope's position). */
 let cacheSource: string | null = null;
@@ -71,9 +78,35 @@ export function typeName(raw: string): string | undefined {
   const parts = t.split('|').map(p => p.trim()).filter(p => p && !/^(null|undefined|None)$/.test(p));
   if (parts.length !== 1) return undefined;
   t = parts[0].replace(/^readonly\s+/, '');
+  // An array of Foo is no Foo
+  if (/\[\s*\]$/.test(t)) return undefined;
   t = t.split(/[<\[]/)[0].trim();
   t = t.slice(t.lastIndexOf('.') + 1);
   return /^[A-Z][\w$]*$/.test(t) ? t : undefined;
+}
+
+/** Collections whose type argument is their element's type. */
+const COLLECTION = /^(?:typing\.|collections\.abc\.|java\.util\.)?(?:list|List|Sequence|MutableSequence|Iterable|Iterator|Collection|set|Set|MutableSet|frozenset|FrozenSet|AbstractSet|tuple|Tuple|Generator|AsyncIterable|AsyncIterator|AsyncGenerator|Array|ReadonlyArray|ArrayList|LinkedList|HashSet|LinkedHashSet|TreeSet|SortedSet|Deque|ArrayDeque|Queue|Stream)\s*[\[<]/;
+
+/** The element type of a collection type: `list[Foo]`, `Foo[]`, `Array<Foo>`, `List<Foo>` → Foo. */
+export function elementName(raw: string): string | undefined {
+  let t = raw.trim().replace(/^:\s*/, '').replace(/^readonly\s+/, '');
+  const optional = /^(?:typing\.)?Optional\[(.*)\]$/.exec(t);
+  if (optional) t = optional[1];
+  const array = /^(.*?)\s*\[\s*\]$/.exec(t);
+  if (array) return typeName(array[1].replace(/^\((.*)\)$/, '$1'));
+  const m = COLLECTION.exec(t);
+  if (!m) return undefined;
+  // The first type argument, at the top level: `tuple[Foo, ...]`, `Generator[Foo, None, None]`
+  const inner = t.slice(m[0].length, -1);
+  let depth = 0, end = inner.length;
+  for (let i = 0; i < inner.length; i++) {
+    const c = inner[i];
+    if (c === '[' || c === '<' || c === '(') depth++;
+    else if (c === ']' || c === '>' || c === ')') depth--;
+    else if (c === ',' && depth === 0) { end = i; break; }
+  }
+  return typeName(inner.slice(0, end));
 }
 
 const CALLS = new Set(['call_expression', 'call', 'method_invocation']);
@@ -89,7 +122,11 @@ function valueOf(value: any, source: string, family: Family): Known | undefined 
 
 /** A declared type node, as what is known. */
 function typed(type: any, source: string): Known | undefined {
-  const t = type ? typeName(text(type, source)) : undefined;
+  if (!type) return undefined;
+  const raw = text(type, source);
+  const e = elementName(raw);
+  if (e) return { element: e };
+  const t = typeName(raw);
   return t ? { type: t } : undefined;
 }
 
@@ -130,9 +167,18 @@ function parameters(scope: any, source: string, family: Family): Map<string, Kno
   for (const p of params.namedChildren) {
     let name: any = null;
     let type: any = null;
+    let value: any = null;
     if (family === 'js' && (p.type === 'required_parameter' || p.type === 'optional_parameter')) {
       name = p.childForFieldName('pattern');
       type = p.childForFieldName('type');
+      value = p.childForFieldName('value');
+    } else if (family === 'js' && p.type === 'assignment_pattern') {
+      // A default value: `(repo = new Repo())`
+      name = p.childForFieldName('left');
+      value = p.childForFieldName('right');
+    } else if (family === 'python' && p.type === 'default_parameter') {
+      name = p.childForFieldName('name');
+      value = p.childForFieldName('value');
     } else if (family === 'python' && p.type === 'typed_parameter') {
       name = p.namedChildren.find((c: any) => c.type === 'identifier');
       type = p.childForFieldName('type');
@@ -143,10 +189,11 @@ function parameters(scope: any, source: string, family: Family): Map<string, Kno
       name = p.childForFieldName('name');
       type = p.childForFieldName('type');
     }
-    if (name?.type === 'identifier' && type) {
-      const t = typeName(text(type, source));
-      if (t) out.set(text(name, source), { type: t });
-    }
+    if (name?.type !== 'identifier') continue;
+    const t = typed(type, source);
+    const d = !t && value ? constructed(value, source, family) : undefined;
+    if (t) out.set(text(name, source), t);
+    else if (d) out.set(text(name, source), { type: d });
   }
   return out;
 }
@@ -178,6 +225,24 @@ function declarations(scope: any, source: string, family: Family): Map<string, K
       if (left?.type !== 'identifier') return;
       const k = typed(n.childForFieldName('type'), source) ?? valueOf(n.childForFieldName('right'), source, family);
       if (k) out.set(text(left, source), k);
+    } else if (family === 'python' && (n.type === 'for_statement' || n.type === 'for_in_clause')) {
+      // for x in xs / [… for x in xs]
+      const left = n.childForFieldName('left');
+      const right = n.childForFieldName('right');
+      if (left?.type === 'identifier' && right) out.set(text(left, source), { iter: right });
+    } else if (family === 'js' && n.type === 'for_in_statement') {
+      // for (const x of xs): an element; `for (k in o)` gives keys
+      const left = n.childForFieldName('left');
+      const right = n.childForFieldName('right');
+      const of = n.children.some((c: any) => !c.isNamed && c.type === 'of');
+      if (of && left?.type === 'identifier' && right) out.set(text(left, source), { iter: right });
+    } else if (family === 'java' && n.type === 'enhanced_for_statement') {
+      // for (Foo x : xs), for (var x : xs)
+      const name = n.childForFieldName('name');
+      const type = n.childForFieldName('type');
+      const value = n.childForFieldName('value');
+      const k = type && text(type, source) !== 'var' ? typed(type, source) : value ? { iter: value } : undefined;
+      if (name && k) out.set(text(name, source), k);
     } else if (family === 'java' && n.type === 'local_variable_declaration') {
       const type = n.childForFieldName('type');
       for (const d of n.namedChildren.filter((c: any) => c.type === 'variable_declarator')) {
@@ -234,9 +299,8 @@ function fields(cls: any, source: string, family: Family): Map<string, Known> {
           const modified = p.namedChildren.some((c: any) => c.type === 'accessibility_modifier' || c.type === 'override_modifier')
             || /^\s*readonly\b/.test(text(p, source));
           const name = p.childForFieldName('pattern');
-          const type = p.childForFieldName('type');
-          const t = type ? typeName(text(type, source)) : undefined;
-          if (modified && name?.type === 'identifier' && t) out.set(text(name, source), { type: t });
+          const k = typed(p.childForFieldName('type'), source);
+          if (modified && name?.type === 'identifier' && k) out.set(text(name, source), k);
         }
       }
       assignedIn(m);
@@ -244,9 +308,8 @@ function fields(cls: any, source: string, family: Family): Map<string, Known> {
       // Class-level annotation: `repo: Repo`
       const a = m.namedChild(0);
       const left = a?.type === 'assignment' ? a.childForFieldName('left') : null;
-      const type = a?.type === 'assignment' ? a.childForFieldName('type') : null;
-      const t = type ? typeName(text(type, source)) : undefined;
-      if (left?.type === 'identifier' && t) out.set(text(left, source), { type: t });
+      const k = a?.type === 'assignment' ? typed(a.childForFieldName('type'), source) : undefined;
+      if (left?.type === 'identifier' && k) out.set(text(left, source), k);
     } else if (family === 'python' && (m.type === 'function_definition' || m.type === 'decorated_definition')) {
       const fn = m.type === 'decorated_definition' ? m.childForFieldName('definition') : m;
       if (fn?.type === 'function_definition') assignedIn(fn);
@@ -362,6 +425,11 @@ export function receiverInfo(call: any, receiver: string, source: string, langua
   const known = (k: Known | undefined): { type?: string; call?: ReceiverCall } => {
     if (!k) return {};
     if ('type' in k) return { type: k.type };
+    if ('element' in k) return {};
+    if ('iter' in k) {
+      const e = depth < 3 ? elementOf(k.iter, source, family, depth + 1) : undefined;
+      return e ? { type: e } : {};
+    }
     const c = depth < 3 ? describe(k.call, source, language, depth + 1) : undefined;
     return c ? { call: c } : {};
   };
@@ -381,23 +449,174 @@ export function receiverInfo(call: any, receiver: string, source: string, langua
     return t ? { type: t } : {};
   }
 
+  return known(lookup(call, r, source, family, depth));
+}
+
+/** What is known of a name, or of `this.x` / `self.x`, where a node uses it. */
+function lookup(at: any, r: string, source: string, family: Family, depth: number): Known | undefined {
   const member = new RegExp(`^${SELF[family]}\\.([A-Za-z_$][\\w$]*)$`).exec(r);
   if (member) {
-    const cls = enclosing(call, CLASSES[family]);
-    return cls ? known(fields(cls, source, family).get(member[1])) : {};
+    const cls = enclosing(at, CLASSES[family]);
+    return cls ? fields(cls, source, family).get(member[1]) : undefined;
   }
 
-  if (!/^[A-Za-z_$][\w$]*$/.test(r) || r === SELF[family]) return {};
+  if (!/^[A-Za-z_$][\w$]*$/.test(r) || r === SELF[family]) return undefined;
   // The nearest scope that declares the name: a parameter, a local, then (Java) a field
-  for (let scope = enclosing(call, SCOPES[family]); scope; scope = enclosing(scope, SCOPES[family])) {
+  for (let scope = enclosing(at, SCOPES[family]); scope; scope = enclosing(scope, SCOPES[family])) {
     const k = declarations(scope, source, family).get(r);
-    if (k) return known(k);
+    if (k) return k;
+    const cb = callbackElement(scope, r, source, family);
+    if (cb) return cb;
+    if (isParameter(scope, r, source, family)) {
+      const t = depth < 3 ? parameterFromCallers(scope, r, source, family, depth + 1) : undefined;
+      if (t) return { type: t };
+    }
   }
   if (family === 'java') {
-    const cls = enclosing(call, CLASSES[family]);
-    if (cls) return known(fields(cls, source, family).get(r));
+    const cls = enclosing(at, CLASSES[family]);
+    if (cls) return fields(cls, source, family).get(r);
   }
-  return {};
+  return undefined;
+}
+
+/** The element type of a collection expression: a name or a field declared `list[Foo]`, `Foo[]`, … */
+function elementOf(expr: any, source: string, family: Family, depth: number): string | undefined {
+  if (expr.type === 'parenthesized_expression') expr = expr.namedChild(0);
+  if (!expr) return undefined;
+  const k = lookup(expr, text(expr, source).trim(), source, family, depth);
+  return k && 'element' in k ? k.element : undefined;
+}
+
+/** Methods whose callback's first parameter is an element of the receiver. */
+const ELEMENT_CALLBACKS = new Set(['forEach', 'map', 'filter', 'find', 'findLast', 'findIndex', 'some', 'every', 'flatMap', 'removeIf', 'anyMatch', 'allMatch', 'noneMatch']);
+
+/** `xs.forEach(x => …)`: the callback's first parameter is an element of xs. */
+function callbackElement(scope: any, r: string, source: string, family: Family): Known | undefined {
+  if (family === 'python') return undefined;
+  if (scope.type !== 'arrow_function' && scope.type !== 'function_expression' && scope.type !== 'function' && scope.type !== 'lambda_expression') return undefined;
+  const args = scope.parent;
+  if (!args || (args.type !== 'arguments' && args.type !== 'argument_list') || args.namedChild(0)?.id !== scope.id) return undefined;
+  if (parameterNames(scope, source, family)[0] !== r) return undefined;
+  const call = args.parent;
+  if (!call || !CALLS.has(call.type)) return undefined;
+  const name = calledName(call, source);
+  const recv = receiverNode(call);
+  return name && ELEMENT_CALLBACKS.has(name) && recv ? { iter: recv } : undefined;
+}
+
+/** A function's parameter names, in order (`self` / `cls` left out), untyped ones included. */
+function parameterNames(scope: any, source: string, family: Family): string[] {
+  const single = scope.childForFieldName('parameter');
+  if (single) return single.type === 'identifier' ? [text(single, source)] : [];
+  const params = scope.childForFieldName('parameters');
+  if (!params) return [];
+  if (params.type === 'identifier') return [text(params, source)];
+  const out: string[] = [];
+  for (const p of params.namedChildren) {
+    let name: any = null;
+    if (p.type === 'identifier') name = p;
+    else if (p.type === 'required_parameter' || p.type === 'optional_parameter') name = p.childForFieldName('pattern');
+    else if (p.type === 'assignment_pattern') name = p.childForFieldName('left');
+    else if (p.type === 'default_parameter' || p.type === 'typed_default_parameter' || p.type === 'formal_parameter') name = p.childForFieldName('name');
+    else if (p.type === 'typed_parameter') name = p.namedChildren.find((c: any) => c.type === 'identifier');
+    else if (p.type === 'inferred_parameters') { for (const c of p.namedChildren) out.push(text(c, source)); continue; }
+    else if (p.type === 'keyword_separator' || p.type === 'positional_separator') continue;
+    else { out.push(''); continue; }   // *args, **kwargs, a destructuring pattern
+    out.push(name?.type === 'identifier' ? text(name, source) : '');
+  }
+  if (family === 'python' && (out[0] === 'self' || out[0] === 'cls')) out.shift();
+  return out;
+}
+
+/**
+ * Whether a bare call calls a parameter of an enclosing function (`done()`, `resolve(true)`,
+ * `cb(err)`): the function passed in, never one of the project's.
+ */
+export function callsParameter(call: any, name: string, source: string, language: Language): boolean {
+  const family = FAMILY[language];
+  if (!family || family === 'java') return false;
+  for (let scope = enclosing(call, SCOPES[family]); scope; scope = enclosing(scope, SCOPES[family])) {
+    if (parameterNames(scope, source, family).includes(name)) return true;
+  }
+  return false;
+}
+
+function isParameter(scope: any, r: string, source: string, family: Family): boolean {
+  return family !== 'java' && parameterNames(scope, source, family).includes(r);
+}
+
+/** Calls of the file by the name they call, for the file being read. */
+let callsSource: string | null = null;
+let callsByName = new Map<string, any[]>();
+const inferredParams = new Map<string, string | null>();
+
+function callsNamed(root: any, name: string, source: string): any[] {
+  if (callsSource !== source) {
+    callsSource = source;
+    callsByName = new Map();
+    inferredParams.clear();
+    const visit = (n: any) => {
+      if (CALLS.has(n.type)) {
+        const c = calledName(n, source);
+        if (c) { const list = callsByName.get(c); if (list) list.push(n); else callsByName.set(c, [n]); }
+      }
+      for (const child of n.namedChildren) visit(child);
+    };
+    visit(root);
+  }
+  return callsByName.get(name) ?? [];
+}
+
+/**
+ * An untyped parameter typed by the calls of its function in the same file, when every one of
+ * them passes the same class (`helper(Query())`, `self.helper(query)` with a known `query`). Only
+ * the file's own calls, so that a sync of another file cannot change it.
+ */
+function parameterFromCallers(scope: any, r: string, source: string, family: Family, depth: number): string | undefined {
+  const key = `${keyOf(scope)}:${r}`;
+  const cachedHere = callsSource === source ? inferredParams.get(key) : undefined;
+  if (cachedHere !== undefined) return cachedHere ?? undefined;
+  let fnName: any = scope.childForFieldName('name');
+  if (!fnName && scope.parent?.type === 'variable_declarator') fnName = scope.parent.childForFieldName('name');
+  if (!fnName) return undefined;
+  const index = parameterNames(scope, source, family).indexOf(r);
+  if (index < 0) return undefined;
+  let root = scope;
+  while (root.parent) root = root.parent;
+  const sites = callsNamed(root, text(fnName, source), source);
+  // A method is called on the own instance (`self.helper(x)`); a function bare
+  const around = enclosing(scope, new Set([...SCOPES[family], ...CLASSES[family]]));
+  const method = !!around && CLASSES[family].has(around.type);
+  const types = new Set<string>();
+  inferredParams.set(key, null);
+  for (const site of sites) {
+    if (site.startIndex >= scope.startIndex && site.endIndex <= scope.endIndex) continue;   // recursion
+    const recv = receiverNode(site);
+    if (method ? !(recv && text(recv, source).trim() === SELF[family]) : recv) continue;
+    const args = site.childForFieldName('arguments');
+    if (!args) return undefined;
+    const keyword = args.namedChildren.find((a: any) => a.type === 'keyword_argument' && text(a.childForFieldName('name') ?? a, source) === r);
+    const positional = args.namedChildren.filter((a: any) => a.type !== 'keyword_argument' && a.type !== 'comment');
+    if (positional.some((a: any) => a.type === 'list_splat' || a.type === 'dictionary_splat' || a.type === 'spread_element')) return undefined;
+    const arg = keyword ? keyword.childForFieldName('value') : positional[index];
+    if (!arg) continue;   // the default
+    const t = argumentType(arg, source, family, depth);
+    if (!t) { inferredParams.set(key, null); return undefined; }
+    types.add(t);
+  }
+  const out = types.size === 1 ? [...types][0] : undefined;
+  inferredParams.set(key, out ?? null);
+  return out;
+}
+
+/** The class of an argument: a constructor call, `this` / `self`, a name of a known type. */
+function argumentType(arg: any, source: string, family: Family, depth: number): string | undefined {
+  const c = constructed(arg, source, family);
+  if (c) return c;
+  const t = text(arg, source).trim();
+  if (t === SELF[family]) return ownClassName(arg, source, family);
+  const k = lookup(arg, t, source, family, depth);
+  return k && 'type' in k ? k.type : undefined;
 }
 
 /**

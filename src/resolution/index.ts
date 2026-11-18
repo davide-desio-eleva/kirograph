@@ -275,7 +275,7 @@ export class ReferenceResolver {
               const dot = refName.lastIndexOf('.');
               const name = dot > 0 ? refName.slice(dot + 1) : refName;
               const receiver: string | undefined = meta?.receiver ?? (dot > 0 ? refName.slice(0, dot) : undefined);
-              const call = { name, receiver, receiverType: meta?.receiverType as string | undefined, receiverCall: meta?.receiverCall, sourceId, filePath, line: line ?? undefined };
+              const call = { name, receiver, receiverType: meta?.receiverType as string | undefined, receiverCall: meta?.receiverCall, sourceId, filePath, line: line ?? undefined, parameter: meta?.parameter === true };
               attemptedStrategies.push(receiver !== undefined ? 'method' : 'exact');
               targetId = resolveCall(call, calls)?.id ?? null;
 
