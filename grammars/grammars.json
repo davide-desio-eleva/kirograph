@@ -402,12 +402,11 @@
       "from": "compiled by hand before 1.6.0"
     },
     "swift": {
-      "prebuilt": true,
-      "from": "tree-sitter-wasms@0.1.13",
-      "source": "alex-pinkus/tree-sitter-swift@0.4.3-with-generated-files",
-      "note": "its generated parser needs more memory to compile than the default Docker VM has",
+      "github": "alex-pinkus/tree-sitter-swift",
+      "version": "0.4.3-with-generated-files",
+      "symbol": "swift",
       "fingerprint": {
-        "abi": 13,
+        "abi": 14,
         "states": 7936,
         "kinds": 540,
         "fields": 45,
