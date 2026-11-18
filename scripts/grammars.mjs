@@ -106,6 +106,11 @@ function shimStdio(srcDir) {
 async function build(lang, spec) {
   const src = await fetchSources(spec);
   const dir = join(src, spec.dir ?? '.');
+  // A grammar pinned between releases has no generated parser: the pinned CLI generates it from
+  // grammar.js, so the same commit and the same CLI give the same parser
+  if (spec.generate && !existsSync(join(dir, 'src', 'parser.c'))) {
+    execFileSync(cli, ['generate'], { cwd: dir, stdio: ['ignore', 'ignore', 'inherit'] });
+  }
   if (!existsSync(join(dir, 'src', 'parser.c'))) throw new Error(`${lang}: no generated parser in ${dir}/src`);
   // Grammars older than tree-sitter 0.24 have no tree-sitter.json, which the CLI needs
   if (!existsSync(join(dir, 'tree-sitter.json'))) {

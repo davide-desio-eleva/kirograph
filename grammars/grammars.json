@@ -402,14 +402,15 @@
     },
     "swift": {
       "github": "alex-pinkus/tree-sitter-swift",
-      "version": "0.7.4-with-generated-files",
+      "version": "fef1236022ccde2d2bc5c32d4db8947c87a7f848",
+      "generate": true,
       "symbol": "swift",
       "fingerprint": {
-        "abi": 14,
-        "states": 11522,
-        "kinds": 579,
+        "abi": 15,
+        "states": 11742,
+        "kinds": 575,
         "fields": 47,
-        "hash": "fae28b7af533b920"
+        "hash": "795c99a6e0f630b3"
       }
     },
     "tsx": {
