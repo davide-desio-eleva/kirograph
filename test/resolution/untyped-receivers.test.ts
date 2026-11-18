@@ -372,3 +372,109 @@ describe('Prototype methods, lists, parameters typed by callers of other files, 
     } finally { full.close(); }
   });
 });
+
+describe('Review cases: shadowing, project generics, arguments, comprehensions, Ruby locals', () => {
+  let dir: string;
+  let calls: Record<string, string[]>;
+  const files: Record<string, string> = {
+    'rv/types.ts': 'export class RLedger { save() {} }\nexport class RJournal { save() {} }\nexport class Queue<T> { push(x: T) {} save() {} }\n',
+    // An anonymous callback's `item` is not the outer function's `item`
+    'rv/shadow.ts': [
+      "import { RLedger } from './types';",
+      'export function outer(item) { [1].forEach((item) => item.save()); }',
+      'export function caller() { outer(new RLedger()); }',
+      '',
+    ].join('\n'),
+    // A project class named Queue keeps its own methods
+    'rv/queue.ts': [
+      "import { Queue, RLedger } from './types';",
+      'export function useQueue(q: Queue<RLedger>) { q.push(new RLedger()); for (const x of q.items) x.save(); }',
+      'export function makeQueue(): Queue<RLedger> { return new Queue(); }',
+      'export function useMade() { makeQueue().push(new RLedger()); }',
+      '',
+    ].join('\n'),
+    'rv/types.py': 'class PyLedger:\n    def save(self): pass\n\nclass PyJournal:\n    def save(self): pass\n',
+    // A keyword passed with an unknown value is passed: the parameter stays untyped
+    'rv/kw.py': [
+      'from types import PyLedger, PyJournal',
+      '',
+      'def kw_target(a, x):',
+      '    x.save()',
+      '',
+      'def kw_callers(something):',
+      '    kw_target(PyLedger(), x=something)',
+      '    kw_target(PyLedger(), PyJournal())',
+      '',
+      // A caller that passes nothing leaves the default: the others type it
+      'def default_target(repo=None):',
+      '    repo.save()',
+      '',
+      'def default_callers():',
+      '    default_target()',
+      '    default_target(PyLedger())',
+      '',
+      // A comprehension's variable does not replace the parameter of the name
+      'def comprehension(order: PyLedger, history):',
+      '    ids = [order.x for order in history]',
+      '    order.save()',
+      '',
+    ].join('\n'),
+    // Ruby: locals bound by multiple assignment, ||=, rescue, for: not methods called without parentheses
+    'rb2/lib/r.rb': [
+      'class RbLedger',
+      '  def save; end',
+      'end',
+      'class Rb',
+      '  def user',
+      '    RbLedger.new',
+      '  end',
+      '  def rb_multiple',
+      '    user, other = load',
+      '    user.save',
+      '  end',
+      'end',
+      '',
+    ].join('\n'),
+  };
+
+  beforeAll(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kg-review-'));
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    for (const [rel, text] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+      fs.writeFileSync(path.join(dir, rel), text);
+    }
+    const kg = await KiroGraph.init(dir);
+    try {
+      await kg.indexAll();
+      calls = saveCalls(kg);
+      const push = (kg as any).db.getRawDb().all(`SELECT s.name AS s FROM edges e JOIN nodes s ON s.id = e.source
+        JOIN nodes t ON t.id = e.target WHERE e.kind = 'calls' AND t.name = 'push'`).map((r: any) => r.s);
+      calls.__push = push;
+    } finally { kg.close(); }
+  });
+
+  afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  it("an anonymous callback's parameter is not the outer function's", () => {
+    expect(calls.outer).toBeUndefined();
+  });
+
+  it("the project's own generic class keeps its methods", () => {
+    expect(calls.__push).toContain('useQueue');
+    expect(calls.__push).toContain('useMade');
+  });
+
+  it('a keyword with an unknown value counts; a caller passing nothing does not', () => {
+    expect(calls.kw_target).toBeUndefined();
+    expect(calls.default_target).toEqual(['rv/types.py::PyLedger']);
+  });
+
+  it("a comprehension's variable leaves the parameter's type", () => {
+    expect(calls.comprehension).toEqual(['rv/types.py::PyLedger']);
+  });
+
+  it('Ruby: a local bound by multiple assignment is no method call', () => {
+    expect(calls.rb_multiple).toBeUndefined();
+  });
+});

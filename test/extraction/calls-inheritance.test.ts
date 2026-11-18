@@ -53,6 +53,11 @@ describe('component scripts', () => {
     expect(r.symbols).toEqual(['variable name', 'function greet', 'constant prerender']);
     expect(r.calls).toEqual(['helper']);
   });
+
+  it('Svelte: a component of markup only is a module, what its imports point at', async () => {
+    const r = await extract('Button.svelte', ['<button class="btn"><slot /></button>']);
+    expect(r.symbols).toEqual(['module Button']);
+  });
 });
 
 describe('binary files', () => {

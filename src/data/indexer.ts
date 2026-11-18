@@ -121,7 +121,7 @@ export class DataIndexer {
     const columnProfiles = profiler.finalize(datasetId);
 
     // Persist in transaction
-    this.db.run('BEGIN');
+    this.db.run('BEGIN IMMEDIATE');
     try {
       // Delete old dataset data
       const rowTableName = `data_rows_${datasetId.replace(/[^a-zA-Z0-9_]/g, '_')}`;

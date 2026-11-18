@@ -32,6 +32,33 @@ function normalize(p: string): string | null {
   return out.join('/');
 }
 
+/**
+ * JSON with comments and trailing commas (tsconfig.json, jsconfig.json) as plain JSON. Comments
+ * are removed outside strings only: a path alias ending in a slash and star, followed by a glob of
+ * two stars, is two strings, not a comment between them.
+ */
+export function stripJsonComments(text: string): string {
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"') {
+      // A string, escapes included
+      let j = i + 1;
+      while (j < text.length && text[j] !== '"') j += text[j] === '\\' ? 2 : 1;
+      out += text.slice(i, j + 1);
+      i = j;
+    } else if (c === '/' && text[i + 1] === '/') {
+      while (i < text.length && text[i] !== '\n') i++;
+      out += '\n';
+    } else if (c === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2);
+      i = end < 0 ? text.length : end + 1;
+    } else out += c;
+  }
+  // Trailing commas
+  return out.replace(/,(\s*[}\]])/g, '$1');
+}
+
 export class ImportResolver {
   private files: string[];
   private fileSet: Set<string>;
@@ -156,8 +183,7 @@ export class ImportResolver {
   private readJson(f: string): any {
     try {
       // tsconfig.json allows comments and trailing commas
-      const raw = this.text(f, 512 * 1024).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:"'])\/\/.*$/gm, '$1').replace(/,(\s*[}\]])/g, '$1');
-      return JSON.parse(raw);
+      return JSON.parse(stripJsonComments(this.text(f, 512 * 1024)));
     } catch { return null; }
   }
 

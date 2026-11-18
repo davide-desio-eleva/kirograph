@@ -29,6 +29,20 @@ export interface ResolutionResult {
 
 // ── ReferenceResolver ─────────────────────────────────────────────────────────
 
+/**
+ * The class a call passes for a parameter, from the arguments recorded on its edge (see
+ * extraction's argumentTypes): 'default' when it passes nothing there, null when the code does not
+ * tell the class (or a spread hides which argument it is).
+ */
+function argumentOf(m: any, param: { index: number; name: string }): string | null {
+  if (Array.isArray(m.kwNames) && m.kwNames.includes(param.name)) return m.kwTypes?.[param.name] ?? null;
+  const argc: number | undefined = m.argc;
+  if (argc === -1) return null;
+  if (argc !== undefined && param.index < argc) return m.argTypes?.[param.index] ?? null;
+  // Not passed by position: a `**kwargs` may pass it, else the default
+  return m.kwSpread ? null : 'default';
+}
+
 /** The call context, plus what a resolution pass adds to it as it goes. */
 type ResolverContext = CallContext & { addImport(filePath: string, targetId: string): void; addSupertype(id: string, superId: string): void };
 
@@ -203,6 +217,7 @@ export class ReferenceResolver {
     if (changedFiles && changedFiles.length > 0) this.db.requeueParameterEdges(changedFiles);
     const waiting: any[] = rawDb.all(`SELECT * FROM unresolved_refs WHERE metadata LIKE '%"receiverParam"%' ORDER BY id`);
     resolved += this.resolvePass(waiting, calls, onProgress, this.parameterTypes(waiting, calls));
+    this.db.pruneEdgeDeps();
     return resolved;
   }
 
@@ -242,7 +257,7 @@ export class ReferenceResolver {
             try { m = c.m ? JSON.parse(c.m) : {}; } catch { m = {}; }
             if (m.receiverParam) continue;
             files.add(c.f);
-            const t = m.kwTypes?.[param.name] ?? (Array.isArray(m.argTypes) ? (param.index < m.argTypes.length ? m.argTypes[param.index] : 'default') : null);
+            const t = argumentOf(m, param);
             if (t === 'default') continue;
             if (!t) { unknown = true; break; }
             types.add(t);
@@ -278,7 +293,7 @@ export class ReferenceResolver {
       const strategiesToRecord = new Map<string, number[]>(); // strategies JSON -> ref ids
 
       // Wrap each batch in a transaction — dramatically reduces write amplification
-      rawDb.run('BEGIN');
+      rawDb.run('BEGIN IMMEDIATE');
       try {
         for (let i = batchStart; i < batchEnd; i++) {
           const ref = refs[i];
@@ -404,7 +419,9 @@ export class ReferenceResolver {
             }
           }
         }
+        const lastEdge = this.db.maxEdgeId();
         this.db.insertEdges(batchEdges);
+        this.db.recordEdgeDeps(lastEdge);
         for (const group of idGroups(resolvedIds)) {
           rawDb.run(`DELETE FROM unresolved_refs WHERE id IN (${group.map(() => '?').join(',')})`, group);
         }
@@ -1156,13 +1173,22 @@ function expandPastingMacros(text: string): string {
         body = body.replace(new RegExp(`\\b${name}\\s*\\(([^()]*)\\)`, 'g'), (_m, args: string) => {
           const values = args.split(',').map(s => s.trim());
           let r = f.body;
-          f.params.forEach((p, i) => { r = r.replace(new RegExp(`\\b${p}\\b`, 'g'), values[i] ?? ''); });
+          f.params.forEach((p, i) => {
+            // A variadic parameter (`...`, `args...`) takes the rest of the arguments
+            const variadic = /^(\w*)\s*\.\.\.$/.exec(p);
+            const name = variadic ? (variadic[1] || '__VA_ARGS__') : p;
+            if (!/^\w+$/.test(name)) return;
+            const value = variadic ? values.slice(i).join(', ') : values[i] ?? '';
+            r = r.replace(new RegExp(`\\b${name}\\b`, 'g'), value);
+          });
           return r.replace(/\s*##\s*/g, '');
         });
       }
       out = body;
     }
   }
+  // Kept for the headers of one resolution, not for the life of a server
+  if (expandedCache.size >= 512) expandedCache.clear();
   expandedCache.set(text, out);
   return out;
 }

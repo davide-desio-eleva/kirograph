@@ -131,4 +131,15 @@ describe('leaving the database of KiroGraph 1.5', () => {
     expect(() => new GraphDatabase(root)).toThrow(/1\.5 or older is still using/);
     expect(fs.existsSync(lockPath())).toBe(true);
   });
+
+  it('refuses too while a 1.5 process is idle: its marker is old but its pid is alive', () => {
+    new GraphDatabase(root).close();
+    fs.mkdirSync(writersDir());
+    const marker = path.join(writersDir(), String(process.ppid));
+    fs.writeFileSync(marker, String(Date.now()));
+    const hourAgo = (Date.now() - 3_600_000) / 1000;
+    fs.utimesSync(marker, hourAgo, hourAgo);
+
+    expect(() => new GraphDatabase(root)).toThrow(/1\.5 or older is still using/);
+  });
 });

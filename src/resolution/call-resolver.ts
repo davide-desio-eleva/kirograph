@@ -201,9 +201,9 @@ function memberOf(typeIds: string[], candidates: Node[], ctx: CallContext): Node
   return null;
 }
 
-/** Ruby: the gem a file belongs to, the path before its lib/, test/ or spec/ directory. */
+/** Ruby: the gem (or engine) a file belongs to, the path before its lib/, app/, test/ or spec/ directory. */
 function gemRoot(filePath: string): string {
-  const m = /^(.*?)(?:^|\/)(?:lib|test|spec)\//.exec(filePath);
+  const m = /^(.*?)(?:^|\/)(?:lib|app|test|spec)\//.exec(filePath);
   return m ? m[1] : '';
 }
 
@@ -231,10 +231,14 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
   if (ref.receiverType === undefined && ref.receiverCall) {
     const producer = resolveCall({ ...ref.receiverCall, sourceId: ref.sourceId, filePath: ref.filePath, line: ref.line }, ctx);
     if (producer && via) via.add(producer.filePath);
-    // A collection (`Foo[]`): its elements are Foo, the collection itself no Foo
+    // A collection: `Job[]` (Job elements, no type of its own) or `Queue<Job>` (a Queue of Jobs)
     const returned = producer?.returnType;
-    const element = returned?.endsWith('[]') ? returned.slice(0, -2) : undefined;
-    if (ref.receiverCall.element ? element : returned && !element) ref = { ...ref, receiverType: ref.receiverCall.element ? element : returned };
+    const generic = returned ? /^(\w+)<(\w+)>$/.exec(returned) : null;
+    const array = returned ? /^(\w+)\[\]$/.exec(returned) : null;
+    const element = generic?.[2] ?? array?.[1];
+    const whole = generic ? generic[1] : array ? undefined : returned;
+    const typed = ref.receiverCall.element ? element : whole;
+    if (typed) ref = { ...ref, receiverType: typed };
   }
   // A parameter called (`done()`, `resolve(true)`) is whatever function the caller passed
   if (ref.parameter && ref.receiver === undefined) return null;

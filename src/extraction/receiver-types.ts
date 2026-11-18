@@ -11,6 +11,7 @@
  *
  * TypeScript, JavaScript, Python and Java.
  */
+import { resetMoreReceiverCaches } from './receiver-types-more';
 import type { Language } from '../types';
 
 type Family = 'js' | 'python' | 'java';
@@ -52,7 +53,8 @@ export interface ReceiverCall {
 
 /** What is known of a receiver: its declared type, or the call it is the value of. */
 type Known =
-  | { type: string }
+  /** A type; when it is a generic collection (`Queue<Job>`), its element too. */
+  | { type: string; element?: string }
   /** The value of a call, typed by what the call returns. */
   | { call: any }
   /** A collection of a known element type (`list[Foo]`, `Foo[]`): no type of its own. */
@@ -71,6 +73,17 @@ const scopeCache = new Map<string, Map<string, Known>>();
 const classCache = new Map<string, Map<string, Known>>();
 
 const keyOf = (n: any): string => `${n.startIndex}:${n.endIndex}`;
+
+/**
+ * Forgets the declarations read from a tree. Called when the tree is deleted: they hold its nodes,
+ * and a file parsed again with the same text would otherwise read nodes of a freed tree.
+ */
+export function resetReceiverCaches(): void {
+  cacheSource = null;
+  scopeCache.clear();
+  classCache.clear();
+  resetMoreReceiverCaches();
+}
 const text = (n: any, source: string): string => source.slice(n.startIndex, n.endIndex);
 
 /**
@@ -177,8 +190,10 @@ function typed(type: any, source: string): Known | undefined {
   if (!type) return undefined;
   const raw = text(type, source);
   const e = elementName(raw);
-  if (e) return { element: e };
   const t = typeName(raw);
+  // `List<Job>`, `Queue<Job>`: a type of its own (the project's Queue has methods) and Job elements
+  if (t && e) return { type: t, element: e };
+  if (e) return { element: e };
   return t ? { type: t } : undefined;
 }
 
@@ -288,10 +303,13 @@ function declarations(scope: any, source: string, family: Family): Map<string, K
       const k = typed(n.childForFieldName('type'), source) ?? valueOf(n.childForFieldName('right'), source, family);
       if (k) out.set(text(left, source), k);
     } else if (family === 'python' && (n.type === 'for_statement' || n.type === 'for_in_clause')) {
-      // for x in xs / [… for x in xs]
+      // for x in xs / [… for x in xs]; a comprehension's variable is its own: it does not replace
+      // a parameter or a local of the name
       const left = n.childForFieldName('left');
       const right = n.childForFieldName('right');
-      if (left?.type === 'identifier' && right) out.set(text(left, source), { iter: right });
+      if (left?.type === 'identifier' && right && !(n.type === 'for_in_clause' && out.has(text(left, source)))) {
+        out.set(text(left, source), { iter: right });
+      }
     } else if (family === 'js' && n.type === 'for_in_statement') {
       // for (const x of xs): an element; `for (k in o)` gives keys
       const left = n.childForFieldName('left');
@@ -565,13 +583,18 @@ function lookup(at: any, r: string, source: string, family: Family, depth: numbe
   if (!/^[A-Za-z_$][\w$]*$/.test(r) || r === SELF[family]) return undefined;
   // The nearest scope that declares the name: a parameter, a local, then (Java) a field
   let param: ReceiverParam | undefined;
+  let shadowed = false;
   for (let scope = enclosing(at, SCOPES[family]); scope; scope = enclosing(scope, SCOPES[family])) {
     const k = declarations(scope, source, family).get(r);
     if (k) return k;
     const cb = callbackElement(scope, r, source, family);
     if (cb) return cb;
-    // An untyped parameter (a name of an outer scope may still say more: kept as before)
-    if (!param && isParameter(scope, r, source, family)) param = parameterOf(scope, r, source, family);
+    // An untyped parameter: the innermost one is the name's (an outer scope's declared type is
+    // still read, as before; an outer function's parameter of the name never is)
+    if (!shadowed && isParameter(scope, r, source, family)) {
+      param = parameterOf(scope, r, source, family);
+      shadowed = true;
+    }
   }
   if (family === 'java') {
     const cls = enclosing(at, CLASSES[family]);
@@ -670,13 +693,28 @@ function isParameter(scope: any, r: string, source: string, family: Family): boo
   return family !== 'java' && parameterNames(scope, source, family).includes(r);
 }
 
+/** What a call passes, for resolution to type its callee's untyped parameters (see parameterTypes). */
+export interface CallArguments {
+  /** How many positional arguments: -1 with a spread (`f(*xs)`, `f(...xs)`), when positions say nothing. */
+  argc?: number;
+  /** The class of each positional argument, null where the code does not tell it. */
+  argTypes?: (string | null)[];
+  /** The names of the keyword arguments passed (Python), and the class of those it tells. */
+  kwNames?: string[];
+  kwTypes?: Record<string, string>;
+  /** A `**kwargs`: any keyword may be passed. */
+  kwSpread?: true;
+}
+
 /**
- * The classes a call passes, where the code tells them: by position (null where it does not),
- * and Python's keyword arguments by name. Resolution types a callee's untyped parameter by them.
+ * The arguments of a call, as resolution reads them: a parameter is typed when every caller passes
+ * the same class, and a caller that passes nothing there (the default) does not count. Nothing for
+ * a call without arguments, and nothing in Java, whose parameters always have a type.
  */
-export function argumentTypes(call: any, source: string, language: Language): { argTypes?: (string | null)[]; kwTypes?: Record<string, string> } {
+export function argumentTypes(call: any, source: string, language: Language): CallArguments {
   const family = FAMILY[language];
-  const args = family ? call.childForFieldName('arguments') : null;
+  if (!family || family === 'java') return {};
+  const args = call.childForFieldName('arguments');
   if (!args || args.namedChildCount === 0) return {};
   if (source !== cacheSource) {
     cacheSource = source;
@@ -684,29 +722,35 @@ export function argumentTypes(call: any, source: string, language: Language): { 
     classCache.clear();
   }
   const positional: (string | null)[] = [];
-  const keywords: Record<string, string> = {};
-  let known = false;
+  const kwNames: string[] = [];
+  const kwTypes: Record<string, string> = {};
   let spread = false;
+  let kwSpread = false;
   for (const a of args.namedChildren) {
     if (a.type === 'comment') continue;
     if (a.type === 'keyword_argument') {
       const name = a.childForFieldName('name');
       const value = a.childForFieldName('value');
-      const t = value ? argumentType(value, source, family!, 1) : undefined;
-      if (name && t) { keywords[text(name, source)] = t; known = true; }
+      if (!name) continue;
+      kwNames.push(text(name, source));
+      const t = value ? argumentType(value, source, family, 1) : undefined;
+      if (t) kwTypes[text(name, source)] = t;
       continue;
     }
-    // With a spread, positions say nothing
-    if (a.type === 'list_splat' || a.type === 'dictionary_splat' || a.type === 'spread_element') { spread = true; continue; }
-    const t = argumentType(a, source, family!, 1);
-    positional.push(t ?? null);
-    if (t) known = true;
+    if (a.type === 'dictionary_splat') { kwSpread = true; continue; }
+    if (a.type === 'list_splat' || a.type === 'spread_element') { spread = true; continue; }
+    positional.push(argumentType(a, source, family, 1) ?? null);
   }
-  if (!known) return {};
-  return {
-    ...(!spread && positional.some(t => t) ? { argTypes: positional } : {}),
-    ...(Object.keys(keywords).length > 0 ? { kwTypes: keywords } : {}),
-  };
+  const out: CallArguments = {};
+  if (spread) out.argc = -1;
+  else if (positional.length > 0) {
+    out.argc = positional.length;
+    if (positional.some(p => p)) out.argTypes = positional;
+  }
+  if (kwNames.length > 0) out.kwNames = kwNames;
+  if (Object.keys(kwTypes).length > 0) out.kwTypes = kwTypes;
+  if (kwSpread) out.kwSpread = true;
+  return out;
 }
 
 /** The class of an argument: a constructor call, `this` / `self`, a name of a known type. */
@@ -749,9 +793,11 @@ export function declaredReturnType(node: any, source: string, language: Language
   const awaited = /^Promise\s*<(.*)>$/.exec(raw);
   const value = awaited ? awaited[1] : raw;
   // A collection of Foo: `Foo[]`, so that `for x in f()` has Foo elements and `f().save()` no type
+  // A collection: `Queue<Job>` when it is a type of its own, `Job[]` for `list[Job]`, `Job[]`
   const element = elementName(value);
-  if (element) return `${element}[]`;
-  return typeName(value);
+  const outer = typeName(value);
+  if (element) return outer ? `${outer}<${element}>` : `${element}[]`;
+  return outer;
 }
 
 /**
@@ -784,7 +830,7 @@ function inferredReturnType(fn: any, source: string, family: Family): string | u
     if (v.type === 'this' || (family === 'python' && v.type === 'identifier' && text(v, source) === 'self')) t = ownClassName(v, source, family);
     else if (v.type === 'identifier') {
       const k = declarations(fn, source, family).get(text(v, source));
-      t = k && 'type' in k ? k.type : k && 'element' in k ? `${k.element}[]` : undefined;
+      t = k && 'type' in k ? (k.element ? `${k.type}<${k.element}>` : k.type) : k && 'element' in k ? `${k.element}[]` : undefined;
     } else {
       const e = literalElement(v, source, family);
       t = e ? `${e}[]` : constructed(v, source, family);

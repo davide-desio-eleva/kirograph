@@ -40,7 +40,8 @@ function leaveLegacyDriver(dbDir: string, dbPath: string): void {
       throw new Error(
         `KiroGraph 1.5 or older is still using this project's database (pid ${live.join(', ')}). ` +
         'Stop it first (close the IDE or the MCP server that runs it, and any running sync): ' +
-        'KiroGraph 1.6 switches the database to WAL, which older versions cannot open.');
+        'KiroGraph 1.6 switches the database to WAL, which older versions cannot open. ' +
+        'If no KiroGraph 1.5 is running (the pid now belongs to another program), run `kirograph unlock --force`.');
     }
   }
   fs.rmSync(lockDir, { recursive: true, force: true });
@@ -185,17 +186,38 @@ export class GraphDatabase {
   }
 
   private runMigrations(): void {
-    // Record initial schema version if not present
-    const versionRow = this.db.get('SELECT version FROM schema_versions ORDER BY version DESC LIMIT 1');
-    const currentVersion = versionRow ? versionRow.version : 0;
+    // Each migration not yet recorded, in order: an interrupted one runs again even when a later
+    // one was recorded (the highest version alone does not say so)
+    const applied = new Set<number>((this.db.all('SELECT version FROM schema_versions') as any[]).map(r => r.version));
 
-    if (currentVersion < 5) {
-      // Migration 5: the declared return type of functions and methods, which call resolution reads
-      // to type a receiver that a call returns (`getRepo().save()`). Filled by the next index.
-      try { this.db.run('ALTER TABLE nodes ADD COLUMN return_type TEXT'); } catch { /* already exists */ }
-      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [5, Date.now()]);
+    if (!applied.has(1)) {
+      // Migration 1: schema.sql CREATE IF NOT EXISTS handles initial setup.
+      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)',
+        [1, Date.now()]);
     }
-    if (currentVersion < 4) {
+
+    if (!applied.has(2)) {
+      // Migration 2: add complexity metric columns to nodes table.
+      for (const col of [
+        'complexity_cyclomatic INTEGER',
+        'complexity_cognitive INTEGER',
+        'complexity_halstead TEXT',
+        'maintainability_index REAL',
+        'nesting_depth INTEGER',
+      ]) {
+        try { this.db.run(`ALTER TABLE nodes ADD COLUMN ${col}`); } catch { /* already exists */ }
+      }
+      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [2, Date.now()]);
+    }
+    if (!applied.has(3)) {
+      // Migration 3: nodes_fts is an external-content table (content_rowid = nodes.rowid), but its
+      // rows used to be inserted without a rowid and deleted by the id column, which is not
+      // indexed, so every delete scanned the whole table. Rows now carry the node's rowid and are
+      // deleted by it. Rebuild once so existing rows line up with their nodes.
+      try { this.db.run("INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')"); } catch { /* no fts table yet */ }
+      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [3, Date.now()]);
+    }
+    if (!applied.has(4)) {
       // Migration 4: edges had no unique key, so INSERT OR IGNORE ignored nothing and every pass
       // that adds the same edge (the security analysis adds declared_in, depends_on and
       // has_vulnerability on each run) added it again: a real project had 218,849 rows for 654
@@ -211,33 +233,12 @@ export class GraphDatabase {
       });
       this.reclaimSpace();
     }
-    if (currentVersion < 3) {
-      // Migration 3: nodes_fts is an external-content table (content_rowid = nodes.rowid), but its
-      // rows used to be inserted without a rowid and deleted by the id column, which is not
-      // indexed, so every delete scanned the whole table. Rows now carry the node's rowid and are
-      // deleted by it. Rebuild once so existing rows line up with their nodes.
-      try { this.db.run("INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')"); } catch { /* no fts table yet */ }
-      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [3, Date.now()]);
+    if (!applied.has(5)) {
+      // Migration 5: the declared return type of functions and methods, which call resolution reads
+      // to type a receiver that a call returns (`getRepo().save()`). Filled by the next index.
+      try { this.db.run('ALTER TABLE nodes ADD COLUMN return_type TEXT'); } catch { /* already exists */ }
+      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [5, Date.now()]);
     }
-    if (currentVersion < 2) {
-      // Migration 2: add complexity metric columns to nodes table.
-      for (const col of [
-        'complexity_cyclomatic INTEGER',
-        'complexity_cognitive INTEGER',
-        'complexity_halstead TEXT',
-        'maintainability_index REAL',
-        'nesting_depth INTEGER',
-      ]) {
-        try { this.db.run(`ALTER TABLE nodes ADD COLUMN ${col}`); } catch { /* already exists */ }
-      }
-      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [2, Date.now()]);
-    }
-    if (currentVersion < 1) {
-      // Migration 1: schema.sql CREATE IF NOT EXISTS handles initial setup.
-      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)',
-        [1, Date.now()]);
-    }
-
     // Add metadata column to unresolved_refs if not present (call-site facts, e.g. argKind).
     try {
       this.db.run('ALTER TABLE unresolved_refs ADD COLUMN metadata TEXT');
@@ -541,28 +542,32 @@ export class GraphDatabase {
   }
 
   /**
-   * Turns the resolved edges that come into a file's symbols from other files back into
-   * unresolved references, before the file's nodes are deleted. Resolution removes a reference
-   * once it becomes an edge, so without this a file rewritten by a sync lost its callers, imports
-   * and subtypes from every other file until the next full index. Resolution links the references
-   * again to the new symbols, or leaves them unresolved when the symbol is gone, as a full index
-   * of the same files would.
-   *
-   * Only edges made by resolution (confidence 'extracted'): the ones the cross-language bridges
-   * synthesize ('inferred') are rebuilt by the bridges themselves.
-   *
-   * The reference is rebuilt from the edge: an import by its module path (the import node's
-   * name), an infrastructure reference or call by the target's qualified name (resolved by exact
-   * qualified name, as infra.ts emits them), anything else by the target's name.
-   */
-  /**
    * Turns call edges back into references when what their resolution read changed: edges that
    * name the file among the files they depend on (`via`: a supertype the method was looked up in,
    * the function whose return type typed the receiver, the callers that typed a parameter).
    */
   private detachDependentEdges(filePath: string): void {
-    this.requeueEdges(`e.kind = 'calls' AND e.metadata LIKE '%"via"%'
-      AND EXISTS (SELECT 1 FROM json_each(e.metadata, '$.via') WHERE value = ?)`, [filePath]);
+    this.requeueEdges(`e.id IN (SELECT edge_id FROM edge_deps WHERE dep = ?)`, ['f:' + filePath]);
+  }
+
+  /** Records what the call edges written after `afterId` depend on (their `via` and `paramOf`). */
+  recordEdgeDeps(afterId: number): void {
+    this.db.run(`INSERT INTO edge_deps (edge_id, dep)
+      SELECT e.id, 'f:' || j.value FROM edges e, json_each(e.metadata, '$.via') j
+      WHERE e.id > ? AND e.kind = 'calls' AND e.metadata LIKE '%"via"%'`, [afterId]);
+    this.db.run(`INSERT INTO edge_deps (edge_id, dep)
+      SELECT e.id, 'n:' || j.value FROM edges e, json_each(e.metadata, '$.paramOf') j
+      WHERE e.id > ? AND e.kind = 'calls' AND e.metadata LIKE '%"paramOf"%'`, [afterId]);
+  }
+
+  /** The highest edge id, for recordEdgeDeps. */
+  maxEdgeId(): number {
+    return (this.db.get('SELECT MAX(id) AS m FROM edges') as any)?.m ?? 0;
+  }
+
+  /** Drops the dependencies of edges that are gone. */
+  pruneEdgeDeps(): void {
+    this.db.run('DELETE FROM edge_deps WHERE edge_id NOT IN (SELECT id FROM edges)');
   }
 
   /**
@@ -571,9 +576,8 @@ export class GraphDatabase {
    */
   requeueParameterEdges(changedFiles: string[]): void {
     const placeholders = changedFiles.map(() => '?').join(',');
-    this.requeueEdges(`e.kind = 'calls' AND e.metadata LIKE '%"paramOf"%'
-      AND EXISTS (SELECT 1 FROM json_each(e.metadata, '$.paramOf') p WHERE p.value IN (
-        SELECT c.target FROM edges c JOIN nodes cs ON cs.id = c.source WHERE c.kind = 'calls' AND cs.file_path IN (${placeholders})))`,
+    this.requeueEdges(`e.id IN (SELECT d.edge_id FROM edge_deps d WHERE d.dep IN (
+        SELECT 'n:' || c.target FROM edges c JOIN nodes cs ON cs.id = c.source WHERE c.kind = 'calls' AND cs.file_path IN (${placeholders})))`,
       changedFiles);
   }
 
@@ -593,6 +597,21 @@ export class GraphDatabase {
     }
   }
 
+  /**
+   * Turns the resolved edges that come into a file's symbols from other files back into
+   * unresolved references, before the file's nodes are deleted. Resolution removes a reference
+   * once it becomes an edge, so without this a file rewritten by a sync lost its callers, imports
+   * and subtypes from every other file until the next full index. Resolution links the references
+   * again to the new symbols, or leaves them unresolved when the symbol is gone, as a full index
+   * of the same files would.
+   *
+   * Only edges made by resolution (confidence 'extracted'): the ones the cross-language bridges
+   * synthesize ('inferred') are rebuilt by the bridges themselves.
+   *
+   * The reference is rebuilt from the edge: an import by its module path (the import node's
+   * name), an infrastructure reference or call by the target's qualified name (resolved by exact
+   * qualified name, as infra.ts emits them), anything else by the target's name.
+   */
   private detachIncomingEdges(filePath: string): void {
     this.db.run(
       `INSERT INTO unresolved_refs (source_id, ref_name, ref_kind, file_path, line, column, metadata)
@@ -1451,7 +1470,9 @@ export class GraphDatabase {
   transaction<T>(fn: () => T): T {
     const release = this.db.hold();
     try {
-      this.db.run('BEGIN');
+      // IMMEDIATE: the write lock is taken (and waited for) now. A deferred transaction that reads
+      // first fails at once in WAL when another process commits before its first write
+      this.db.run('BEGIN IMMEDIATE');
       try {
         const result = fn();
         this.db.run('COMMIT');

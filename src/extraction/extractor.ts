@@ -13,7 +13,7 @@ import { initGrammars, getParser, hasWasmGrammar } from './grammars';
 import { extractNotebook } from './notebook';
 import { extractSql } from './sql';
 import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
-import { receiverInfo, declaredReturnType, calleeOf, memberObject, callsParameter, argumentTypes } from './receiver-types';
+import { receiverInfo, declaredReturnType, calleeOf, memberObject, callsParameter, argumentTypes, resetReceiverCaches } from './receiver-types';
 import { LANG_SPECS } from './lang-specs';
 import { moreReceiverType, rubyReturnType, rubyIsLocal } from './receiver-types-more';
 import { extractHcl, extractYaml, extractHelmTemplate, augmentBash, extractJsonConfig } from './infra';
@@ -137,6 +137,7 @@ async function extractScriptBlocks(blocks: ScriptBlock[], source: string, relPat
     try {
       walkTree(tree.rootNode, code, relPath, block.language, nodes, edges, unresolvedRefs, now);
     } finally {
+      resetReceiverCaches();
       tree.delete?.();
     }
     for (let i = first; i < nodes.length; i++) nodes[i].language = language;
@@ -241,7 +242,16 @@ export async function extractFile(filePath: string, projectRoot: string, content
       // Svelte: no grammar for its markup, but its <script> blocks are TypeScript / JavaScript
       if (language === 'svelte') {
         const nodes: Node[] = [], edges: Edge[] = [], unresolvedRefs: UnresolvedRef[] = [];
-        await extractScriptBlocks(scriptBlocksOf(source), source, relPath, language, Date.now(), nodes, edges, unresolvedRefs);
+        const now = Date.now();
+        await extractScriptBlocks(scriptBlocksOf(source), source, relPath, language, now, nodes, edges, unresolvedRefs);
+        // Markup only, or a script with only imports: the component is still what imports point at
+        if (!nodes.some(n => n.kind !== 'import')) {
+          const name = path.basename(relPath).replace(/\.[^.]+$/, '');
+          const lines = source.split('\n');
+          nodes.push({ id: makeNodeId(relPath, 'module', name, 1), kind: 'module', name, qualifiedName: `${relPath}::${name}`,
+            filePath: relPath, language, startLine: 1, endLine: lines.length, startColumn: 0,
+            endColumn: lines[lines.length - 1].length, updatedAt: now });
+        }
         return { filePath: relPath, language, contentHash, fileSize, nodes, edges, unresolvedRefs };
       }
       // Language genuinely has no grammar (e.g. Liquid, unknown) — track file but no AST extraction
@@ -381,6 +391,7 @@ export async function extractFile(filePath: string, projectRoot: string, content
 
     return { filePath: relPath, language, contentHash, fileSize, nodes, edges, unresolvedRefs, routeMounts };
   } finally {
+    resetReceiverCaches();
     tree?.delete();
     parser.delete();
   }
@@ -1632,7 +1643,8 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
         if (info.param && !type) metadata.receiverParam = info.param;
         if (info.call) metadata.receiverCall = info.call;
         // Ruby: `make_ledger.add` calls make_ledger (no parentheses) when it is no local: the receiver is its result
-        else if (!type && language === 'ruby' && /^[a-z_]\w*[?!]?$/.test(receiver) && !rubyIsLocal(node, receiver, source)) {
+        else if (!type && language === 'ruby' && /^[a-z_]\w*[?!]?$/.test(receiver) && !/^(self|nil|true|false|super)$/.test(receiver)
+          && !rubyIsLocal(node, receiver, source)) {
           metadata.receiverCall = { name: receiver };
         }
       } else if (callsParameter(node, calleeName, source, language)) {
