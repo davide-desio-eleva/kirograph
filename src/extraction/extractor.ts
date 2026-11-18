@@ -79,6 +79,9 @@ function validatePath(filePath: string, projectRoot: string): boolean {
  * Extract symbols from a single file.
  * Optionally accepts pre-read content for batch I/O efficiency.
  */
+/** Languages of data, markup and configuration: a file of theirs with no symbol is not a module. */
+const DATA_FILE_LANGUAGES = new Set<string>(['json', 'yaml', 'html', 'css', 'markdown', 'unknown', 'sql', 'hcl', 'jupyter']);
+
 /** A block of script inside a component file: its range in the file, and its language. */
 interface ScriptBlock { start: number; end: number; language: 'typescript' | 'tsx' | 'javascript' }
 
@@ -309,7 +312,16 @@ export async function extractFile(filePath: string, projectRoot: string, content
       const yaml = extractYaml(tree.rootNode, source, relPath, now);
       nodes.push(...yaml.nodes); edges.push(...yaml.edges); unresolvedRefs.push(...yaml.unresolvedRefs);
     } else {
-      walkTree(tree.rootNode, source, relPath, language, nodes, edges, unresolvedRefs, now);
+      // Liquid: a template is a component (a snippet, a section) named after its file, and holds its symbols
+      let rootId: string | undefined;
+      if (language === 'liquid') {
+        const name = path.basename(relPath).replace(/\.liquid$/, '');
+        rootId = makeNodeId(relPath, 'component', name, 1);
+        nodes.push({ id: rootId, kind: 'component', name, qualifiedName: `${relPath}::${name}`, filePath: relPath, language,
+          startLine: 1, endLine: tree.rootNode.endPosition.row + 1, startColumn: 0, endColumn: tree.rootNode.endPosition.column, updatedAt: now });
+        collectCallRefs(tree.rootNode, source, rootId, unresolvedRefs, language);
+      }
+      walkTree(tree.rootNode, source, relPath, language, nodes, edges, unresolvedRefs, now, rootId);
       // Shell: the files a script sources, and the calls to its functions
       if (language === 'bash') augmentBash(tree.rootNode, source, relPath, now, { nodes, edges, unresolvedRefs });
       // Astro: the component script between the `---` fences is TypeScript
@@ -355,6 +367,16 @@ export async function extractFile(filePath: string, projectRoot: string, content
         n.nestingDepth = depth;
         n.maintainabilityIndex = Math.round(mi * 10) / 10;
       }
+    }
+
+    // A file of code with no symbol of its own (`module.exports = {}`, a header of prototypes, a Liquid
+    // snippet's markup) is still what imports point at: it gets a module node named after it
+    if (!nodes.some(n => n.kind !== 'import') && !DATA_FILE_LANGUAGES.has(language)) {
+      const base = path.basename(relPath).replace(/\.[^.]+$/, '');
+      const name = /^(__init__|index|mod|init)$/.test(base) ? path.basename(path.dirname(relPath)) || base : base;
+      nodes.push({ id: makeNodeId(relPath, 'module', name, 1), kind: 'module', name, qualifiedName: `${relPath}::${name}`,
+        filePath: relPath, language, startLine: 1, endLine: tree.rootNode.endPosition.row + 1, startColumn: 0,
+        endColumn: tree.rootNode.endPosition.column, updatedAt: now });
     }
 
     return { filePath: relPath, language, contentHash, fileSize, nodes, edges, unresolvedRefs, routeMounts };
@@ -714,6 +736,18 @@ function walkTree(
   // Dart: refine class_definition kind based on superclass (Widget → component)
   if (language === 'dart' && node.type === 'class_definition' && kind === 'class') {
     kind = refineDartClassKind(node, source);
+  }
+
+  // A symbol spread over sibling nodes (a Haskell function's later equations): their calls are the first's
+  const continued = spec?.continuationOf?.(node, source);
+  if (continued) {
+    const first = spec!.symbol?.(continued, source);
+    if (first) {
+      const firstId = makeNodeId(filePath, first.kind, first.name, continued.startPosition.row + 1);
+      collectCallRefs(node, source, firstId, unresolvedRefs, language);
+      for (let i = 0; i < node.childCount; i++) walkTree(node.child(i), source, filePath, language, nodes, edges, unresolvedRefs, now, firstId);
+      return;
+    }
   }
 
   // A language's own symbols (see lang-specs): they decide the kind and the name

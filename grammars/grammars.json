@@ -497,6 +497,30 @@
         "fields": 16,
         "hash": "ba2ad7315ecd9a67"
       }
+    },
+    "haskell": {
+      "package": "tree-sitter-haskell",
+      "version": "0.23.1",
+      "symbol": "haskell",
+      "fingerprint": {
+        "abi": 14,
+        "states": 12862,
+        "kinds": 552,
+        "fields": 84,
+        "hash": "b758e446059cbbdb"
+      }
+    },
+    "liquid": {
+      "github": "hankthetank27/tree-sitter-liquid",
+      "version": "e45dbac8c5fa95b1f0e00e7e0c04bc8855823391",
+      "symbol": "liquid",
+      "fingerprint": {
+        "abi": 14,
+        "states": 1300,
+        "kinds": 215,
+        "fields": 28,
+        "hash": "2abd7f12998dea8c"
+      }
     }
   }
 }
