@@ -135,9 +135,9 @@ export const GRAMMAR_MAP: Record<Language, string> = {
   css: 'tree-sitter-css',
   scss: 'tree-sitter-scss',
   html: 'tree-sitter-html',
-  // Pascal has a grammar of its own (see grammars/grammars.json); Liquid has none
+  // Pascal and Liquid have grammars of their own (see grammars/grammars.json)
   pascal: '',
-  liquid: '',
+  liquid: 'tree-sitter-liquid',
   // Jupyter notebooks are parsed via the notebook extractor (Python grammar on extracted code cells)
   jupyter: '',
   // ReScript

@@ -15,6 +15,11 @@ export interface LangSpec {
   symbol?(node: any, source: string): Symbol | null | undefined;
   /** The node as a call, `null` if it is none, `undefined` for the generic rules. */
   call?(node: any, source: string): Call | null | undefined;
+  /**
+   * The node of the symbol a node continues, when a language spreads one symbol over sibling
+   * nodes (a Haskell function written as several equations): its calls are that symbol's.
+   */
+  continuationOf?(node: any, source: string): any;
   /** The module (or modules: Go's `import ( … )`) a node imports, if it is an import. */
   importOf?(node: any, source: string): string | string[] | undefined;
 }
@@ -360,6 +365,13 @@ const scss: LangSpec = {
       return name.startsWith('$') ? { kind: 'variable', name } : null;
     }
     if (node.type === 'include_statement' || node.type === 'use_statement' || node.type === 'forward_statement' || node.type === 'import_statement') return null;
+    // A top-level rule (`.card { … }`), as CSS's are: what its @includes apply to. Nested rules are its
+    if (node.type === 'rule_set') {
+      for (let p = node.parent; p; p = p.parent) if (p.type === 'rule_set' || p.type === 'mixin_statement') return null;
+      const sel = named(node, 'selectors');
+      const name = sel ? text(sel, source).replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+      return name ? { kind: 'class', name } : null;
+    }
     return undefined;
   },
   call(node, source) {
@@ -511,6 +523,88 @@ const js: LangSpec = {
   },
 };
 
+// ── Haskell ──────────────────────────────────────────────────────────────────
+
+const hsName = (n: any, s: string): string | null => {
+  const name = n?.childForFieldName('name');
+  return name ? text(name, s) : null;
+};
+
+const haskell: LangSpec = {
+  symbol(node, source) {
+    switch (node.type) {
+      case 'header': {
+        const mod = node.childForFieldName('module');
+        return mod ? { kind: 'module', name: text(mod, source) } : null;
+      }
+      case 'data_type': case 'newtype': { const n = hsName(node, source); return n ? { kind: 'struct', name: n } : null; }
+      case 'type_synomym': case 'type_family': { const n = hsName(node, source); return n ? { kind: 'type_alias', name: n } : null; }
+      case 'class': { const n = hsName(node, source); return n ? { kind: 'interface', name: n } : null; }
+      case 'signature': case 'instance': return null;
+      case 'function': case 'bind': {
+        const n = hsName(node, source);
+        if (!n) return null;
+        // The later equations of a function are the first one's (see continuationOf)
+        if (haskell.continuationOf!(node, source)) return null;
+        return { kind: node.type === 'bind' && !node.childForFieldName('patterns') && node.parent?.type === 'declarations' ? 'variable' : 'function', name: n };
+      }
+    }
+    return undefined;
+  },
+  continuationOf(node, source) {
+    if (node.type !== 'function' && node.type !== 'bind') return undefined;
+    const name = hsName(node, source);
+    let first: any = null;
+    for (let p = node.previousNamedSibling; p; p = p.previousNamedSibling) {
+      if (p.type === 'signature') continue;
+      if ((p.type === 'function' || p.type === 'bind') && hsName(p, source) === name) { first = p; continue; }
+      break;
+    }
+    return first;
+  },
+  call(node, source) {
+    if (node.type !== 'apply') return undefined;
+    const fn = node.childForFieldName('function');
+    // `f a b` is apply(apply(f, a), b): the innermost application is the call
+    if (!fn || fn.type === 'apply') return null;
+    if (fn.type === 'variable') return { name: text(fn, source) };
+    if (fn.type === 'qualified') {
+      const id = fn.childForFieldName('id') ?? fn.lastNamedChild;
+      const mod = fn.childForFieldName('module');
+      return id?.type === 'variable' ? { name: text(id, source), receiver: mod ? text(mod, source).replace(/\.$/, '') : undefined } : null;
+    }
+    return null;
+  },
+  importOf(node, source) {
+    if (node.type !== 'import') return undefined;
+    const mod = node.childForFieldName('module');
+    return mod ? text(mod, source) : undefined;
+  },
+};
+
+// ── Liquid ───────────────────────────────────────────────────────────────────
+
+const liquid: LangSpec = {
+  symbol(node, source) {
+    if (node.type === 'assignment_statement') {
+      const n = node.childForFieldName('variable_name');
+      return n ? { kind: 'variable', name: text(n, source) } : null;
+    }
+    if (node.type === 'capture_statement') {
+      const n = node.childForFieldName('variable');
+      return n ? { kind: 'variable', name: text(n, source) } : null;
+    }
+    return undefined;
+  },
+  importOf(node, source) {
+    // {% render 'product-card' %}, {% include 'header' %}, {% section 'footer' %}
+    const kind = { render_statement: 'snippets', include_statement: 'snippets', section_statement: 'sections' }[node.type as string];
+    if (!kind) return undefined;
+    const file = node.childForFieldName('file') ?? named(node, 'string');
+    return file ? `${kind}/${unquote(text(file, source))}` : undefined;
+  },
+};
+
 // ── Solidity ─────────────────────────────────────────────────────────────────
 
 const solidity: LangSpec = {
@@ -523,7 +617,7 @@ const solidity: LangSpec = {
 };
 
 export const LANG_SPECS: Partial<Record<Language, LangSpec>> = {
-  solidity,
+  solidity, haskell, liquid,
   r, perl, powershell, julia, nix, pascal, verilog, scss, php, objc, dart, go, ruby, lua,
   javascript: js, typescript: js, tsx: js, jsx: js,
 };

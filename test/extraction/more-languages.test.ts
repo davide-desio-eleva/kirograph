@@ -69,6 +69,31 @@ describe('languages read through their specs', () => {
     expect(r.calls).toEqual(['rounded']);
   });
 
+  it('Haskell: a function of several equations is one symbol, with every equation\'s calls', async () => {
+    const r = await extract('Stack.hs', [
+      'module Data.Stack (push) where', 'import qualified Data.Map as M', 'data Stack a = Stack [a]', 'type Pair = (Int, Int)',
+      'class Container f where', '  empty :: f a', 'pop (Stack []) = Nothing', 'pop (Stack (x:xs)) = helper x', 'size s = length (M.toList s)',
+    ]);
+    expect(r.symbols).toEqual(['module Data.Stack', 'import Data.Map', 'struct Stack', 'type_alias Pair', 'interface Container', 'function pop', 'function size']);
+    expect(r.calls).toEqual(expect.arrayContaining(['helper', 'length', 'toList(M)']));
+  });
+
+  it('Liquid: a template is a component; render / include / section are imports', async () => {
+    const r = await extract('product.liquid', ["{% render 'product-card', product: product %}", "{% section 'footer' %}", '{% assign total = cart.total_price | money %}']);
+    expect(r.symbols).toEqual(['component product', 'import snippets/product-card', 'import sections/footer', 'variable total']);
+  });
+
+  it('a file of code with no symbol is a module, for imports to point at', async () => {
+    expect((await extract('empty.js', ['module.exports = {};'])).symbols).toEqual(['module empty']);
+    expect((await extract('jv.h', ['int jv_null(void);'])).symbols).toEqual(['module jv']);
+  });
+
+  it('SCSS: an @include inside a top-level rule is that rule\'s call', async () => {
+    const r = await extract('card.scss', ['@mixin rounded($r) { border-radius: $r; }', '.card { @include rounded(4px); .title { color: red; } }']);
+    expect(r.symbols).toEqual(['function rounded', 'class .card']);
+    expect(r.calls).toEqual(['rounded']);
+  });
+
   it('Astro: the frontmatter is TypeScript', async () => {
     const r = await extract('a.astro', ['---', "import Card from '../components/Card.astro';", 'function greet(n: string) { return `hi ${n}`; }', 'const title = greet("x");', '---', '<Card title={title} />']);
     expect(r.symbols).toEqual(['import ../components/Card.astro', 'function greet', 'constant title']);
