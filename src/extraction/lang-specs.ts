@@ -511,7 +511,19 @@ const js: LangSpec = {
   },
 };
 
+// ── Solidity ─────────────────────────────────────────────────────────────────
+
+const solidity: LangSpec = {
+  importOf(node, source) {
+    // import "./IERC20.sol";  import {Math} from "../utils/math/Math.sol";
+    if (node.type !== 'import_directive') return undefined;
+    const src = node.childForFieldName('source');
+    return src ? unquote(text(src, source)) : undefined;
+  },
+};
+
 export const LANG_SPECS: Partial<Record<Language, LangSpec>> = {
+  solidity,
   r, perl, powershell, julia, nix, pascal, verilog, scss, php, objc, dart, go, ruby, lua,
   javascript: js, typescript: js, tsx: js, jsx: js,
 };

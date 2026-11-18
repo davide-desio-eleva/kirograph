@@ -15,6 +15,7 @@ import { extractSql } from './sql';
 import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
 import { receiverInfo, declaredReturnType, calleeOf, memberObject } from './receiver-types';
 import { LANG_SPECS } from './lang-specs';
+import { moreReceiverType } from './receiver-types-more';
 import { extractHcl, extractYaml, extractHelmTemplate, augmentBash, extractJsonConfig } from './infra';
 
 export interface UnresolvedRef {
@@ -760,6 +761,15 @@ function walkTree(
 
       // Collect call references within this symbol
       collectCallRefs(node, source, id, unresolvedRefs, language);
+      // Dart: a method's or function's body follows its signature as a sibling: its calls are the
+      // function's, and it ends where the body ends
+      const dartHolder = language === 'dart' && node.parent?.type === 'method_signature' ? node.parent : node;
+      if (language === 'dart' && dartHolder.nextNamedSibling?.type === 'function_body') {
+        const body = dartHolder.nextNamedSibling;
+        collectCallRefs(body, source, id, unresolvedRefs, language);
+        graphNode.endLine = body.endPosition.row + 1;
+        graphNode.endColumn = body.endPosition.column;
+      }
 
       // Extract inheritance edges for class/interface nodes
       if (INHERITING_KINDS.has(kind) && INHERITANCE_LANGUAGES.has(language)) {
@@ -867,6 +877,7 @@ function getLanguageSpecificKind(type: string, lang: Language): NodeKind | null 
       break;
     case 'solidity':
       if (type === 'contract_declaration') return 'class';
+      if (type === 'library_declaration') return 'class';   // `library Errors { … }`: functions of its own
       if (type === 'event_definition') return 'function';
       if (type === 'modifier_definition') return 'function';
       if (type === 'state_variable_declaration') return 'variable';
@@ -1562,7 +1573,10 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
         refKind: 'function',
         line: node.startPosition.row + 1,
         column: node.startPosition.column,
-        ...(specCall.receiver ? { metadata: { receiver: specCall.receiver } } : {}),
+        ...(specCall.receiver ? { metadata: (() => {
+          const type = moreReceiverType(node, specCall.receiver, source, language);
+          return type ? { receiver: specCall.receiver, receiverType: type } : { receiver: specCall.receiver };
+        })() } : {}),
       });
     }
     for (let i = 0; i < node.childCount; i++) walkForCalls(node.child(i), source, sourceId, unresolvedRefs, language);
@@ -1576,7 +1590,8 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
       if (receiver) {
         metadata.receiver = receiver;
         const info = receiverInfo(node, receiver, source, language);
-        if (info.type) metadata.receiverType = info.type;
+        const type = info.type ?? moreReceiverType(node, receiver, source, language);
+        if (type) metadata.receiverType = type;
         if (info.call) metadata.receiverCall = info.call;
       }
       if (JS_TS_LANGUAGES.has(language)) {
