@@ -370,4 +370,58 @@ const scss: LangSpec = {
   },
 };
 
-export const LANG_SPECS: Partial<Record<Language, LangSpec>> = { r, perl, powershell, julia, nix, pascal, verilog, scss };
+// ── PHP ──────────────────────────────────────────────────────────────────────
+
+const php: LangSpec = {
+  call(node, source) {
+    // $this->run(), $o->m(), self::make(), Foo::bar(), new X()
+    if (node.type === 'member_call_expression' || node.type === 'nullsafe_member_call_expression' || node.type === 'scoped_call_expression') {
+      const name = node.childForFieldName('name');
+      const on = node.childForFieldName('object') ?? node.childForFieldName('scope');
+      const value = name ? text(name, source) : '';
+      return /^\w+$/.test(value) ? { name: value, receiver: on ? text(on, source).replace(/^\$/, '') : undefined } : null;
+    }
+    if (node.type === 'object_creation_expression') {
+      const cls = node.namedChildren.find((c: any) => c.type === 'name' || c.type === 'qualified_name');
+      const value = cls ? text(cls, source).split('\\').pop()! : '';
+      return /^\w+$/.test(value) ? { name: value } : null;
+    }
+    return undefined;
+  },
+};
+
+// ── Objective-C ──────────────────────────────────────────────────────────────
+
+const objc: LangSpec = {
+  call(node, source) {
+    // [obj run:1 with:2] is `run` (the selector's first part, as the method is named), on obj
+    if (node.type !== 'message_expression') return undefined;
+    const method = node.childForFieldName('method');
+    const receiver = node.childForFieldName('receiver');
+    return method ? { name: text(method, source), receiver: receiver ? text(receiver, source) : undefined } : null;
+  },
+};
+
+// ── Dart ─────────────────────────────────────────────────────────────────────
+
+const DART_MEMBER = new Set(['unconditional_assignable_selector', 'conditional_assignable_selector']);
+
+const dart: LangSpec = {
+  call(node, source) {
+    // A call is a selector with arguments after what it calls: `run(1)` is an identifier and a
+    // selector, `obj.m(2)` an identifier, a `.m` selector, and a selector with the arguments
+    if (node.type !== 'selector' || !named(node, 'argument_part')) return undefined;
+    const prev = node.previousNamedSibling;
+    if (!prev) return null;
+    if (prev.type === 'identifier') return { name: text(prev, source) };
+    const member = prev.type === 'selector' ? prev.namedChildren.find((c: any) => DART_MEMBER.has(c.type)) : null;
+    const id = member ? named(member, 'identifier') : null;
+    if (!id) return null;
+    // The receiver: what comes before the `.m` selector in the same expression
+    const start = node.parent?.namedChild(0);
+    const receiver = start && start.startIndex < prev.startIndex ? source.slice(start.startIndex, prev.startIndex).trim() : undefined;
+    return { name: text(id, source), receiver: receiver || undefined };
+  },
+};
+
+export const LANG_SPECS: Partial<Record<Language, LangSpec>> = { r, perl, powershell, julia, nix, pascal, verilog, scss, php, objc, dart };

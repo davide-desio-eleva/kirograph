@@ -78,28 +78,65 @@ function validatePath(filePath: string, projectRoot: string): boolean {
  * Extract symbols from a single file.
  * Optionally accepts pre-read content for batch I/O efficiency.
  */
-/**
- * The TypeScript of an Astro component's frontmatter, as symbols of the `.astro` file. The source is
- * blanked outside the block (newlines kept), so lines and columns are the file's own.
- */
-async function extractAstroFrontmatter(root: any, source: string, relPath: string, now: number,
-  nodes: Node[], edges: Edge[], unresolvedRefs: UnresolvedRef[]): Promise<void> {
-  const block = root.namedChildren.find((c: any) => c.type === 'frontmatter')?.namedChildren
-    .find((c: any) => c.type === 'frontmatter_js_block');
-  if (!block) return;
-  const ts = await getParser('typescript');
-  if (!ts) return;
-  const blank = (s: string) => s.replace(/[^\n]/g, ' ');
-  const code = blank(source.slice(0, block.startIndex)) + source.slice(block.startIndex, block.endIndex) + blank(source.slice(block.endIndex));
-  const tree = ts.parse(code);
-  const first = nodes.length;
-  try {
-    walkTree(tree.rootNode, code, relPath, 'typescript', nodes, edges, unresolvedRefs, now);
-  } finally {
-    tree.delete?.();
+/** A block of script inside a component file: its range in the file, and its language. */
+interface ScriptBlock { start: number; end: number; language: 'typescript' | 'tsx' | 'javascript' }
+
+/** The script language a `lang` attribute names. */
+const scriptLanguage = (lang: string | undefined): ScriptBlock['language'] =>
+  lang === 'tsx' ? 'tsx' : lang === 'ts' || lang === 'typescript' ? 'typescript' : 'javascript';
+
+/** The `<script>` blocks of an HTML-like component (Svelte), from its text. */
+function scriptBlocksOf(source: string): ScriptBlock[] {
+  const blocks: ScriptBlock[] = [];
+  const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  for (let m = re.exec(source); m; m = re.exec(source)) {
+    const lang = /\blang\s*=\s*["']?(\w+)/.exec(m[1])?.[1];
+    const start = m.index + m[0].indexOf('>') + 1;
+    blocks.push({ start, end: start + m[2].length, language: scriptLanguage(lang) });
   }
-  // Read as TypeScript, they are the Astro file's symbols (same language family for resolution)
-  for (let i = first; i < nodes.length; i++) nodes[i].language = 'astro';
+  return blocks;
+}
+
+/** The script blocks of a component's syntax tree: Astro's frontmatter, Vue's `<script>` elements. */
+function scriptBlocksIn(root: any, source: string, language: Language): ScriptBlock[] {
+  if (language === 'astro') {
+    const block = root.namedChildren.find((c: any) => c.type === 'frontmatter')?.namedChildren
+      .find((c: any) => c.type === 'frontmatter_js_block');
+    return block ? [{ start: block.startIndex, end: block.endIndex, language: 'typescript' }] : [];
+  }
+  if (language === 'vue') {
+    return root.namedChildren.filter((c: any) => c.type === 'script_element').flatMap((el: any) => {
+      const raw = el.namedChildren.find((c: any) => c.type === 'raw_text');
+      if (!raw) return [];
+      const lang = /\blang\s*=\s*["']?(\w+)/.exec(source.slice(el.startIndex, raw.startIndex))?.[1];
+      return [{ start: raw.startIndex, end: raw.endIndex, language: scriptLanguage(lang) }];
+    });
+  }
+  return [];
+}
+
+/**
+ * The script of a component file (Astro's frontmatter, Vue's and Svelte's `<script>`), parsed in its
+ * language as symbols of the component file. The source is blanked outside each block (newlines
+ * kept), so lines and columns are the file's own; the symbols take the file's language (the same
+ * family for resolution).
+ */
+async function extractScriptBlocks(blocks: ScriptBlock[], source: string, relPath: string, language: Language, now: number,
+  nodes: Node[], edges: Edge[], unresolvedRefs: UnresolvedRef[]): Promise<void> {
+  const blank = (s: string) => s.replace(/[^\n]/g, ' ');
+  for (const block of blocks) {
+    const parser = await getParser(block.language);
+    if (!parser) continue;
+    const code = blank(source.slice(0, block.start)) + source.slice(block.start, block.end) + blank(source.slice(block.end));
+    const tree = parser.parse(code);
+    const first = nodes.length;
+    try {
+      walkTree(tree.rootNode, code, relPath, block.language, nodes, edges, unresolvedRefs, now);
+    } finally {
+      tree.delete?.();
+    }
+    for (let i = first; i < nodes.length; i++) nodes[i].language = language;
+  }
 }
 
 /**
@@ -124,6 +161,18 @@ export async function extractFile(filePath: string, projectRoot: string, content
     }
   } catch {
     return null;
+  }
+
+  // A binary file with a source extension (Delphi's `.res` resources, read as ReScript) is not code:
+  // tracked, not parsed
+  if (source.slice(0, 8192).includes('\u0000')) {
+    const relBin = path.relative(projectRoot, filePath).replace(/\\/g, '/');
+    return {
+      filePath: relBin, language,
+      contentHash: crypto.createHash('sha256').update(source).digest('hex'),
+      fileSize: Buffer.byteLength(source, 'utf8'),
+      nodes: [], edges: [], unresolvedRefs: [],
+    };
   }
 
   // A `.h` file is C by its extension; one written in C++ (fmt, gtest) is parsed as C++
@@ -183,6 +232,12 @@ export async function extractFile(filePath: string, projectRoot: string, content
   const parser = await getParser(language);
   if (!parser) {
     if (!hasWasmGrammar(language)) {
+      // Svelte: no grammar for its markup, but its <script> blocks are TypeScript / JavaScript
+      if (language === 'svelte') {
+        const nodes: Node[] = [], edges: Edge[] = [], unresolvedRefs: UnresolvedRef[] = [];
+        await extractScriptBlocks(scriptBlocksOf(source), source, relPath, language, Date.now(), nodes, edges, unresolvedRefs);
+        return { filePath: relPath, language, contentHash, fileSize, nodes, edges, unresolvedRefs };
+      }
       // Language genuinely has no grammar (e.g. Liquid, unknown) — track file but no AST extraction
       return {
         filePath: relPath,
@@ -255,7 +310,10 @@ export async function extractFile(filePath: string, projectRoot: string, content
       // Shell: the files a script sources, and the calls to its functions
       if (language === 'bash') augmentBash(tree.rootNode, source, relPath, now, { nodes, edges, unresolvedRefs });
       // Astro: the component script between the `---` fences is TypeScript
-      if (language === 'astro') await extractAstroFrontmatter(tree.rootNode, source, relPath, now, nodes, edges, unresolvedRefs);
+      // Astro's frontmatter and Vue's <script> are TypeScript / JavaScript
+      if (language === 'astro' || language === 'vue') {
+        await extractScriptBlocks(scriptBlocksIn(tree.rootNode, source, language), source, relPath, language, now, nodes, edges, unresolvedRefs);
+      }
     }
 
     let routeMounts: RouteMountFact[] | undefined;
@@ -699,7 +757,7 @@ function walkTree(
       collectCallRefs(node, source, id, unresolvedRefs, language);
 
       // Extract inheritance edges for class/interface nodes
-      if ((kind === 'class' || kind === 'interface') && INHERITANCE_LANGUAGES.has(language)) {
+      if (INHERITING_KINDS.has(kind) && INHERITANCE_LANGUAGES.has(language)) {
         extractInheritance(node, source, language, id, unresolvedRefs);
       }
 
@@ -1188,6 +1246,13 @@ function extractName(node: any, source: string, _lang: Language, kind: NodeKind)
     return id && (id.type === 'value_identifier' || id.type === 'type_identifier' || id.type === 'module_identifier')
       ? source.slice(id.startIndex, id.endIndex)
       : null;
+  }
+
+  // Rust: `impl Display for Point` is Point's (its `type`), not the trait's
+  if (_lang === 'rust' && node.type === 'impl_item') {
+    const type = node.childForFieldName('type');
+    const id = type ? typeLeaf(type) : null;
+    return id ? source.slice(id.startIndex, id.endIndex) : null;
   }
 
   // The declaration's own name field: a Java `Journal journal()` is `journal`, not its return type
@@ -1751,7 +1816,23 @@ function extractTypeName(node: any, source: string): string | null {
  * C#:  base_list  children → all are either base class or interface (can't distinguish without types)
  * Java: superclass → extends; super_interfaces / extends_interfaces → implements / extends
  */
-const INHERITANCE_LANGUAGES = new Set<Language>(['csharp', 'java', 'typescript', 'tsx', 'javascript', 'jsx', 'python', 'kotlin']);
+const INHERITANCE_LANGUAGES = new Set<Language>(['csharp', 'java', 'typescript', 'tsx', 'javascript', 'jsx', 'python', 'kotlin',
+  'cpp', 'swift', 'rust', 'go', 'scala', 'php', 'ruby', 'dart', 'objc', 'solidity', 'pascal']);
+/** Declarations that can have supertypes (a Go type declaration is a type_alias, a Rust impl a class). */
+const INHERITING_KINDS = new Set<string>(['class', 'interface', 'struct', 'trait', 'protocol', 'type_alias']);
+
+/** The name a type reference ends in: `C` in `ns::C<int>`, `Mod::D`, `pkg.C`, `*pkg.C`. */
+function typeLeaf(n: any): any {
+  for (let i = 0; n && i < 8; i++) {
+    if (['type_identifier', 'identifier', 'constant', 'name'].includes(n.type)) return n;
+    const next = n.childForFieldName?.('name') ?? (n.type === 'user_type' || n.type === 'user_defined_type' || n.type === 'typeref'
+      || n.type === 'scope_resolution' || n.type === 'qualified_name' ? n.lastNamedChild : null)
+      ?? n.childForFieldName?.('type') ?? n.namedChild?.(0);
+    if (!next || next === n) return null;
+    n = next;
+  }
+  return null;
+}
 
 function extractInheritance(
   node: any,
@@ -1764,7 +1845,7 @@ function extractInheritance(
   const push = (typeNode: any, refKind: 'extends' | 'implements') => {
     let n = typeNode;
     if (n?.type === 'generic_type') n = n.childForFieldName('name') ?? n.namedChild(0);
-    if (!n || !['identifier', 'type_identifier', 'member_expression', 'nested_type_identifier', 'attribute'].includes(n.type)) return;
+    if (!n || !['identifier', 'type_identifier', 'member_expression', 'nested_type_identifier', 'attribute', 'constant', 'name'].includes(n.type)) return;
     const name = source.slice(n.startIndex, n.endIndex).split('.').pop()!.trim();
     if (/^[A-Za-z_$][\w$]*$/.test(name)) {
       unresolvedRefs.push({ sourceId: classNodeId, refName: name, refKind, line: n.startPosition.row + 1, column: n.startPosition.column });
@@ -1784,6 +1865,95 @@ function extractInheritance(
         for (const ty of child.namedChildren) push(ty, 'extends');
       }
     }
+    return;
+  }
+
+  const leaf = (n: any, kind: 'extends' | 'implements') => { const id = typeLeaf(n); if (id) push(id, kind); };
+  const kids = (n: any, type: string) => (n?.namedChildren ?? []).filter((c: any) => c.type === type);
+
+  // C++: class A : public B, private ns::C<int>
+  if (language === 'cpp') {
+    for (const clause of kids(node, 'base_class_clause')) {
+      for (const base of clause.namedChildren) if (base.type !== 'access_specifier') leaf(base, 'extends');
+    }
+    return;
+  }
+  // Swift: class A: B, P1 (a superclass and protocols read alike)
+  if (language === 'swift') {
+    for (const spec of kids(node, 'inheritance_specifier')) leaf(spec.childForFieldName('inherits_from') ?? spec.namedChild(0), 'extends');
+    return;
+  }
+  // Rust: `impl Display for Point` (the impl is Point's), `trait T: Clone + Debug`
+  if (language === 'rust') {
+    if (node.type === 'impl_item') { const trait = node.childForFieldName('trait'); if (trait) leaf(trait, 'implements'); }
+    if (node.type === 'trait_item') for (const b of node.childForFieldName('bounds')?.namedChildren ?? []) leaf(b, 'extends');
+    return;
+  }
+  // Go: an embedded field of a struct, an embedded interface
+  if (language === 'go') {
+    const type = node.childForFieldName('type');
+    if (type?.type === 'struct_type') {
+      for (const f of type.namedChild(0)?.namedChildren ?? []) {
+        if (f.type === 'field_declaration' && !f.childForFieldName('name')) leaf(f.childForFieldName('type'), 'extends');
+      }
+    } else if (type?.type === 'interface_type') {
+      for (const e of kids(type, 'type_elem')) leaf(e.namedChild(0), 'extends');
+    }
+    return;
+  }
+  // Scala: class A extends B with T1 with T2
+  if (language === 'scala') {
+    const types = node.childForFieldName('extend')?.namedChildren ?? [];
+    types.forEach((ty: any, i: number) => leaf(ty, i === 0 ? 'extends' : 'implements'));
+    return;
+  }
+  // PHP: class A extends B implements C, D
+  if (language === 'php') {
+    for (const b of kids(node, 'base_clause')) for (const n of b.namedChildren) leaf(n, 'extends');
+    for (const c of kids(node, 'class_interface_clause')) for (const n of c.namedChildren) leaf(n, 'implements');
+    return;
+  }
+  // Ruby: class A < B, and the modules it includes
+  if (language === 'ruby') {
+    const sup = node.childForFieldName('superclass');
+    if (sup) leaf(sup.namedChild(0), 'extends');
+    for (const call of node.childForFieldName('body')?.namedChildren ?? []) {
+      const m = call.type === 'call' ? call.childForFieldName('method') : null;
+      if (m && /^(include|prepend)$/.test(source.slice(m.startIndex, m.endIndex))) {
+        for (const a of call.childForFieldName('arguments')?.namedChildren ?? []) leaf(a, 'implements');
+      }
+    }
+    return;
+  }
+  // Dart: class A extends B with M implements C
+  if (language === 'dart') {
+    const sup = node.childForFieldName('superclass');
+    if (sup) {
+      for (const c of sup.namedChildren) {
+        if (c.type === 'mixins') for (const m of c.namedChildren) leaf(m, 'implements');
+        else leaf(c, 'extends');
+      }
+    }
+    for (const n of node.childForFieldName('interfaces')?.namedChildren ?? []) leaf(n, 'implements');
+    return;
+  }
+  // Objective-C: @interface Foo : NSObject <Bar>
+  if (language === 'objc') {
+    const sup = node.childForFieldName('superclass');
+    if (sup) leaf(sup, 'extends');
+    for (const args of kids(node, 'parameterized_arguments')) for (const n of args.namedChildren) leaf(n, 'implements');
+    return;
+  }
+  // Solidity: contract A is B, C
+  if (language === 'solidity') {
+    for (const spec of kids(node, 'inheritance_specifier')) leaf(spec.childForFieldName('ancestor') ?? spec.namedChild(0), 'extends');
+    return;
+  }
+  // Pascal: TA = class(TB, IC) — the first the superclass, the others interfaces
+  if (language === 'pascal') {
+    const decl = node.childForFieldName('type');
+    const parents = (decl?.namedChildren ?? []).filter((c: any) => c.type === 'typeref');
+    parents.forEach((p: any, i: number) => leaf(p, i === 0 ? 'extends' : 'implements'));
     return;
   }
 
