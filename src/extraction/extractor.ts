@@ -13,7 +13,7 @@ import { initGrammars, getParser, hasWasmGrammar } from './grammars';
 import { extractNotebook } from './notebook';
 import { extractSql } from './sql';
 import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
-import { receiverType } from './receiver-types';
+import { receiverInfo, declaredReturnType } from './receiver-types';
 import { extractHcl, extractYaml, extractHelmTemplate, augmentBash, extractJsonConfig } from './infra';
 
 export interface UnresolvedRef {
@@ -595,6 +595,10 @@ function walkTree(
         isAbstract: isAbstract(node),
         updatedAt: now,
       };
+      if (kind === 'function' || kind === 'method' || kind === 'constant' || kind === 'variable') {
+        const returnType = declaredReturnType(node, source, language);
+        if (returnType) graphNode.returnType = returnType;
+      }
       nodes.push(graphNode);
 
       if (parentId) {
@@ -627,6 +631,12 @@ function walkTree(
 
 function getLanguageSpecificKind(type: string, lang: Language): NodeKind | null {
   switch (lang) {
+    case 'typescript':
+    case 'tsx':
+      // The methods an interface or an abstract class declares: what a call through a receiver
+      // of that type reaches
+      if (type === 'method_signature' || type === 'abstract_method_signature') return 'method';
+      break;
     case 'python':
       if (type === 'assignment') return 'variable';
       break;
@@ -945,6 +955,10 @@ function stripQuotes(s: string): string {
 
 // ── Name extraction ───────────────────────────────────────────────────────────
 
+/** Node types that are a plain name. */
+const NAME_TYPES = new Set(['identifier', 'property_identifier', 'type_identifier', 'simple_identifier',
+  'word', 'name', 'constant', 'field_identifier', 'private_property_identifier']);
+
 function extractName(node: any, source: string, _lang: Language, kind: NodeKind): string | null {
   // For variable/constant declarations (lexical_declaration, variable_declaration),
   // the identifier is inside a variable_declarator child
@@ -998,6 +1012,12 @@ function extractName(node: any, source: string, _lang: Language, kind: NodeKind)
     return id && (id.type === 'value_identifier' || id.type === 'type_identifier' || id.type === 'module_identifier')
       ? source.slice(id.startIndex, id.endIndex)
       : null;
+  }
+
+  // The declaration's own name field: a Java `Journal journal()` is `journal`, not its return type
+  const nameField = node.childForFieldName?.('name');
+  if (nameField && NAME_TYPES.has(nameField.type)) {
+    return source.slice(nameField.startIndex, nameField.endIndex);
   }
 
   // Standard: look for first named-identifier child
@@ -1197,6 +1217,9 @@ const CALL_NODE_TYPES = new Set([
  * Extract the callee name from a call node.
  * Uses named field lookup first (more precise), then falls back to first-child heuristic.
  */
+/** Member access expressions: `a.b` in JS/TS, Python, Rust and C, Go. */
+const MEMBER_ACCESS = new Set(['member_expression', 'attribute', 'field_expression', 'selector_expression']);
+
 function extractCallName(node: any, source: string): string | null {
   // Named fields — Java uses 'name', Python/Ruby use 'function'/'method', Elixir uses 'target'
   for (const field of ['name', 'method', 'function', 'target']) {
@@ -1209,7 +1232,16 @@ function extractCallName(node: any, source: string): string | null {
       }
     }
   }
-  // Fallback: first child, take final segment of dotted access (covers JS/TS, C#, Go, Rust…)
+  // A member access: the member's name (`save` in `makeRepo().save()`, `repo.save()`, `self.x.save()`)
+  const fn = node.childForFieldName?.('function') ?? node.child(0);
+  const member = fn && MEMBER_ACCESS.has(fn.type)
+    ? fn.childForFieldName('property') ?? fn.childForFieldName('attribute') ?? fn.childForFieldName('field')
+    : null;
+  if (member) {
+    const text = source.slice(member.startIndex, member.endIndex).trim();
+    if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(text)) return text;
+  }
+  // Fallback: first child, take final segment of dotted access (covers C#, Kotlin, Swift…)
   const funcNode = node.child(0);
   if (funcNode) {
     const rawName = source.slice(funcNode.startIndex, funcNode.endIndex).split('(')[0].trim();
@@ -1229,6 +1261,11 @@ function extractCallName(node: any, source: string): string | null {
 export function callReceiver(node: any, source: string): string | undefined {
   const named = node.childForFieldName?.('object') ?? node.childForFieldName?.('receiver');
   if (named) return source.slice(named.startIndex, named.endIndex).trim() || undefined;
+  const fn = node.childForFieldName?.('function') ?? node.child(0);
+  if (fn && MEMBER_ACCESS.has(fn.type)) {
+    const obj = fn.childForFieldName('object') ?? fn.childForFieldName('operand') ?? fn.namedChild(0);
+    if (obj) return source.slice(obj.startIndex, obj.endIndex).trim() || undefined;
+  }
   for (const field of ['name', 'method', 'function', 'target']) {
     const f = node.childForFieldName?.(field);
     if (f && (f.type === 'identifier' || f.type === 'name' || f.type === 'property_identifier' || f.type === 'type_identifier')) return undefined;
@@ -1253,8 +1290,9 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
       const receiver = callReceiver(node, source);
       if (receiver) {
         metadata.receiver = receiver;
-        const type = receiverType(node, receiver, source, language);
-        if (type) metadata.receiverType = type;
+        const info = receiverInfo(node, receiver, source, language);
+        if (info.type) metadata.receiverType = info.type;
+        if (info.call) metadata.receiverCall = info.call;
       }
       if (JS_TS_LANGUAGES.has(language)) {
         const argKind = classifyFirstArgument(node, source);

@@ -30,6 +30,42 @@ const files: Record<string, string> = {
     'export function viaLocal() { const store = new OrderStore(); return store.save(1); }',
     '',
   ].join('\n'),
+  // Interfaces, and receivers that a call returns
+  'src/consumer.ts': 'export interface Consumer {\n  apply(x: unknown): Consumer;\n}\n',
+  'src/factory.ts': [
+    'import { UserRepo } from "./user-repo";',
+    'import { OrderStore } from "./order-store";',
+    'import { Consumer } from "./consumer";',
+    'export function makeRepo(): UserRepo { return new UserRepo(); }',
+    'export async function loadStore(): Promise<OrderStore> { return new OrderStore(); }',
+    'export function configure(consumer: Consumer) { return consumer.apply(1); }',
+    'export function chained() { return makeRepo().save(1); }',
+    'export async function awaited() { const store = await loadStore(); return store.find("a"); }',
+    'export class Holder {',
+    '  repo(): UserRepo { return makeRepo(); }',
+    '  fluent() { return this.repo().find("x"); }',
+    '}',
+    '',
+  ].join('\n'),
+  'app/factory.py': [
+    'from app.models import Store',
+    '',
+    'def make_store() -> Store:',
+    '    return Store()',
+    '',
+    'def via_return(x):',
+    '    store = make_store()',
+    '    return store.save(x)',
+    '',
+  ].join('\n'),
+  'src/main/java/app/Books.java': [
+    'package app;',
+    'public class Books {',
+    '  Journal journal() { return new Journal(); }',
+    '  void write(Object o) { journal().save(o); }',
+    '}',
+    '',
+  ].join('\n'),
   'app/models.py': 'class Repo:\n    def save(self, x):\n        return x\n\nclass Store:\n    def save(self, x):\n        return x\n',
   'app/service.py': [
     'from app.models import Repo, Store',
@@ -102,6 +138,24 @@ describe('receivers with a declared type', () => {
   it('Python: self.x assigned a typed parameter, and a local made by a constructor call', () => {
     expect(calls.persist_py).toEqual(['app/models.py::save']);
     expect(calls.keep).toEqual(['app/models.py::Store', 'app/models.py::save']);
+  });
+
+  it('TypeScript: a method an interface declares', () => {
+    expect(calls.configure).toEqual(['src/consumer.ts::apply']);
+  });
+
+  it('TypeScript: a receiver that a call returns, awaited, and through this', () => {
+    expect(calls.chained).toEqual(['src/factory.ts::makeRepo', 'src/user-repo.ts::save']);
+    expect(calls.awaited).toEqual(['src/factory.ts::loadStore', 'src/order-store.ts::find']);
+    expect(calls.fluent).toEqual(['src/base-repo.ts::find', 'src/factory.ts::repo']);
+  });
+
+  it('Python: a local that a function returns', () => {
+    expect(calls.via_return).toEqual(['app/factory.py::make_store', 'app/models.py::save']);
+  });
+
+  it('Java: a receiver that a method of the class returns', () => {
+    expect(calls.write).toEqual(['src/main/java/app/Books.java::journal', 'src/main/java/app/Journal.java::save']);
   });
 
   it('Java: a field and a typed parameter', () => {

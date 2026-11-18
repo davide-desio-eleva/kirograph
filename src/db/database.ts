@@ -15,7 +15,7 @@ import { BusyRetryDatabase, dbLockTiming, liveDbWriters } from './db-lock';
 /** Languages whose references infra.ts resolves by exact qualified name. */
 const INFRA_LANGUAGES = "('hcl', 'yaml', 'json', 'bash')";
 
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
 
 /** Parameters per multi-row statement. SQLite allows more; a smaller statement is cheaper to parse. */
 const MAX_PARAMS_PER_STATEMENT = 1000;
@@ -189,6 +189,12 @@ export class GraphDatabase {
     const versionRow = this.db.get('SELECT version FROM schema_versions ORDER BY version DESC LIMIT 1');
     const currentVersion = versionRow ? versionRow.version : 0;
 
+    if (currentVersion < 5) {
+      // Migration 5: the declared return type of functions and methods, which call resolution reads
+      // to type a receiver that a call returns (`getRepo().save()`). Filled by the next index.
+      try { this.db.run('ALTER TABLE nodes ADD COLUMN return_type TEXT'); } catch { /* already exists */ }
+      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [5, Date.now()]);
+    }
     if (currentVersion < 4) {
       // Migration 4: edges had no unique key, so INSERT OR IGNORE ignored nothing and every pass
       // that adds the same edge (the security analysis adds declared_in, depends_on and
@@ -339,8 +345,8 @@ export class GraphDatabase {
        is_exported, is_async, is_static, is_abstract,
        decorators, type_parameters, updated_at,
        complexity_cyclomatic, complexity_cognitive, complexity_halstead,
-       maintainability_index, nesting_depth)`;
-  private static readonly NODE_ROW = '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)';
+       maintainability_index, nesting_depth, return_type)`;
+  private static readonly NODE_ROW = '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)';
 
   private nodeParams(node: Node): unknown[] {
     return [
@@ -355,6 +361,7 @@ export class GraphDatabase {
       node.complexityCyclomatic ?? null, node.complexityCognitive ?? null,
       node.complexityHalstead ?? null, node.maintainabilityIndex ?? null,
       node.nestingDepth ?? null,
+      node.returnType ?? null,
     ];
   }
 

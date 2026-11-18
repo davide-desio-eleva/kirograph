@@ -75,13 +75,13 @@ export class ReferenceResolver {
       ? rawDb.all(
         `SELECT id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column,
                 end_column, signature, visibility, is_exported, is_async, is_static, is_abstract,
-                decorators, type_parameters, updated_at FROM nodes`)
-      : rawDb.all('SELECT id, kind, name, qualified_name, file_path, language, start_line FROM nodes');
+                decorators, type_parameters, return_type, updated_at FROM nodes`)
+      : rawDb.all('SELECT id, kind, name, qualified_name, file_path, language, start_line, return_type FROM nodes');
 
     for (const row of rows) {
       const node: Node = full
         ? this._rowToNode(row)
-        : { id: row.id, kind: row.kind, name: row.name, qualifiedName: row.qualified_name, filePath: row.file_path, language: row.language, startLine: row.start_line } as Node;
+        : { id: row.id, kind: row.kind, name: row.name, qualifiedName: row.qualified_name, filePath: row.file_path, language: row.language, startLine: row.start_line, returnType: row.return_type ?? undefined } as Node;
 
       // nameCache
       const nameList = this.nameCache.get(node.name) ?? [];
@@ -256,7 +256,7 @@ export class ReferenceResolver {
               const dot = refName.lastIndexOf('.');
               const name = dot > 0 ? refName.slice(dot + 1) : refName;
               const receiver: string | undefined = meta?.receiver ?? (dot > 0 ? refName.slice(0, dot) : undefined);
-              const call = { name, receiver, receiverType: meta?.receiverType as string | undefined, sourceId, filePath };
+              const call = { name, receiver, receiverType: meta?.receiverType as string | undefined, receiverCall: meta?.receiverCall, sourceId, filePath };
               attemptedStrategies.push(receiver !== undefined ? 'method' : 'exact');
               targetId = resolveCall(call, calls)?.id ?? null;
 
@@ -748,6 +748,7 @@ export class ReferenceResolver {
       isAbstract: row.is_abstract === 1,
       decorators: row.decorators ? JSON.parse(row.decorators) : undefined,
       typeParameters: row.type_parameters ? JSON.parse(row.type_parameters) : undefined,
+      returnType: row.return_type ?? undefined,
       updatedAt: row.updated_at,
     };
   }

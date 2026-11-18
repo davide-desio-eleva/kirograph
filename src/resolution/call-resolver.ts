@@ -22,6 +22,8 @@ export interface CallRef {
   receiver?: string;
   /** The receiver's declared type, when the code says it (see extraction/receiver-types). */
   receiverType?: string;
+  /** The call the receiver is the value of (`getRepo()` in `getRepo().save()`): typed by its return type. */
+  receiverCall?: { name: string; receiver?: string; receiverType?: string; receiverCall?: CallRef['receiverCall'] };
   sourceId: string;
   filePath: string;
 }
@@ -167,6 +169,11 @@ function memberOf(typeIds: string[], candidates: Node[], ctx: CallContext): Node
 }
 
 export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
+  // A receiver that a call returns: the declared return type of the function that call reaches
+  if (ref.receiverType === undefined && ref.receiverCall) {
+    const producer = resolveCall({ ...ref.receiverCall, sourceId: ref.sourceId, filePath: ref.filePath }, ctx);
+    if (producer?.returnType) ref = { ...ref, receiverType: producer.returnType };
+  }
   const source = ctx.node(ref.sourceId);
   const language = source?.language;
   // Code that is not a test never calls into a test: a stub or a fixture of the name is not it
