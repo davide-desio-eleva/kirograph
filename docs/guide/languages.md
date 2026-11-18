@@ -7,7 +7,7 @@ For each language, what the graph holds:
 - **Calls**: call edges, resolved to the function they call (see [How it works](how-it-works.md)); a call into a library stays unresolved.
 - **Imports**: import edges to the project's files; an import of a library resolves to nothing.
 - **Supertypes**: `extends` / `implements` edges.
-- **Typed receivers**: a call on a receiver whose type the code declares (a typed parameter, a field, a local made by a constructor, a declared return type) reaches the method of that type or its supertypes.
+- **Typed receivers**: a call on a receiver whose type the code gives (a typed parameter, a field, a local made by a constructor, a declared return type, or the one type a function's `return`s give) reaches the method of that type or its supertypes.
 
 ## General-purpose
 
@@ -28,7 +28,7 @@ For each language, what the graph holds:
 | Swift | `.swift` | ✓ | ✓ | ✓ Swift package targets | ✓ | ✓ |
 | Dart | `.dart` | ✓ | ✓ | ✓ `package:` and relative | ✓ | ✓ |
 | PHP | `.php` | ✓ | ✓ | ✓ PSR-4 | ✓ | ✓ |
-| Ruby | `.rb` | ✓ | ✓ | ✓ `require`, `require_relative` | ✓ `<`, `include` | — |
+| Ruby | `.rb` | ✓ | ✓ | ✓ `require`, `require_relative` | ✓ `<`, `include` | ✓ `Foo.new` |
 | Lua | `.lua` | ✓ | ✓ | ✓ `require` | — | — |
 | Elixir | `.ex`, `.exs` | ✓ | ✓ | ✓ by module | — | — |
 | OCaml | `.ml`, `.mli` | ✓ | ✓ | ✓ `open` | — | — |

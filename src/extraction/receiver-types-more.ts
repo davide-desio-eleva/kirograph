@@ -10,8 +10,8 @@
 import type { Language } from '../types';
 import { typeName } from './receiver-types';
 
-type Lang = 'csharp' | 'kotlin' | 'swift' | 'go' | 'rust' | 'dart' | 'php';
-const LANGS = new Set<string>(['csharp', 'kotlin', 'swift', 'go', 'rust', 'dart', 'php']);
+type Lang = 'csharp' | 'kotlin' | 'swift' | 'go' | 'rust' | 'dart' | 'php' | 'ruby';
+const LANGS = new Set<string>(['csharp', 'kotlin', 'swift', 'go', 'rust', 'dart', 'php', 'ruby']);
 
 const text = (n: any, s: string): string => s.slice(n.startIndex, n.endIndex);
 const kids = (n: any, type: string): any[] => (n?.namedChildren ?? []).filter((c: any) => c.type === type);
@@ -27,6 +27,7 @@ const SCOPES: Record<Lang, Set<string>> = {
   rust: new Set(['function_item', 'closure_expression']),
   dart: new Set(['function_body', 'function_expression']),
   php: new Set(['method_declaration', 'function_definition', 'anonymous_function', 'arrow_function', 'anonymous_function_creation_expression']),
+  ruby: new Set(['method', 'singleton_method', 'block', 'do_block', 'lambda']),
 };
 const CLASSES: Record<Lang, Set<string>> = {
   csharp: new Set(['class_declaration', 'struct_declaration', 'record_declaration']),
@@ -36,6 +37,7 @@ const CLASSES: Record<Lang, Set<string>> = {
   rust: new Set(['impl_item']),
   dart: new Set(['class_definition']),
   php: new Set(['class_declaration', 'trait_declaration']),
+  ruby: new Set(['class', 'module', 'singleton_class']),
 };
 /** Languages where a field is named without `this` inside its class. */
 const IMPLICIT_SELF = new Set<Lang>(['csharp', 'kotlin', 'swift', 'dart']);
@@ -85,6 +87,21 @@ function constructed(v: any, s: string, lang: Lang): string | undefined {
         return m ? m[1] : undefined;
       }
       return undefined;
+    }
+    case 'ruby': {
+      // Ledger.new(…), Mod::Ledger.new
+      if (v.type !== 'call') return undefined;
+      const method = v.childForFieldName('method');
+      const recv = v.childForFieldName('receiver');
+      if (!method || text(method, s) !== 'new' || !recv || (recv.type !== 'constant' && recv.type !== 'scope_resolution')) return undefined;
+      const cls = recv.type === 'scope_resolution' ? recv.childForFieldName('name') : recv;
+      // Class.new(Base): an anonymous subclass of Base
+      if (text(cls, s) === 'Class') {
+        const parent = v.childForFieldName('arguments')?.namedChild(0);
+        if (parent?.type !== 'constant' && parent?.type !== 'scope_resolution') return undefined;
+        return typeOf(parent.type === 'scope_resolution' ? parent.childForFieldName('name') : parent, s);
+      }
+      return typeOf(cls, s);
     }
     case 'dart':
       return undefined;
@@ -200,6 +217,12 @@ function locals(scope: any, s: string, lang: Lang): Map<string, string> {
           if (left?.type === 'variable_name') set(left, constructed(n.childForFieldName('right'), s, lang));
         }
         break;
+      case 'ruby':
+        if (n.type === 'assignment') {
+          const left = n.childForFieldName('left');
+          if (left?.type === 'identifier') set(left, constructed(n.childForFieldName('right'), s, lang));
+        }
+        break;
     }
   });
   return out;
@@ -275,6 +298,22 @@ function fields(cls: any, s: string, lang: Lang, root: any): Map<string, string>
         }
       }
       break;
+    case 'ruby': {
+      // @cache = Cache.new in any method of the class
+      const visit = (n: any) => {
+        for (const c of n.namedChildren ?? []) {
+          if (CLASSES[lang].has(c.type)) continue;
+          if (c.type === 'assignment' && c.childForFieldName('left')?.type === 'instance_variable') {
+            const name = text(c.childForFieldName('left'), s).replace(/^@/, '');
+            const ty = constructed(c.childForFieldName('right'), s, lang);
+            if (ty && !out.has(name)) out.set(name, ty);
+          }
+          visit(c);
+        }
+      };
+      visit(cls.childForFieldName('body') ?? cls);
+      break;
+    }
     case 'rust': case 'go': {
       // The struct declared in the file: `impl S` (Rust), the method's receiver type (Go)
       const name = lang === 'rust' ? typeOf(cls.childForFieldName('type'), s) : cls;
@@ -300,6 +339,33 @@ function fields(cls: any, s: string, lang: Lang, root: any): Map<string, string>
   return out;
 }
 
+/** Ruby: the class a method returns, by its last expression or its `return`s (`Ledger.new`). */
+export function rubyReturnType(node: any, s: string): string | undefined {
+  if (node.type !== 'method' && node.type !== 'singleton_method') return undefined;
+  const body = node.childForFieldName('body');
+  const values: any[] = [];
+  const last = body?.lastNamedChild;
+  if (last && last.type !== 'return') values.push(last);
+  eachIn(body, 'ruby', n => { if (n.type === 'return') { const v = n.namedChild(0)?.namedChild?.(0) ?? n.namedChild(0); if (v) values.push(v); } });
+  const types = new Set(values.map(v => constructed(v, s, 'ruby')));
+  if (types.size !== 1) return undefined;
+  return [...types][0];
+}
+
+/** Ruby: whether a bare name is a parameter or a local of the scope (not a method called without parentheses). */
+export function rubyIsLocal(call: any, name: string, s: string): boolean {
+  for (let scope = enclosing(call, SCOPES.ruby); scope; scope = enclosing(scope, SCOPES.ruby)) {
+    const ps = scope.childForFieldName('parameters') ?? kid(scope, 'block_parameters');
+    if (ps && ps.namedChildren.some((p: any) => text(p.type === 'identifier' ? p : (p.childForFieldName('name') ?? p), s) === name)) return true;
+    let found = false;
+    eachIn(scope.childForFieldName('body') ?? scope, 'ruby', n => {
+      if (n.type === 'assignment' && n.childForFieldName('left')?.type === 'identifier' && text(n.childForFieldName('left'), s) === name) found = true;
+    });
+    if (found) return true;
+  }
+  return false;
+}
+
 /** The declared type of a call's receiver, or undefined when the code does not say it. */
 export function moreReceiverType(call: any, receiver: string, s: string, language: Language): string | undefined {
   if (!LANGS.has(language)) return undefined;
@@ -307,8 +373,13 @@ export function moreReceiverType(call: any, receiver: string, s: string, languag
   const r = receiver.replace(/[!?]+$/, '').replace(/^\$/, '').trim();
   const root = (() => { let n = call; while (n.parent) n = n.parent; return n; })();
 
-  // this.x / self.x / $this->x (PHP's receiver comes as `this->x`)
-  const member = /^(?:this|self)(?:\.|->)(\w+)$/.exec(r);
+  // Ruby: Store.new.put(), @cache.get()
+  if (lang === 'ruby') {
+    const created = /^([A-Z][\w:]*)\.new(?:\([^()]*\))?$/.exec(r);
+    if (created) return typeName(created[1].split('::').pop()!);
+  }
+  // this.x / self.x / $this->x (PHP's receiver comes as `this->x`), Ruby's @x
+  const member = /^(?:this|self)(?:\.|->)(\w+)$/.exec(r) ?? (lang === 'ruby' ? /^@(\w+)$/.exec(r) : null);
   if (member) {
     const cls = enclosing(call, CLASSES[lang]);
     if (cls) return fields(cls, s, lang, root).get(member[1]);

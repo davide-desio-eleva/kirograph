@@ -26,6 +26,8 @@ export interface CallRef {
   receiverCall?: { name: string; receiver?: string; receiverType?: string; receiverCall?: CallRef['receiverCall'] };
   sourceId: string;
   filePath: string;
+  /** The line of the call. */
+  line?: number;
 }
 
 export interface CallContext {
@@ -35,6 +37,10 @@ export interface CallContext {
   importedFiles(filePath: string): Set<string> | undefined;
   /** The class, struct, module or namespace a node is declared in. */
   owner(id: string): { id: string; name: string; kind: string } | undefined;
+  /** The innermost type (class, struct, …) declared around a line of a file. */
+  typeAt?(filePath: string, line: number): { id: string; name: string; kind: string } | undefined;
+  /** The node that contains a node (a variable's function, a method's class). */
+  container?(id: string): string | undefined;
   /** The types a type extends or implements (resolved edges). */
   supertypes(id: string): string[];
   /**
@@ -175,10 +181,35 @@ function memberOf(typeIds: string[], candidates: Node[], ctx: CallContext): Node
   return null;
 }
 
+/** Ruby: the gem a file belongs to, the path before its lib/, test/ or spec/ directory. */
+function gemRoot(filePath: string): string {
+  const m = /^(.*?)(?:^|\/)(?:lib|test|spec)\//.exec(filePath);
+  return m ? m[1] : '';
+}
+
+/**
+ * The type a call is made from: the class of the method that makes it, or the class itself when the
+ * class's own node holds the call (a type's node collects the calls of everything it contains).
+ */
+function callerTypeOf(ref: CallRef, ctx: CallContext): { id: string; name: string; kind: string } | undefined {
+  // A local variable that holds the call: the type of the function it is declared in
+  for (let id: string | undefined = ref.sourceId, depth = 0; id && depth < 8; id = ctx.container?.(id), depth++) {
+    const node = ctx.node(id);
+    // A type's node also holds the calls of the types nested in it: the innermost one around the call
+    if (node && TYPE_KINDS.has(node.kind)) {
+      return (ref.line !== undefined ? ctx.typeAt?.(ref.filePath, ref.line) : undefined) ?? { id: node.id, name: node.name, kind: node.kind };
+    }
+    const owner = ctx.owner(id);
+    if (owner) return owner;
+    if (!ctx.container) return undefined;
+  }
+  return undefined;
+}
+
 export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
   // A receiver that a call returns: the declared return type of the function that call reaches
   if (ref.receiverType === undefined && ref.receiverCall) {
-    const producer = resolveCall({ ...ref.receiverCall, sourceId: ref.sourceId, filePath: ref.filePath }, ctx);
+    const producer = resolveCall({ ...ref.receiverCall, sourceId: ref.sourceId, filePath: ref.filePath, line: ref.line }, ctx);
     if (producer?.returnType) ref = { ...ref, receiverType: producer.returnType };
   }
   const source = ctx.node(ref.sourceId);
@@ -193,6 +224,12 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
   const inImported = (nodes: Node[]) => (imported ? nodes.filter(n => imported.has(n.filePath)) : []);
 
   // A receiver whose type the code declares: the method of that type, or of its supertypes
+  // Ruby: `Sinatra.new(…)` on a module is a method of it, not an instance: the receiver is untyped
+  if (ref.receiverType !== undefined && language === 'ruby' &&
+      ctx.byName(ref.receiverType).some(n => n.language === 'ruby' && n.kind === 'module') &&
+      !ctx.byName(ref.receiverType).some(n => n.language === 'ruby' && n.kind === 'class')) {
+    ref = { ...ref, receiverType: undefined };
+  }
   if (ref.receiverType !== undefined) {
     const types = ctx.byName(ref.receiverType).filter(n => TYPE_KINDS.has(n.kind) &&
       isCallTarget(n, language) && (fromTest || !isTestPath(n.filePath)));
@@ -200,14 +237,18 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
     if (types.length === 0) return null;
     const local = sameFile(types);
     const fromImports = inImported(types);
-    const pool = local.length > 0 ? local : fromImports.length > 0 ? fromImports : types;
+    // Ruby names a type without importing it: one of another gem of the repository (rack-protection's
+    // `Request` is Rack's, not Sinatra's) is not the one meant
+    const project = language === 'ruby' ? types.filter(n => gemRoot(n.filePath) === gemRoot(ref.filePath)) : types;
+    const pool = local.length > 0 ? local : fromImports.length > 0 ? fromImports : project;
+    if (pool.length === 0) return null;
     return memberOf(pool.map(n => n.id), candidates, ctx);
   }
 
   // A call on `super`: the member the caller's supertypes have, never the caller's own override
   // (`super.supportsInterface()` inside supportsInterface); a library parent's: nothing
   if (ref.receiver !== undefined && /^(super|super\(\)|parent|base)$/.test(ref.receiver.trim())) {
-    const callerType = ctx.owner(ref.sourceId);
+    const callerType = callerTypeOf(ref, ctx);
     if (!callerType || !TYPE_KINDS.has(callerType.kind)) return null;
     return memberOf(ctx.supertypes(callerType.id), candidates, ctx);
   }
@@ -215,7 +256,7 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
   // A call on `this` / `self`: a member of the caller's own type, or the one member of the name
   if (ref.receiver !== undefined && SELF_RECEIVERS.test(ref.receiver.trim())) {
     // The caller's class and its supertypes
-    const callerType = ctx.owner(ref.sourceId);
+    const callerType = callerTypeOf(ref, ctx);
     if (callerType && TYPE_KINDS.has(callerType.kind)) {
       const inherited = memberOf([callerType.id], candidates, ctx);
       if (inherited) return inherited;
@@ -223,7 +264,7 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
     const members = candidates.filter(n => isMember(n, ctx));
     const own = sameFile(members);
     if (own.length > 0) {
-      const owner = ctx.owner(ref.sourceId)?.name;
+      const owner = callerTypeOf(ref, ctx)?.name;
       const ofOwner = owner ? own.filter(n => ctx.owner(n.id)?.name === owner) : [];
       return first(ofOwner.length > 0 ? ofOwner : own);
     }
@@ -253,7 +294,7 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
   // A bare call where a bare name can be `this`'s: a member of the caller's class or of what it
   // inherits first (`_mint()` in a contract that extends ERC20)
   if (language !== undefined && IMPLICIT_SELF.has(language)) {
-    const callerType = ctx.owner(ref.sourceId);
+    const callerType = callerTypeOf(ref, ctx);
     if (callerType && TYPE_KINDS.has(callerType.kind)) {
       const inherited = memberOf([callerType.id], candidates, ctx);
       if (inherited) return inherited;

@@ -275,7 +275,7 @@ export class ReferenceResolver {
               const dot = refName.lastIndexOf('.');
               const name = dot > 0 ? refName.slice(dot + 1) : refName;
               const receiver: string | undefined = meta?.receiver ?? (dot > 0 ? refName.slice(0, dot) : undefined);
-              const call = { name, receiver, receiverType: meta?.receiverType as string | undefined, receiverCall: meta?.receiverCall, sourceId, filePath };
+              const call = { name, receiver, receiverType: meta?.receiverType as string | undefined, receiverCall: meta?.receiverCall, sourceId, filePath, line: line ?? undefined };
               attemptedStrategies.push(receiver !== undefined ? 'method' : 'exact');
               targetId = resolveCall(call, calls)?.id ?? null;
 
@@ -833,6 +833,8 @@ export class ReferenceResolver {
       JOIN nodes s ON s.id = e.source JOIN nodes t ON t.id = e.target
       WHERE e.kind = 'imports'`) as any[]) add(r.f, r.t);
     let owners: Map<string, { id: string; name: string; kind: string }> | null = null;
+    let containers: Map<string, string> | null = null;
+    const typesByFile = new Map<string, Array<{ id: string; name: string; kind: string; start: number; end: number }>>();
     const supers = new Map<string, string[]>();
     const addSuper = (id: string, s: string) => {
       const list = supers.get(id);
@@ -878,6 +880,24 @@ export class ReferenceResolver {
           }
         }
         return owners.get(id);
+      },
+      typeAt: (filePath, line) => {
+        let types = typesByFile.get(filePath);
+        if (!types) {
+          types = (rawDb.all(`SELECT id, name, kind, start_line AS start, end_line AS end FROM nodes WHERE file_path = ? AND kind IN
+            ('class', 'struct', 'interface', 'trait', 'protocol', 'module', 'enum', 'component')`, [filePath]) as any[]);
+          typesByFile.set(filePath, types);
+        }
+        let best: { id: string; name: string; kind: string; start: number; end: number } | undefined;
+        for (const t of types) if (t.start <= line && line <= t.end && (!best || t.end - t.start < best.end - best.start)) best = t;
+        return best && { id: best.id, name: best.name, kind: best.kind };
+      },
+      container: id => {
+        if (!containers) {
+          containers = new Map();
+          for (const r of rawDb.all(`SELECT source, target FROM edges WHERE kind = 'contains'`) as any[]) containers.set(r.target, r.source);
+        }
+        return containers.get(id);
       },
       supertypes: id => supers.get(id) ?? [],
       cVisible: (filePath, candidate) => {

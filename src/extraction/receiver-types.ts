@@ -108,9 +108,18 @@ function constructed(value: any, source: string, family: Family): string | undef
   }
   if (family === 'python' && value.type === 'call') {
     const fn = value.childForFieldName('function');
+    // cls(…), self.__class__(…), type(self)(…): the enclosing class
+    if (fn && /^(cls|self\.__class__|type\(self\)|type\(cls\))$/.test(text(fn, source).replace(/\s+/g, ''))) return ownClassName(value, source, family);
     if (fn && (fn.type === 'identifier' || fn.type === 'attribute')) return typeName(text(fn, source));
   }
   return undefined;
+}
+
+/** The name of the class a node is in. */
+function ownClassName(node: any, source: string, family: Family): string | undefined {
+  const cls = enclosing(node, CLASSES[family]);
+  const name = cls?.childForFieldName('name');
+  return name ? typeName(text(name, source)) : undefined;
 }
 
 /** Parameters with a declared type: name → type. */
@@ -398,6 +407,11 @@ export function receiverInfo(call: any, receiver: string, source: string, langua
 export function declaredReturnType(node: any, source: string, language: Language): string | undefined {
   const family = FAMILY[language];
   if (!family) return undefined;
+  if (source !== cacheSource) {
+    cacheSource = source;
+    scopeCache.clear();
+    classCache.clear();
+  }
   let fn = node;
   if (family === 'js' && (node.type === 'lexical_declaration' || node.type === 'variable_declaration')) {
     const value = node.namedChildren.find((c: any) => c.type === 'variable_declarator')?.childForFieldName('value');
@@ -405,8 +419,46 @@ export function declaredReturnType(node: any, source: string, language: Language
     fn = value;
   }
   const type = family === 'java' ? fn.childForFieldName('type') : fn.childForFieldName('return_type');
-  if (!type) return undefined;
+  if (!type) return family === 'java' ? undefined : inferredReturnType(fn, source, family);
   const raw = text(type, source).replace(/^:\s*/, '').trim();
   const awaited = /^Promise\s*<(.*)>$/.exec(raw);
   return typeName(awaited ? awaited[1] : raw);
+}
+
+/**
+ * The class a function that declares no return type returns, when every `return` says the same:
+ * a constructor (`new X()`, `X()`), `this` / `self`, `cls()` / `self.__class__()`, or a local whose
+ * type is known (`obj = Query(); …; return obj`). `return None` and a bare `return` do not count.
+ * An arrow function's expression body is its return.
+ */
+function inferredReturnType(fn: any, source: string, family: Family): string | undefined {
+  const body = fn.childForFieldName('body');
+  if (!body) return undefined;
+  const values: any[] = [];
+  if (family === 'js' && fn.type === 'arrow_function' && body.type !== 'statement_block') values.push(body);
+  else {
+    const visit = (n: any) => {
+      for (const c of n.namedChildren) {
+        if (SCOPES[family].has(c.type) || CLASSES[family].has(c.type)) continue;
+        if (c.type === 'return_statement') { const v = c.namedChild(0); if (v) values.push(v); continue; }
+        visit(c);
+      }
+    };
+    visit(body);
+  }
+  const types = new Set<string>();
+  for (let v of values) {
+    if (v.type === 'await_expression') v = v.namedChild(0);
+    if (v.type === 'parenthesized_expression') v = v.namedChild(0);
+    if (!v || v.type === 'none' || v.type === 'null' || v.type === 'undefined') continue;
+    let t: string | undefined;
+    if (v.type === 'this' || (family === 'python' && v.type === 'identifier' && text(v, source) === 'self')) t = ownClassName(v, source, family);
+    else if (v.type === 'identifier') {
+      const k = declarations(fn, source, family).get(text(v, source));
+      t = k && 'type' in k ? k.type : undefined;
+    } else t = constructed(v, source, family);
+    if (!t) return undefined;
+    types.add(t);
+  }
+  return types.size === 1 ? [...types][0] : undefined;
 }

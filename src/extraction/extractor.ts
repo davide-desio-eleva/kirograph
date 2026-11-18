@@ -15,7 +15,7 @@ import { extractSql } from './sql';
 import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
 import { receiverInfo, declaredReturnType, calleeOf, memberObject } from './receiver-types';
 import { LANG_SPECS } from './lang-specs';
-import { moreReceiverType } from './receiver-types-more';
+import { moreReceiverType, rubyReturnType, rubyIsLocal } from './receiver-types-more';
 import { extractHcl, extractYaml, extractHelmTemplate, augmentBash, extractJsonConfig } from './infra';
 
 export interface UnresolvedRef {
@@ -784,7 +784,7 @@ function walkTree(
         updatedAt: now,
       };
       if (kind === 'function' || kind === 'method' || kind === 'constant' || kind === 'variable') {
-        const returnType = declaredReturnType(node, source, language);
+        const returnType = declaredReturnType(node, source, language) ?? (language === 'ruby' ? rubyReturnType(node, source) : undefined);
         if (returnType) graphNode.returnType = returnType;
       }
       nodes.push(graphNode);
@@ -1627,6 +1627,10 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
         const type = info.type ?? moreReceiverType(node, receiver, source, language);
         if (type) metadata.receiverType = type;
         if (info.call) metadata.receiverCall = info.call;
+        // Ruby: `make_ledger.add` calls make_ledger (no parentheses) when it is no local: the receiver is its result
+        else if (!type && language === 'ruby' && /^[a-z_]\w*[?!]?$/.test(receiver) && !rubyIsLocal(node, receiver, source)) {
+          metadata.receiverCall = { name: receiver };
+        }
       }
       if (JS_TS_LANGUAGES.has(language)) {
         const argKind = classifyFirstArgument(node, source);

@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.6.1] - Unreleased: calls on receivers whose type the code does not write down
+
+Compared with 1.6.0, call edges: django 180,265 → 183,769, nest 23,190 → 24,229, commons-lang 53,033 → 53,362, OpenZeppelin 8,452 → 9,280, Slim 2,822 → 3,010, sinatra 2,138 → 2,214. Some edges change target: they were wrong (a class's call reached the first method of the name in its file, not its own override).
+
+### Fixed
+
+- **A receiver's type is inferred when the code does not declare it** ([#116](https://github.com/davide-desio-eleva/kirograph/issues/116)): a Python, JavaScript or TypeScript function without a return type returns the type of what it returns, when every `return` gives the same one (`return Query()`, `return self`, a local made by a constructor), and so does an arrow function's expression body; `make_query().clone().filter()` follows each step. In Python, `cls()`, `self.__class__()` and `type(self)()` are the own class.
+- **Ruby receivers are typed**: a local or an instance variable assigned `Foo.new` (`@cache = Cache.new` in any method of the class), `Foo.new.bar`, and a method whose last expression or `return` is a `Foo.new` (`make_ledger.add`, a call without parentheses); `Class.new(Base)` is a `Base`. A `Foo.new` on a module (Sinatra's `Sinatra.new(…)`) is a method of it, so the receiver stays untyped. A type named in another gem of the repository (rack-protection's `Request`, which is Rack's) is not the one meant: without an import to say otherwise, a type is taken from the caller's gem (the path before `lib/`, `test/` or `spec/`).
+- **A class's calls resolve as its methods' do**: a class node also holds the calls of everything it contains, and these were resolved as if made from outside the class (`self.has_delete_permission()` in `InlineModelAdmin` reached `BaseModelAdmin`'s, the first of the name in the file); a call is now made from the innermost class around it, nested classes included (`stream()` in commons-lang's `Streams.FailableStream` is its own, not the outer `Streams.stream()`), and a call a local variable holds (`can_delete = self.has_delete_permission(…)`) from the class of the function the variable is in.
+
 ## [1.6.0] - 2026-11-18: SQLite in WAL mode, every grammar built from a pinned source, 43 languages extracted and their calls resolved to the right function
 
 Compared with 1.5.4 on 32 open-source projects, one per language (django, fastify, nest, commons-lang, okio, gin, ripgrep, fmt, Slim, Alamofire, OpenZeppelin, and others): in a sample of 50 random call edges checked against the code, 26 were right in 1.5.4 and 49 are in 1.6.0; thirteen languages that gave no symbols, or almost none, are extracted (Haskell, Liquid, Perl, PowerShell, R, Julia, Nix, Pascal, Verilog, Astro, Vue, OCaml, C / C++); imports resolve to project files in every language; supertypes are in the graph for every language that has them; and a full index is faster on all 32 projects (django 44.8 s → 33.4 s). Fewer calls resolve where 1.5.4 guessed (django 347,258 → 181,194): those guesses were wrong about half of the time.
