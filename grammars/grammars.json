@@ -97,16 +97,15 @@
       }
     },
     "elm": {
-      "prebuilt": true,
-      "from": "tree-sitter-wasms@0.1.13",
-      "source": "tree-sitter-elm@4.5.0",
-      "note": "its external scanner is C++, which tree-sitter-cli 0.25 does not compile to WASM",
+      "package": "@elm-tooling/tree-sitter-elm",
+      "version": "5.9.4",
+      "symbol": "elm",
       "fingerprint": {
-        "abi": 12,
-        "states": 82832,
-        "kinds": 218,
-        "fields": 163216,
-        "hash": "33196ccdbbdfb0b0"
+        "abi": 15,
+        "states": 1060,
+        "kinds": 203,
+        "fields": 35,
+        "hash": "f4548bc1759744df"
       }
     },
     "gdscript": {
@@ -465,16 +464,15 @@
       }
     },
     "yaml": {
-      "prebuilt": true,
-      "from": "tree-sitter-wasms@0.1.13",
-      "source": "tree-sitter-yaml@0.5.0",
-      "note": "its external scanner is C++, which tree-sitter-cli 0.25 does not compile to WASM",
+      "package": "@tree-sitter-grammars/tree-sitter-yaml",
+      "version": "0.7.1",
+      "symbol": "yaml",
       "fingerprint": {
-        "abi": 13,
+        "abi": 14,
         "states": 1579,
-        "kinds": 293,
+        "kinds": 301,
         "fields": 2,
-        "hash": "6bebc79478149ea8"
+        "hash": "3d87eb5a28bd11a0"
       }
     },
     "zig": {

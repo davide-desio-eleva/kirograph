@@ -970,7 +970,8 @@ function extractName(node: any, source: string, _lang: Language, kind: NodeKind)
 
   // Standard: look for first named-identifier child
   // Covers: identifier, property_identifier, type_identifier (most languages),
-  //         simple_identifier (Kotlin, Swift), word (Bash), name (PHP), constant (Ruby class)
+  //         simple_identifier (Kotlin, Swift), word (Bash), name (PHP), constant (Ruby class),
+  //         lower_case_identifier / upper_case_identifier (Elm)
   for (let i = 0; i < node.childCount; i++) {
     const child = node.child(i);
     if (
@@ -980,7 +981,9 @@ function extractName(node: any, source: string, _lang: Language, kind: NodeKind)
       child.type === 'simple_identifier' ||
       child.type === 'word' ||
       child.type === 'name' ||
-      child.type === 'constant'
+      child.type === 'constant' ||
+      child.type === 'lower_case_identifier' || // Elm functions
+      child.type === 'upper_case_identifier'    // Elm type aliases
     ) {
       return source.slice(child.startIndex, child.endIndex);
     }

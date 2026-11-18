@@ -18,6 +18,14 @@ describe('tree-sitter grammars (#91)', () => {
     expect(files.filter(f => !listed.has(f))).toEqual([]);
   });
 
+  it('every grammar has an ABI the runtime loads (web-tree-sitter 0.25: 13 to 15)', () => {
+    // An ABI 12 grammar is refused at load time, and its language then yields no symbols (Elm did)
+    for (const [lang, spec] of Object.entries<any>(manifest.languages)) {
+      expect(spec.fingerprint.abi, lang).toBeGreaterThanOrEqual(13);
+      expect(spec.fingerprint.abi, lang).toBeLessThanOrEqual(15);
+    }
+  });
+
   it('pins every grammar that is not prebuilt to a version', () => {
     for (const [lang, spec] of Object.entries<any>(manifest.languages)) {
       if (spec.prebuilt) continue;
