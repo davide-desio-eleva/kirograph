@@ -605,6 +605,37 @@ const liquid: LangSpec = {
   },
 };
 
+// ── Elm ──────────────────────────────────────────────────────────────────────
+
+const elm: LangSpec = {
+  symbol(node, source) {
+    // A value declaration is the function (its left side has only the name and the parameters,
+    // its body is a sibling of that); a type alias stays to the generic rules
+    if (node.type === 'function_declaration_left') return null;
+    if (node.type !== 'value_declaration') return undefined;
+    const left = node.childForFieldName('functionDeclarationLeft') ?? named(node, 'function_declaration_left');
+    const id = left ? named(left, 'lower_case_identifier') : null;
+    return id ? { kind: 'function', name: text(id, source) } : null;
+  },
+  call(node, source) {
+    // helper 1, String.fromInt n
+    if (node.type !== 'function_call_expr') return undefined;
+    const target = node.childForFieldName('target');
+    const qid = target?.type === 'value_expr' ? target.childForFieldName('name') : null;
+    if (!qid) return null;
+    const ids = qid.namedChildren;
+    const last = ids[ids.length - 1];
+    if (last?.type !== 'lower_case_identifier') return null;
+    const mod = ids.slice(0, -1).map((c: any) => text(c, source)).join('.');
+    return { name: text(last, source), receiver: mod || undefined };
+  },
+  importOf(node, source) {
+    if (node.type !== 'import_clause') return undefined;
+    const mod = node.childForFieldName('moduleName');
+    return mod ? text(mod, source) : undefined;
+  },
+};
+
 // ── Solidity ─────────────────────────────────────────────────────────────────
 
 const solidity: LangSpec = {
@@ -617,7 +648,7 @@ const solidity: LangSpec = {
 };
 
 export const LANG_SPECS: Partial<Record<Language, LangSpec>> = {
-  solidity, haskell, liquid,
+  solidity, haskell, liquid, elm,
   r, perl, powershell, julia, nix, pascal, verilog, scss, php, objc, dart, go, ruby, lua,
   javascript: js, typescript: js, tsx: js, jsx: js,
 };

@@ -1,52 +1,71 @@
 # Supported Languages & Frameworks
 
+Every grammar is built from a source pinned in `grammars/grammars.json` (see [CONTRIBUTING](../../CONTRIBUTING.md#grammars)).
+For each language, what the graph holds:
+
+- **Symbols**: declarations (functions, methods, classes, types, modules, variables).
+- **Calls**: call edges, resolved to the function they call (see [How it works](how-it-works.md)); a call into a library stays unresolved.
+- **Imports**: import edges to the project's files; an import of a library resolves to nothing.
+- **Supertypes**: `extends` / `implements` edges.
+- **Typed receivers**: a call on a receiver whose type the code declares (a typed parameter, a field, a local made by a constructor, a declared return type) reaches the method of that type or its supertypes.
+
 ## General-purpose
 
-| Language | Extensions |
-|----------|-----------|
-| TypeScript | `.ts` |
-| JavaScript | `.js` |
-| TSX | `.tsx` |
-| JSX | `.jsx` |
-| Python | `.py` |
-| Go | `.go` |
-| Rust | `.rs` |
-| Java | `.java` |
-| C | `.c`, `.h` |
-| C++ | `.cpp`, `.cc`, `.cxx`, `.hpp` |
-| C# | `.cs` |
-| PHP | `.php` |
-| Ruby | `.rb` |
-| Swift | `.swift` |
-| Kotlin | `.kt` |
-| Dart | `.dart` |
-| Scala | `.scala`, `.sc`, `.sbt` |
-| Lua | `.lua` |
-| Zig | `.zig`, `.zon` |
-| Bash | `.sh`, `.bash`, `.zsh` |
-| OCaml | `.ml`, `.mli` |
-| Elm | `.elm` |
-| Objective-C | `.m` |
+| Language | Extensions | Symbols | Calls | Imports | Supertypes | Typed receivers |
+|----------|-----------|:-:|:-:|:-:|:-:|:-:|
+| TypeScript, TSX | `.ts`, `.tsx`, `.mts`, `.cts` | ✓ | ✓ | ✓ relative, tsconfig `paths`, workspace packages | ✓ | ✓ |
+| JavaScript, JSX | `.js`, `.jsx`, `.mjs`, `.cjs` | ✓ | ✓ | ✓ ES and CommonJS `require` | ✓ | ✓ |
+| Python | `.py` | ✓ | ✓ | ✓ modules, packages, re-exports | ✓ | ✓ |
+| Java | `.java` | ✓ | ✓ | ✓ by package | ✓ | ✓ |
+| Kotlin | `.kt`, `.kts` | ✓ | ✓ | ✓ by package | ✓ | ✓ |
+| Scala | `.scala`, `.sc`, `.sbt` | ✓ | ✓ | ✓ by package | ✓ | — |
+| C# | `.cs` | ✓ | ✓ | ✓ by namespace | ✓ | ✓ |
+| Go | `.go` | ✓ | ✓ | ✓ by `go.mod` module path | ✓ embedding | ✓ |
+| Rust | `.rs` | ✓ | ✓ | ✓ `crate::` / `super::` / workspace crates | ✓ `impl Trait for` | ✓ |
+| C | `.c`, `.h` | ✓ | ✓ through `#include` | ✓ | — | — |
+| C++ | `.cpp`, `.cc`, `.cxx`, `.hpp`, C++ `.h` | ✓ | ✓ through `#include` | ✓ | ✓ | — |
+| Objective-C | `.m`, `.mm`, Objective-C `.h` | ✓ | ✓ messages | ✓ | ✓ | — |
+| Swift | `.swift` | ✓ | ✓ | ✓ Swift package targets | ✓ | ✓ |
+| Dart | `.dart` | ✓ | ✓ | ✓ `package:` and relative | ✓ | ✓ |
+| PHP | `.php` | ✓ | ✓ | ✓ PSR-4 | ✓ | ✓ |
+| Ruby | `.rb` | ✓ | ✓ | ✓ `require`, `require_relative` | ✓ `<`, `include` | — |
+| Lua | `.lua` | ✓ | ✓ | ✓ `require` | — | — |
+| Elixir | `.ex`, `.exs` | ✓ | ✓ | ✓ by module | — | — |
+| OCaml | `.ml`, `.mli` | ✓ | ✓ | ✓ `open` | — | — |
+| Haskell | `.hs`, `.lhs` | ✓ | ✓ | ✓ by module | — | — |
+| Elm | `.elm` | ✓ | ✓ | ✓ by module | — | — |
+| ReScript | `.res`, `.resi` | ✓ | ✓ | — | — | — |
+| Zig | `.zig`, `.zon` | ✓ | ✓ | — | — | — |
+| Bash | `.sh`, `.bash`, `.zsh` | ✓ | ✓ | ✓ `source` | — | — |
+| Perl | `.pl`, `.pm` | ✓ | ✓ | ✓ `use` | — | — |
+| PowerShell | `.ps1`, `.psm1`, `.psd1` | ✓ | ✓ commands | ✓ `Import-Module` | — | — |
+| R | `.r`, `.R` | ✓ | ✓ | ✓ `library()` | — | — |
+| Julia | `.jl` | ✓ | ✓ | ✓ `include()` | — | — |
+| Nix | `.nix` | ✓ `let` bindings and functions | ✓ | ✓ `import` | — | — |
+| Pascal / Delphi | `.pas`, `.dpr`, `.lpr` | ✓ | ✓ | ✓ `uses` | ✓ | — |
+| GDScript | `.gd` | ✓ | ✓ | — | — | — |
 
 ## Frontend & UI
 
-| Language | Extensions |
-|----------|-----------|
-| React / React Native | `.tsx`, `.jsx` (via TypeScript/JSX grammars) |
-| Next.js | `.tsx`, `.jsx` (via TypeScript/JSX grammars) |
-| Angular | `.ts`, `.html` (via TypeScript/HTML grammars) |
-| Svelte | `.svelte` |
-| Vue | `.vue` |
-| HTML | `.html`, `.htm` |
-| CSS | `.css` |
-| SCSS / Sass | `.scss`, `.sass` |
+| Language | Extensions | Extraction |
+|----------|-----------|-----------|
+| React / React Native / Next.js | `.tsx`, `.jsx` | TypeScript / JavaScript, with components and routes |
+| Angular | `.ts`, `.html` | TypeScript, with framework detection |
+| Vue | `.vue` | the `<script>` blocks, as TypeScript or JavaScript |
+| Svelte | `.svelte` | the `<script>` blocks, as TypeScript or JavaScript |
+| Astro | `.astro` | the frontmatter, as TypeScript |
+| HTML | `.html`, `.htm` | — |
+| CSS | `.css` | rules |
+| SCSS / Sass | `.scss`, `.sass` | top-level rules, mixins, functions, `$variables`; `@include` calls; `@use` / `@forward` / `@import` imports |
+| Liquid (Shopify) | `.liquid` | a template is a component; `assign` / `capture` variables; `render` / `include` / `section` imports |
 
 ## Domain-specific
 
-| Language | Domain | Extensions |
-|----------|--------|-----------|
-| Solidity | Blockchain / Web3 | `.sol` |
-| Elixir | Distributed systems / Real-time | `.ex`, `.exs` |
+| Language | Domain | Extensions | Extraction |
+|----------|--------|-----------|-----------|
+| Solidity | Blockchain / Web3 | `.sol` | contracts, libraries, functions, events, modifiers; calls (`super` to the parent); imports with remappings; `is` supertypes |
+| Verilog / SystemVerilog | Hardware | `.v`, `.sv`, `.svh` | modules, functions, tasks; a module instance is a use of its module |
+| SQL | Databases | `.sql` | tables, views, functions, from the text of each statement |
 
 ## Configuration & Infrastructure
 

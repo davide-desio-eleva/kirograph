@@ -8,6 +8,8 @@ import { isJsonConfigFile } from './json-config-files';
 export const EXTENSION_MAP: Record<string, Language> = {
   '.ts': 'typescript',
   '.tsx': 'tsx',
+  '.mts': 'typescript',
+  '.cts': 'typescript',
   '.js': 'javascript',
   '.jsx': 'jsx',
   '.mjs': 'javascript',
@@ -57,6 +59,7 @@ export const EXTENSION_MAP: Record<string, Language> = {
   '.sol': 'solidity',
   '.vue': 'vue',
   '.m': 'objc',
+  '.mm': 'objc',   // Objective-C++, read by the Objective-C grammar
   '.yaml': 'yaml',
   '.yml': 'yaml',
   '.tf': 'hcl',
@@ -142,7 +145,7 @@ export const GRAMMAR_MAP: Record<Language, string> = {
   jupyter: '',
   // ReScript
   rescript: 'tree-sitter-rescript',
-  // Languages with WASMs TBD — files tracked, symbol extraction pending WASM compilation
+  // Languages with grammars of their own (see grammars/grammars.json and extraction/lang-specs.ts)
   sql: 'tree-sitter-sql',
   r: 'tree-sitter-r',
   julia: 'tree-sitter-julia',

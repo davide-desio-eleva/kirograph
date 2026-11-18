@@ -23,6 +23,9 @@ describe('Elm', () => {
       const result = await extractFile(file, root);
       const symbols = (result?.nodes ?? []).map(n => `${n.kind} ${n.name}`).sort();
       expect(symbols).toEqual(['function main', 'function update', 'type_alias Model']);
+      // The calls of a function's body are its own
+      const calls = (result?.unresolvedRefs ?? []).filter(r => r.refKind === 'function').map(r => r.refName);
+      expect(calls).toEqual(['update']);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

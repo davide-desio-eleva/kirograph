@@ -62,7 +62,7 @@ export class ImportResolver {
 
   private static HANDLED = new Set(['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'vue', 'svelte', 'astro',
     'java', 'kt', 'kts', 'scala', 'sc', 'cs', 'go', 'rs', 'php', 'rb', 'dart', 'swift', 'pl', 'pm', 'pas', 'pp',
-    'dpr', 'lpr', 'ex', 'exs', 'lua', 'ml', 'mli', 'jl', 'sol', 'scss', 'sass', 'hs', 'lhs', 'liquid']);
+    'dpr', 'lpr', 'ex', 'exs', 'lua', 'ml', 'mli', 'jl', 'sol', 'scss', 'sass', 'hs', 'lhs', 'liquid', 'elm']);
 
   /** The project files an import names, from a file of a language. */
   resolve(spec: string, from: string, language: Lang): string[] {
@@ -90,6 +90,7 @@ export class ImportResolver {
       case 'julia': return spec.startsWith('./') ? this.relative(spec, from, ['jl']) : [];
       case 'solidity': return this.solidity(spec, from);
       case 'haskell': return this.suffix(spec.replace(/\./g, '/'), ['hs', 'lhs']);
+      case 'elm': return this.suffix(spec.replace(/\./g, '/'), ['elm']);
       // Shopify themes: {% render 'card' %} is snippets/card.liquid, {% section 'x' %} sections/x.liquid
       case 'liquid': return this.suffix(spec, ['liquid']).length > 0 ? this.suffix(spec, ['liquid']) : this.suffix(spec.replace(/^\w+\//, ''), ['liquid']);
       case 'scss': return this.scss(spec, from);
