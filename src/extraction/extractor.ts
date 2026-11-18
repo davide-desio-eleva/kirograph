@@ -13,7 +13,7 @@ import { initGrammars, getParser, hasWasmGrammar } from './grammars';
 import { extractNotebook } from './notebook';
 import { extractSql } from './sql';
 import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
-import { receiverInfo, declaredReturnType, calleeOf, memberObject, callsParameter } from './receiver-types';
+import { receiverInfo, declaredReturnType, calleeOf, memberObject, callsParameter, argumentTypes } from './receiver-types';
 import { LANG_SPECS } from './lang-specs';
 import { moreReceiverType, rubyReturnType, rubyIsLocal } from './receiver-types-more';
 import { extractHcl, extractYaml, extractHelmTemplate, augmentBash, extractJsonConfig } from './infra';
@@ -789,8 +789,11 @@ function walkTree(
       }
       nodes.push(graphNode);
 
-      if (parentId) {
-        edges.push({ source: parentId, target: id, kind: 'contains' });
+      // A symbol declared outside its class (`Reply.prototype.send = …`): the class of the file holds it
+      const owner = specSymbol?.owner ? nodes.find(n => n.kind === 'class' && n.name === specSymbol.owner && n.filePath === filePath) : undefined;
+      const holder = owner?.id ?? parentId;
+      if (holder) {
+        edges.push({ source: holder, target: id, kind: 'contains' });
       }
 
       // Collect call references within this symbol
@@ -1626,6 +1629,7 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
         const info = receiverInfo(node, receiver, source, language);
         const type = info.type ?? moreReceiverType(node, receiver, source, language);
         if (type) metadata.receiverType = type;
+        if (info.param && !type) metadata.receiverParam = info.param;
         if (info.call) metadata.receiverCall = info.call;
         // Ruby: `make_ledger.add` calls make_ledger (no parentheses) when it is no local: the receiver is its result
         else if (!type && language === 'ruby' && /^[a-z_]\w*[?!]?$/.test(receiver) && !rubyIsLocal(node, receiver, source)) {
@@ -1634,6 +1638,8 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
       } else if (callsParameter(node, calleeName, source, language)) {
         metadata.parameter = true;
       }
+      // The classes it passes: resolution types its callee's untyped parameters by them
+      Object.assign(metadata, argumentTypes(node, source, language));
       if (JS_TS_LANGUAGES.has(language)) {
         const argKind = classifyFirstArgument(node, source);
         if (argKind) metadata.argKind = argKind;

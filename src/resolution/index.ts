@@ -10,7 +10,7 @@ import * as path from 'path';
 import type { Node, NodeKind, Edge } from '../types';
 import type { GraphDatabase } from '../db/database';
 import type { KiroGraphConfig } from '../config';
-import { resolveCall, isCallTarget, type CallContext } from './call-resolver';
+import { resolveCall, isCallTarget, recordVia, takeVia, type CallContext } from './call-resolver';
 import { ImportResolver } from './import-resolver';
 
 const SUPERTYPE_KINDS = new Set<string>(['class', 'interface', 'struct', 'trait', 'protocol', 'component', 'type_alias']);
@@ -28,6 +28,9 @@ export interface ResolutionResult {
 }
 
 // ── ReferenceResolver ─────────────────────────────────────────────────────────
+
+/** The call context, plus what a resolution pass adds to it as it goes. */
+type ResolverContext = CallContext & { addImport(filePath: string, targetId: string): void; addSupertype(id: string, superId: string): void };
 
 export class ReferenceResolver {
   private db: GraphDatabase;
@@ -147,7 +150,7 @@ export class ReferenceResolver {
     const start = Date.now();
 
     this.warmCaches(false);
-    const resolvedCount = await this.resolveUnresolvedRefs(onProgress);
+    const resolvedCount = await this.resolveUnresolvedRefs(onProgress, changedFiles);
 
     // Count remaining unresolved
     const rawDb = (this.db as any).db;
@@ -180,7 +183,7 @@ export class ReferenceResolver {
    * Process all pending unresolved references using warm caches.
    * Returns the count of newly resolved edges.
    */
-  async resolveUnresolvedRefs(onProgress?: (current: number, total: number) => void): Promise<number> {
+  async resolveUnresolvedRefs(onProgress?: (current: number, total: number) => void, changedFiles?: string[]): Promise<number> {
     if (!this.cacheWarmed) {
       this.warmCaches();
     }
@@ -191,6 +194,72 @@ export class ReferenceResolver {
     const refs: any[] = rawDb.all(`SELECT * FROM unresolved_refs ORDER BY
       CASE ref_kind WHEN 'import' THEN 0 WHEN 'extends' THEN 1 WHEN 'implements' THEN 1 ELSE 2 END, id`);
     const calls = this.callContext();
+    // A call on an untyped parameter waits for every other call: its type is what the function's
+    // callers pass, read from their edges
+    const onParameter = (r: any) => typeof r.metadata === 'string' && r.metadata.includes('"receiverParam"');
+    let resolved = this.resolvePass(refs.filter(r => !onParameter(r)), calls, onProgress);
+    // A sync: the functions the changed files call may have new callers, so their parameters
+    // are typed again
+    if (changedFiles && changedFiles.length > 0) this.db.requeueParameterEdges(changedFiles);
+    const waiting: any[] = rawDb.all(`SELECT * FROM unresolved_refs WHERE metadata LIKE '%"receiverParam"%' ORDER BY id`);
+    resolved += this.resolvePass(waiting, calls, onProgress, this.parameterTypes(waiting, calls));
+    return resolved;
+  }
+
+  /**
+   * The type of each untyped parameter some call's receiver is: the one class every caller of its
+   * function passes (by position or by keyword), from the arguments recorded on their call edges.
+   * A caller whose argument is unknown leaves the parameter untyped; one that passes no argument
+   * there (the default) does not count. Calls resolved this way are no callers here, so the
+   * result does not depend on the order of resolution.
+   */
+  private parameterTypes(waiting: any[], calls: CallContext): Map<number, { type: string; via: string[]; of: string[] }> {
+    const rawDb = (this.db as any).db;
+    const out = new Map<number, { type: string; via: string[]; of: string[] }>();
+    const byParam = new Map<string, { type: string; via: string[]; of: string[] } | null>();
+    for (const ref of waiting) {
+      let param: { lines: number[]; index: number; name: string } | undefined;
+      try { param = JSON.parse(ref.metadata).receiverParam; } catch { continue; }
+      if (!param || !Array.isArray(param.lines)) continue;
+      const key = `${ref.file_path}:${param.lines.join(',')}:${param.index}:${param.name}`;
+      let found = byParam.get(key);
+      if (found === undefined) {
+        found = null;
+        const fn: any = rawDb.get(`SELECT id, name FROM nodes WHERE file_path = ? AND start_line IN (${param.lines.map(() => '?').join(',')})
+          AND kind IN ('function', 'method', 'constant', 'variable') ORDER BY CASE kind WHEN 'method' THEN 0 WHEN 'function' THEN 1 ELSE 2 END LIMIT 1`,
+          [ref.file_path, ...param.lines]);
+        if (fn) {
+          // A constructor's callers call its class
+          const targets = [fn.id];
+          if (fn.name === '__init__' || fn.name === 'constructor') { const owner = calls.owner(fn.id); if (owner) targets.push(owner.id); }
+          const callers: any[] = rawDb.all(`SELECT e.metadata AS m, s.file_path AS f FROM edges e JOIN nodes s ON s.id = e.source
+            WHERE e.kind = 'calls' AND e.target IN (${targets.map(() => '?').join(',')})`, targets);
+          const types = new Set<string>();
+          const files = new Set<string>();
+          let unknown = callers.length === 0;
+          for (const c of callers) {
+            let m: any;
+            try { m = c.m ? JSON.parse(c.m) : {}; } catch { m = {}; }
+            if (m.receiverParam) continue;
+            files.add(c.f);
+            const t = m.kwTypes?.[param.name] ?? (Array.isArray(m.argTypes) ? (param.index < m.argTypes.length ? m.argTypes[param.index] : 'default') : null);
+            if (t === 'default') continue;
+            if (!t) { unknown = true; break; }
+            types.add(t);
+          }
+          if (!unknown && types.size === 1) found = { type: [...types][0], via: [...files].sort(), of: targets };
+        }
+        byParam.set(key, found);
+      }
+      if (found) out.set(ref.id, found);
+    }
+    return out;
+  }
+
+  /** Resolves references in batched transactions; `inferred` types the receivers of some of them. */
+  private resolvePass(refs: any[], calls: ResolverContext, onProgress?: (current: number, total: number) => void,
+    inferred?: Map<number, { type: string; via: string[]; of: string[] }>): number {
+    const rawDb = (this.db as any).db;
     let resolved = 0;
     const total = refs.length;
 
@@ -228,6 +297,7 @@ export class ReferenceResolver {
           const attemptedStrategies: string[] = [];
           let targetId: string | null = null;
           let extraTargets: string[] = [];
+          let viaFiles: string[] = [];
 
           if (refKind === 'reference' || refKind === 'qualified_call') {
             // Infrastructure references (infra.ts): the exact qualified name, nothing looser
@@ -275,8 +345,9 @@ export class ReferenceResolver {
               const dot = refName.lastIndexOf('.');
               const name = dot > 0 ? refName.slice(dot + 1) : refName;
               const receiver: string | undefined = meta?.receiver ?? (dot > 0 ? refName.slice(0, dot) : undefined);
-              const call = { name, receiver, receiverType: meta?.receiverType as string | undefined, receiverCall: meta?.receiverCall, sourceId, filePath, line: line ?? undefined, parameter: meta?.parameter === true };
+              const call = { name, receiver, receiverType: (inferred?.get(refId)?.type ?? meta?.receiverType) as string | undefined, receiverCall: meta?.receiverCall, sourceId, filePath, line: line ?? undefined, parameter: meta?.parameter === true };
               attemptedStrategies.push(receiver !== undefined ? 'method' : 'exact');
+              recordVia();
               targetId = resolveCall(call, calls)?.id ?? null;
 
               // Case-insensitive, for the languages whose names are (only when no node has the exact name)
@@ -285,6 +356,7 @@ export class ReferenceResolver {
                 attemptedStrategies.push('fuzzy');
                 targetId = resolveCall(call, { ...calls, byName: n => this.lowerNameCache.get(n.toLowerCase()) ?? [] })?.id ?? null;
               }
+              viaFiles = takeVia();
             }
           }
 
@@ -294,14 +366,24 @@ export class ReferenceResolver {
               : refKind === 'extends' ? 'extends'
               : refKind === 'implements' ? 'implements'
               : 'calls';
+            // The receiver stays: a sync turns the edge back into this reference (#101)
+            let metadata: Record<string, any> | undefined = refMetadata ? JSON.parse(refMetadata) : undefined;
+            if (edgeKind === 'calls') {
+              // What else the resolution read: a sync re-resolves the call when it changes
+              const inf = inferred?.get(refId);
+              const targetFile = calls.node(targetId)?.filePath;
+              const files = [...new Set([...viaFiles, ...(inf?.via ?? [])])].filter(f => f !== filePath && f !== targetFile).sort();
+              if (metadata) { delete metadata.via; delete metadata.paramOf; }
+              if (files.length > 0) metadata = { ...metadata, via: files };
+              if (inf) metadata = { ...metadata, paramOf: inf.of };
+            }
             const edge: Edge = {
               source: sourceId,
               target: targetId,
               kind: edgeKind,
               line: line ?? undefined,
               column: column ?? undefined,
-              // The receiver stays: a sync turns the edge back into this reference (#101)
-              metadata: refMetadata ? JSON.parse(refMetadata) : undefined,
+              metadata,
             };
             batchEdges.push(edge);
             for (const extra of extraTargets) {
@@ -819,7 +901,7 @@ export class ReferenceResolver {
    * What the call resolver reads: nodes by name and id, the files each file imports (the import
    * edges already in the graph, and those this pass makes), and each node's owner.
    */
-  private callContext(): CallContext & { addImport(filePath: string, targetId: string): void; addSupertype(id: string, superId: string): void } {
+  private callContext(): ResolverContext {
     const rawDb = (this.db as any).db;
     const imports = new Map<string, Set<string>>();
     const add = (from: string, to: string) => {

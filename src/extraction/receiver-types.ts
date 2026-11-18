@@ -46,6 +46,8 @@ export interface ReceiverCall {
   receiver?: string;
   receiverType?: string;
   receiverCall?: ReceiverCall;
+  /** The receiver is an element of what the call returns (`for x in get_items()`). */
+  element?: true;
 }
 
 /** What is known of a receiver: its declared type, or the call it is the value of. */
@@ -56,7 +58,12 @@ type Known =
   /** A collection of a known element type (`list[Foo]`, `Foo[]`): no type of its own. */
   | { element: string }
   /** An element of a collection: a loop variable, a callback's parameter (`for x in xs`). */
-  | { iter: any };
+  | { iter: any }
+  /** An untyped parameter: typed in resolution by what the function's callers pass. */
+  | { param: ReceiverParam };
+
+/** An untyped parameter as a receiver: the function (by its lines) and the parameter's position. */
+export interface ReceiverParam { lines: number[]; index: number; name: string }
 
 /** Declarations by scope, for the file being read (keyed by the scope's position). */
 let cacheSource: string | null = null;
@@ -111,13 +118,58 @@ export function elementName(raw: string): string | undefined {
 
 const CALLS = new Set(['call_expression', 'call', 'method_invocation']);
 
-/** What a value says of its type: a constructor call's class, or the call whose result it is. */
+/** What a value says of its type: a constructor call's class, the call whose result it is, a list of one class. */
 function valueOf(value: any, source: string, family: Family): Known | undefined {
   if (value?.type === 'await_expression') value = value.namedChild(0);
   if (!value) return undefined;
   const t = constructed(value, source, family);
   if (t) return { type: t };
+  const e = literalElement(value, source, family);
+  if (e) return { element: e };
   return CALLS.has(value.type) ? { call: value } : undefined;
+}
+
+const LISTS = new Set(['list', 'array', 'set', 'tuple']);
+
+/** A list literal whose items are all made by one class: `[Foo(), Foo(x)]`, `[new Foo()]`. */
+function literalElement(value: any, source: string, family: Family): string | undefined {
+  if (!LISTS.has(value.type) || value.namedChildCount === 0) return undefined;
+  const types = new Set<string>();
+  for (const item of value.namedChildren) {
+    if (item.type === 'comment') continue;
+    const t = constructed(item, source, family);
+    if (!t) return undefined;
+    types.add(t);
+  }
+  return types.size === 1 ? [...types][0] : undefined;
+}
+
+const EMPTY_LIST = /^(\[\s*\]|list\(\s*\)|new\s+Array\s*\(\s*\))$/;
+const ADDS = new Set(['append', 'push', 'add', 'appendleft', 'unshift']);
+
+/** An empty list filled in a body with one class: `xs = []` … `xs.append(Foo())`; `this.xs.push(new Foo())`. */
+function appendedElement(body: any, receiver: string, source: string, family: Family, inScope: boolean): string | undefined {
+  const types = new Set<string>();
+  let unknown = false;
+  const visit = (n: any) => {
+    if (CALLS.has(n.type)) {
+      const name = calledName(n, source);
+      const recv = receiverNode(n);
+      if (name && ADDS.has(name) && recv && text(recv, source).trim() === receiver) {
+        for (const a of n.childForFieldName('arguments')?.namedChildren ?? []) {
+          if (a.type === 'comment') continue;
+          const t = constructed(a, source, family);
+          if (t) types.add(t); else unknown = true;
+        }
+      }
+    }
+    for (const c of n.namedChildren) {
+      if (inScope && (SCOPES[family].has(c.type) || CLASSES[family].has(c.type))) continue;
+      visit(c);
+    }
+  };
+  visit(body);
+  return !unknown && types.size === 1 ? [...types][0] : undefined;
 }
 
 /** A declared type node, as what is known. */
@@ -156,7 +208,17 @@ function constructed(value: any, source: string, family: Family): string | undef
 function ownClassName(node: any, source: string, family: Family): string | undefined {
   const cls = enclosing(node, CLASSES[family]);
   const name = cls?.childForFieldName('name');
-  return name ? typeName(text(name, source)) : undefined;
+  if (name) return typeName(text(name, source));
+  // A method given to a prototype: `Reply.prototype.code = function () { return this }` is Reply's
+  if (family === 'js') {
+    const fn = enclosing(node, new Set(['function_expression', 'function']));
+    const left = fn?.parent?.type === 'assignment_expression' ? fn.parent.childForFieldName('left') : null;
+    const proto = left?.type === 'member_expression' ? left.childForFieldName('object') : null;
+    const ctor = proto?.type === 'member_expression' && text(proto.childForFieldName('property') ?? proto, source) === 'prototype'
+      ? proto.childForFieldName('object') : null;
+    if (ctor?.type === 'identifier') return typeName(text(ctor, source));
+  }
+  return undefined;
 }
 
 /** Parameters with a declared type: name → type. */
@@ -252,6 +314,18 @@ function declarations(scope: any, source: string, family: Family): Map<string, K
       }
     }
   });
+  // Locals made empty and filled with one class
+  eachInScope(body, family, n => {
+    const left = family === 'js' && n.type === 'variable_declarator' ? n.childForFieldName('name')
+      : family === 'python' && n.type === 'assignment' ? n.childForFieldName('left') : null;
+    const value = family === 'js' && n.type === 'variable_declarator' ? n.childForFieldName('value')
+      : family === 'python' && n.type === 'assignment' ? n.childForFieldName('right') : null;
+    if (left?.type !== 'identifier' || !value || !EMPTY_LIST.test(text(value, source).trim())) return;
+    const name = text(left, source);
+    if (out.has(name)) return;
+    const e = appendedElement(body, name, source, family, true);
+    if (e) out.set(name, { element: e });
+  });
   scopeCache.set(key, out);
   return out;
 }
@@ -323,6 +397,28 @@ function fields(cls: any, source: string, family: Family): Map<string, Known> {
     } else if (family === 'java' && m.type === 'constructor_declaration') {
       assignedIn(m);
     }
+  }
+  // `self.items = []` filled with one class anywhere in the class
+  const emptied = new Set<string>();
+  const findEmpty = (n: any) => {
+    if ((n.type === 'assignment_expression' || n.type === 'assignment')) {
+      const left = n.childForFieldName('left');
+      const right = n.childForFieldName('right');
+      const obj = left?.childForFieldName('object');
+      const prop = left?.childForFieldName('property') ?? left?.childForFieldName('attribute') ?? left?.childForFieldName('field');
+      if (obj && prop && right && text(obj, source) === self && EMPTY_LIST.test(text(right, source).trim())) emptied.add(text(prop, source));
+    } else if (family === 'js' && n.type === 'public_field_definition') {
+      const name = n.childForFieldName('name');
+      const value = n.childForFieldName('value');
+      if (name && value && EMPTY_LIST.test(text(value, source).trim())) emptied.add(text(name, source).replace(/^#/, ''));
+    }
+    for (const c of n.namedChildren) if (!CLASSES[family].has(c.type)) findEmpty(c);
+  };
+  findEmpty(body);
+  for (const name of emptied) {
+    if (out.has(name)) continue;
+    const e = appendedElement(body, `${self}.${name}`, source, family, false);
+    if (e) out.set(name, { element: e });
   }
   classCache.set(key, out);
   return out;
@@ -414,7 +510,7 @@ function describe(call: any, source: string, language: Language, depth: number):
  * (`getRepo().save()`, `const repo = getRepo(); repo.save()`), whose declared return type
  * resolution reads.
  */
-export function receiverInfo(call: any, receiver: string, source: string, language: Language, depth = 0): { type?: string; call?: ReceiverCall } {
+export function receiverInfo(call: any, receiver: string, source: string, language: Language, depth = 0): { type?: string; call?: ReceiverCall; param?: ReceiverParam } {
   const family = FAMILY[language];
   if (!family) return {};
   if (source !== cacheSource) {
@@ -422,11 +518,17 @@ export function receiverInfo(call: any, receiver: string, source: string, langua
     scopeCache.clear();
     classCache.clear();
   }
-  const known = (k: Known | undefined): { type?: string; call?: ReceiverCall } => {
+  const known = (k: Known | undefined): { type?: string; call?: ReceiverCall; param?: ReceiverParam } => {
     if (!k) return {};
     if ('type' in k) return { type: k.type };
+    if ('param' in k) return depth === 0 ? { param: k.param } : {};
     if ('element' in k) return {};
     if ('iter' in k) {
+      const call = elementCall(k.iter);
+      if (call) {
+        const c = depth < 3 ? describe(call, source, language, depth + 1) : undefined;
+        return c ? { call: { ...c, element: true } } : {};
+      }
       const e = depth < 3 ? elementOf(k.iter, source, family, depth + 1) : undefined;
       return e ? { type: e } : {};
     }
@@ -462,29 +564,52 @@ function lookup(at: any, r: string, source: string, family: Family, depth: numbe
 
   if (!/^[A-Za-z_$][\w$]*$/.test(r) || r === SELF[family]) return undefined;
   // The nearest scope that declares the name: a parameter, a local, then (Java) a field
+  let param: ReceiverParam | undefined;
   for (let scope = enclosing(at, SCOPES[family]); scope; scope = enclosing(scope, SCOPES[family])) {
     const k = declarations(scope, source, family).get(r);
     if (k) return k;
     const cb = callbackElement(scope, r, source, family);
     if (cb) return cb;
-    if (isParameter(scope, r, source, family)) {
-      const t = depth < 3 ? parameterFromCallers(scope, r, source, family, depth + 1) : undefined;
-      if (t) return { type: t };
-    }
+    // An untyped parameter (a name of an outer scope may still say more: kept as before)
+    if (!param && isParameter(scope, r, source, family)) param = parameterOf(scope, r, source, family);
   }
   if (family === 'java') {
     const cls = enclosing(at, CLASSES[family]);
-    if (cls) return fields(cls, source, family).get(r);
+    const k = cls ? fields(cls, source, family).get(r) : undefined;
+    if (k) return k;
   }
-  return undefined;
+  return param ? { param } : undefined;
+}
+
+/** An untyped parameter of a named function: the lines its node can start on, and its position. */
+function parameterOf(scope: any, r: string, source: string, family: Family): ReceiverParam | undefined {
+  const index = parameterNames(scope, source, family).indexOf(r);
+  if (index < 0) return undefined;
+  const lines = [scope.startPosition.row + 1];
+  // `const f = (x) => …` is the declaration's node; a decorated Python function may start at its decorator
+  if (scope.parent?.type === 'variable_declarator') {
+    if (!scope.parent.childForFieldName('name')) return undefined;
+    lines.push(scope.parent.parent.startPosition.row + 1);
+  } else if (!scope.childForFieldName('name')) return undefined;
+  if (scope.parent?.type === 'decorated_definition') lines.push(scope.parent.startPosition.row + 1);
+  return { lines, index, name: r };
 }
 
 /** The element type of a collection expression: a name or a field declared `list[Foo]`, `Foo[]`, … */
 function elementOf(expr: any, source: string, family: Family, depth: number): string | undefined {
   if (expr.type === 'parenthesized_expression') expr = expr.namedChild(0);
   if (!expr) return undefined;
+  const e = literalElement(expr, source, family);
+  if (e) return e;
   const k = lookup(expr, text(expr, source).trim(), source, family, depth);
   return k && 'element' in k ? k.element : undefined;
+}
+
+/** A collection that is a call's result (`for x in get_items()`): resolution reads what the call returns. */
+function elementCall(expr: any): any {
+  if (expr?.type === 'parenthesized_expression') expr = expr.namedChild(0);
+  if (expr?.type === 'await_expression') expr = expr.namedChild(0);
+  return expr && CALLS.has(expr.type) ? expr : null;
 }
 
 /** Methods whose callback's first parameter is an element of the receiver. */
@@ -545,68 +670,43 @@ function isParameter(scope: any, r: string, source: string, family: Family): boo
   return family !== 'java' && parameterNames(scope, source, family).includes(r);
 }
 
-/** Calls of the file by the name they call, for the file being read. */
-let callsSource: string | null = null;
-let callsByName = new Map<string, any[]>();
-const inferredParams = new Map<string, string | null>();
-
-function callsNamed(root: any, name: string, source: string): any[] {
-  if (callsSource !== source) {
-    callsSource = source;
-    callsByName = new Map();
-    inferredParams.clear();
-    const visit = (n: any) => {
-      if (CALLS.has(n.type)) {
-        const c = calledName(n, source);
-        if (c) { const list = callsByName.get(c); if (list) list.push(n); else callsByName.set(c, [n]); }
-      }
-      for (const child of n.namedChildren) visit(child);
-    };
-    visit(root);
-  }
-  return callsByName.get(name) ?? [];
-}
-
 /**
- * An untyped parameter typed by the calls of its function in the same file, when every one of
- * them passes the same class (`helper(Query())`, `self.helper(query)` with a known `query`). Only
- * the file's own calls, so that a sync of another file cannot change it.
+ * The classes a call passes, where the code tells them: by position (null where it does not),
+ * and Python's keyword arguments by name. Resolution types a callee's untyped parameter by them.
  */
-function parameterFromCallers(scope: any, r: string, source: string, family: Family, depth: number): string | undefined {
-  const key = `${keyOf(scope)}:${r}`;
-  const cachedHere = callsSource === source ? inferredParams.get(key) : undefined;
-  if (cachedHere !== undefined) return cachedHere ?? undefined;
-  let fnName: any = scope.childForFieldName('name');
-  if (!fnName && scope.parent?.type === 'variable_declarator') fnName = scope.parent.childForFieldName('name');
-  if (!fnName) return undefined;
-  const index = parameterNames(scope, source, family).indexOf(r);
-  if (index < 0) return undefined;
-  let root = scope;
-  while (root.parent) root = root.parent;
-  const sites = callsNamed(root, text(fnName, source), source);
-  // A method is called on the own instance (`self.helper(x)`); a function bare
-  const around = enclosing(scope, new Set([...SCOPES[family], ...CLASSES[family]]));
-  const method = !!around && CLASSES[family].has(around.type);
-  const types = new Set<string>();
-  inferredParams.set(key, null);
-  for (const site of sites) {
-    if (site.startIndex >= scope.startIndex && site.endIndex <= scope.endIndex) continue;   // recursion
-    const recv = receiverNode(site);
-    if (method ? !(recv && text(recv, source).trim() === SELF[family]) : recv) continue;
-    const args = site.childForFieldName('arguments');
-    if (!args) return undefined;
-    const keyword = args.namedChildren.find((a: any) => a.type === 'keyword_argument' && text(a.childForFieldName('name') ?? a, source) === r);
-    const positional = args.namedChildren.filter((a: any) => a.type !== 'keyword_argument' && a.type !== 'comment');
-    if (positional.some((a: any) => a.type === 'list_splat' || a.type === 'dictionary_splat' || a.type === 'spread_element')) return undefined;
-    const arg = keyword ? keyword.childForFieldName('value') : positional[index];
-    if (!arg) continue;   // the default
-    const t = argumentType(arg, source, family, depth);
-    if (!t) { inferredParams.set(key, null); return undefined; }
-    types.add(t);
+export function argumentTypes(call: any, source: string, language: Language): { argTypes?: (string | null)[]; kwTypes?: Record<string, string> } {
+  const family = FAMILY[language];
+  const args = family ? call.childForFieldName('arguments') : null;
+  if (!args || args.namedChildCount === 0) return {};
+  if (source !== cacheSource) {
+    cacheSource = source;
+    scopeCache.clear();
+    classCache.clear();
   }
-  const out = types.size === 1 ? [...types][0] : undefined;
-  inferredParams.set(key, out ?? null);
-  return out;
+  const positional: (string | null)[] = [];
+  const keywords: Record<string, string> = {};
+  let known = false;
+  let spread = false;
+  for (const a of args.namedChildren) {
+    if (a.type === 'comment') continue;
+    if (a.type === 'keyword_argument') {
+      const name = a.childForFieldName('name');
+      const value = a.childForFieldName('value');
+      const t = value ? argumentType(value, source, family!, 1) : undefined;
+      if (name && t) { keywords[text(name, source)] = t; known = true; }
+      continue;
+    }
+    // With a spread, positions say nothing
+    if (a.type === 'list_splat' || a.type === 'dictionary_splat' || a.type === 'spread_element') { spread = true; continue; }
+    const t = argumentType(a, source, family!, 1);
+    positional.push(t ?? null);
+    if (t) known = true;
+  }
+  if (!known) return {};
+  return {
+    ...(!spread && positional.some(t => t) ? { argTypes: positional } : {}),
+    ...(Object.keys(keywords).length > 0 ? { kwTypes: keywords } : {}),
+  };
 }
 
 /** The class of an argument: a constructor call, `this` / `self`, a name of a known type. */
@@ -637,11 +737,21 @@ export function declaredReturnType(node: any, source: string, language: Language
     if (!value || (value.type !== 'arrow_function' && value.type !== 'function_expression' && value.type !== 'function')) return undefined;
     fn = value;
   }
+  // `Reply.prototype.code = function (…) {…}`: the function assigned
+  if (family === 'js' && node.type === 'assignment_expression') {
+    const value = node.childForFieldName('right');
+    if (!value || (value.type !== 'arrow_function' && value.type !== 'function_expression' && value.type !== 'function')) return undefined;
+    fn = value;
+  }
   const type = family === 'java' ? fn.childForFieldName('type') : fn.childForFieldName('return_type');
   if (!type) return family === 'java' ? undefined : inferredReturnType(fn, source, family);
   const raw = text(type, source).replace(/^:\s*/, '').trim();
   const awaited = /^Promise\s*<(.*)>$/.exec(raw);
-  return typeName(awaited ? awaited[1] : raw);
+  const value = awaited ? awaited[1] : raw;
+  // A collection of Foo: `Foo[]`, so that `for x in f()` has Foo elements and `f().save()` no type
+  const element = elementName(value);
+  if (element) return `${element}[]`;
+  return typeName(value);
 }
 
 /**
@@ -674,8 +784,11 @@ function inferredReturnType(fn: any, source: string, family: Family): string | u
     if (v.type === 'this' || (family === 'python' && v.type === 'identifier' && text(v, source) === 'self')) t = ownClassName(v, source, family);
     else if (v.type === 'identifier') {
       const k = declarations(fn, source, family).get(text(v, source));
-      t = k && 'type' in k ? k.type : undefined;
-    } else t = constructed(v, source, family);
+      t = k && 'type' in k ? k.type : k && 'element' in k ? `${k.element}[]` : undefined;
+    } else {
+      const e = literalElement(v, source, family);
+      t = e ? `${e}[]` : constructed(v, source, family);
+    }
     if (!t) return undefined;
     types.add(t);
   }

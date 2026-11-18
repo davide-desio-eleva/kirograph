@@ -7,7 +7,12 @@
  */
 import type { Language, NodeKind } from '../types';
 
-export interface Symbol { kind: NodeKind; name: string }
+export interface Symbol {
+  kind: NodeKind;
+  name: string;
+  /** The name of the file's class it belongs to, when the code declares it outside the class. */
+  owner?: string;
+}
 export interface Call { name: string; receiver?: string }
 
 export interface LangSpec {
@@ -511,7 +516,43 @@ const lua: LangSpec = {
 
 // ── JavaScript / TypeScript ──────────────────────────────────────────────────
 
+const JS_FUNCTIONS = new Set(['function_expression', 'function', 'arrow_function', 'generator_function']);
+
+/** The names a file gives prototype methods to (`Reply.prototype.send = function …`), by source. */
+let protoSource: string | null = null;
+let protoOwners = new Set<string>();
+function prototypeOwners(source: string): Set<string> {
+  if (protoSource !== source) {
+    protoSource = source;
+    protoOwners = new Set();
+    const re = /(?:^|[^\w$.])([A-Za-z_$][\w$]*)\.prototype\.[A-Za-z_$][\w$]*\s*=\s*(?:async\s+)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/g;
+    for (let m = re.exec(source); m; m = re.exec(source)) protoOwners.add(m[1]);
+  }
+  return protoOwners;
+}
+
 const js: LangSpec = {
+  symbol(node, source) {
+    // A method given to a constructor function's prototype: `Reply.prototype.send = function (…) {…}`
+    if (node.type === 'assignment_expression') {
+      const left = node.childForFieldName('left');
+      const right = node.childForFieldName('right');
+      const obj = left?.type === 'member_expression' ? left.childForFieldName('object') : null;
+      const ctor = obj?.type === 'member_expression' ? obj.childForFieldName('object') : null;
+      const prop = obj?.type === 'member_expression' ? obj.childForFieldName('property') : null;
+      const name = left?.childForFieldName('property');
+      if (right && JS_FUNCTIONS.has(right.type) && ctor?.type === 'identifier' && prop && text(prop, source) === 'prototype' && name) {
+        return { kind: 'method', name: text(name, source), owner: text(ctor, source) };
+      }
+      return undefined;
+    }
+    // The constructor function itself is the class of those methods
+    if (node.type === 'function_declaration' || node.type === 'generator_function_declaration') {
+      const name = node.childForFieldName('name');
+      if (name && prototypeOwners(source).has(text(name, source))) return { kind: 'class', name: text(name, source) };
+    }
+    return undefined;
+  },
   importOf(node, source) {
     // CommonJS `require('./x')` and dynamic `import('./x')` (ES `import` statements are read as such)
     if (node.type !== 'call_expression') return undefined;

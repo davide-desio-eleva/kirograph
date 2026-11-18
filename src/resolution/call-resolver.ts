@@ -23,7 +23,7 @@ export interface CallRef {
   /** The receiver's declared type, when the code says it (see extraction/receiver-types). */
   receiverType?: string;
   /** The call the receiver is the value of (`getRepo()` in `getRepo().save()`): typed by its return type. */
-  receiverCall?: { name: string; receiver?: string; receiverType?: string; receiverCall?: CallRef['receiverCall'] };
+  receiverCall?: { name: string; receiver?: string; receiverType?: string; receiverCall?: CallRef['receiverCall']; element?: true };
   sourceId: string;
   filePath: string;
   /** The line of the call. */
@@ -164,6 +164,17 @@ export const isTestPath = (filePath: string): boolean => TEST_PATH.test(filePath
  * The member of the name declared nearest to the given types: in the type itself, else in what it
  * extends or implements, breadth first. Null when neither declares it (a library supertype's).
  */
+/**
+ * The files a resolution read besides the caller's and the target's: the types it looked a member
+ * up in, the function whose return type typed the receiver. A sync re-resolves the call when one
+ * of them changes (an override added to a subclass, a return type changed).
+ */
+let via: Set<string> | null = null;
+/** Starts recording the files the next resolutions read. */
+export function recordVia(): void { via = new Set(); }
+/** The files read since recordVia(), and stops recording. */
+export function takeVia(): string[] { const out = via ? [...via] : []; via = null; return out; }
+
 function memberOf(typeIds: string[], candidates: Node[], ctx: CallContext): Node | null {
   const byOwner = new Map<string, Node[]>();
   for (const n of candidates) {
@@ -176,6 +187,7 @@ function memberOf(typeIds: string[], candidates: Node[], ctx: CallContext): Node
   const seen = new Set<string>(typeIds);
   let level = [...typeIds];
   for (let depth = 0; level.length > 0 && depth < 8; depth++) {
+    if (via) for (const id of level) { const f = ctx.node(id)?.filePath; if (f) via.add(f); }
     const found = level.flatMap(id => byOwner.get(id) ?? []);
     // Overloads of one type are one method; the same name in two unrelated types is a guess
     if (found.length > 0) {
@@ -218,7 +230,11 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
   // A receiver that a call returns: the declared return type of the function that call reaches
   if (ref.receiverType === undefined && ref.receiverCall) {
     const producer = resolveCall({ ...ref.receiverCall, sourceId: ref.sourceId, filePath: ref.filePath, line: ref.line }, ctx);
-    if (producer?.returnType) ref = { ...ref, receiverType: producer.returnType };
+    if (producer && via) via.add(producer.filePath);
+    // A collection (`Foo[]`): its elements are Foo, the collection itself no Foo
+    const returned = producer?.returnType;
+    const element = returned?.endsWith('[]') ? returned.slice(0, -2) : undefined;
+    if (ref.receiverCall.element ? element : returned && !element) ref = { ...ref, receiverType: ref.receiverCall.element ? element : returned };
   }
   // A parameter called (`done()`, `resolve(true)`) is whatever function the caller passed
   if (ref.parameter && ref.receiver === undefined) return null;
@@ -286,7 +302,10 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
     // A function or class of a module only in a module the file imports, when its imports are known
     // (`copy.deepcopy()` is the standard library's, not a project's copy.py)
     const inScope = (n: Node) => isMember(n, ctx) || !imported || imported.size === 0 || imported.has(n.filePath) || n.filePath === ref.filePath;
-    const reached = candidates.filter(n => receiverReaches(ref.receiver!, n, ctx) && inScope(n));
+    // A wrapper delegates to the object it holds (`self.orig_loader.load()` in `load`): a member of
+    // its own is not the method that calls it
+    const delegating = /^(this|self)\.\w+$/.test(ref.receiver.trim());
+    const reached = candidates.filter(n => receiverReaches(ref.receiver!, n, ctx) && inScope(n) && !(delegating && n.id === ref.sourceId));
     if (reached.length === 0) {
       // A class through its module (`models.CharField(…)`), in the languages where a module is a
       // value: the one of the name the file imports, or the one in the project

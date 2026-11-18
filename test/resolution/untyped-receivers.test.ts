@@ -261,3 +261,114 @@ describe('Calls on receivers whose type is inferred', () => {
     expect(calls.jsCallsParameter).toBeUndefined();
   });
 });
+
+/** Calls to `save`: caller name → `file::owner of the save it reaches`. */
+function saveCalls(kg: any): Record<string, string[]> {
+  const rows = kg.db.getRawDb().all(`
+    SELECT s.name AS s, t.file_path || '::' || o.name AS t FROM edges e
+    JOIN nodes s ON s.id = e.source JOIN nodes t ON t.id = e.target
+    LEFT JOIN edges c ON c.target = t.id AND c.kind = 'contains' LEFT JOIN nodes o ON o.id = c.source
+    WHERE e.kind = 'calls' AND t.name = 'save'`);
+  const out: Record<string, string[]> = {};
+  for (const r of rows) (out[r.s] ??= []).push(r.t);
+  return out;
+}
+
+describe('Prototype methods, lists, parameters typed by callers of other files, and a sync', () => {
+  let dir: string;
+  const write = (rel: string, text: string) => {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), text);
+  };
+
+  beforeAll(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kg-untyped2-'));
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    // JavaScript constructor functions and their prototype methods
+    write('proto/repo.js', [
+      'function PRepo () {}',
+      'PRepo.prototype.save = function () { return this }',
+      'function PJournal () {}',
+      'PJournal.prototype.save = function () {}',
+      'function protoCall () { const r = new PRepo(); r.save() }',
+      'function protoChain () { const saved = new PRepo().save(); saved.save() }',
+      'module.exports = { PRepo, PJournal }',
+      '',
+    ].join('\n'));
+    write('lists/types.py', 'class Ledger:\n    def save(self): pass\n\nclass Journal:\n    def save(self): pass\n');
+    write('lists/use.py', [
+      'from types import Ledger',
+      '',
+      'def make_list():',
+      '    return [Ledger(), Ledger()]',
+      '',
+      'def list_appended():',
+      '    out = []',
+      '    out.append(Ledger())',
+      '    for item in out:',
+      '        item.save()',
+      '',
+      'def list_returned():',
+      '    for item in make_list():',
+      '        item.save()',
+      '',
+      'def list_itself():',
+      '    make_list().save()',
+      '',
+    ].join('\n'));
+    // Parameters typed by their callers, in other files
+    write('params/lib.py', 'def use_one(thing):\n    thing.save()\n\ndef use_mixed(thing):\n    thing.save()\n');
+    write('params/a.py', 'from types import PLedger, PJournal\nfrom lib import use_one, use_mixed\n\ndef call_a():\n    use_one(PLedger())\n    use_mixed(PLedger())\n');
+    write('params/b.py', 'from types import PLedger, PJournal\nfrom lib import use_one, use_mixed\n\ndef call_b():\n    use_one(thing=PLedger())\n    use_mixed(PJournal())\n');
+    write('params/types.py', 'class PLedger:\n    def save(self): pass\n\nclass PJournal:\n    def save(self): pass\n');
+    // A receiver typed by what a function of another file returns
+    write('prod/types.py', 'class QLedger:\n    def save(self): pass\n\nclass QJournal:\n    def save(self): pass\n');
+    write('prod/maker.py', 'from types import QLedger, QJournal\n\ndef make():\n    return QLedger()\n');
+    write('prod/user.py', 'from maker import make\n\ndef produced():\n    make().save()\n');
+    // A method looked up in a supertype
+    write('sup/base.py', 'class Base:\n    def save(self): pass\n');
+    write('sup/sub.py', 'from base import Base\n\nclass Sub(Base):\n    pass\n');
+    write('sup/user.py', 'from sub import Sub\n\ndef inherited(s: Sub):\n    s.save()\n');
+  });
+
+  afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  it('reads them, and a sync gives what a full index gives when a caller or a subclass changes', async () => {
+    const kg = await KiroGraph.init(dir);
+    try {
+      await kg.indexAll();
+      let calls = saveCalls(kg);
+      expect(calls.protoCall).toEqual(['proto/repo.js::PRepo']);
+      // save() returns this: the second save is PRepo's too
+      expect(calls.protoChain).toEqual(['proto/repo.js::PRepo', 'proto/repo.js::PRepo']);
+      expect(calls.list_appended).toEqual(['lists/types.py::Ledger']);
+      expect(calls.list_returned).toEqual(['lists/types.py::Ledger']);
+      expect(calls.list_itself).toBeUndefined();
+      expect(calls.use_one).toEqual(['params/types.py::PLedger']);
+      expect(calls.use_mixed).toBeUndefined();
+      expect(calls.inherited).toEqual(['sup/base.py::Base']);
+      expect(calls.produced).toEqual(['prod/types.py::QLedger']);
+
+      // A new caller passes another class; Sub gets its own save; make() returns another class
+      write('prod/maker.py', 'from types import QLedger, QJournal\n\ndef make():\n    return QJournal()\n');
+      write('params/c.py', 'from types import PJournal\nfrom lib import use_one\n\ndef call_c():\n    use_one(PJournal())\n');
+      write('sup/sub.py', 'from base import Base\n\nclass Sub(Base):\n    def save(self): pass\n');
+      await kg.sync();
+      calls = saveCalls(kg);
+      expect(calls.use_one).toBeUndefined();
+      expect(calls.inherited).toEqual(['sup/sub.py::Sub']);
+      expect(calls.produced).toEqual(['prod/types.py::QJournal']);
+    } finally { kg.close(); }
+
+    // The same as a full index of the files as they are now
+    fs.rmSync(path.join(dir, '.kirograph'), { recursive: true, force: true });
+    const full = await KiroGraph.init(dir);
+    try {
+      await full.indexAll();
+      const calls = saveCalls(full);
+      expect(calls.use_one).toBeUndefined();
+      expect(calls.inherited).toEqual(['sup/sub.py::Sub']);
+      expect(calls.produced).toEqual(['prod/types.py::QJournal']);
+    } finally { full.close(); }
+  });
+});

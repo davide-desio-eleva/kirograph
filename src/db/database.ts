@@ -530,6 +530,7 @@ export class GraphDatabase {
     const ids = this.db.all('SELECT id FROM nodes WHERE file_path = ?', [filePath]).map((r: any) => r.id);
     if (ids.length === 0) return;
     this.detachIncomingEdges(filePath);
+    this.detachDependentEdges(filePath);
     const placeholders = ids.map(() => '?').join(',');
     this.db.run(`DELETE FROM edges WHERE source IN (${placeholders}) OR target IN (${placeholders})`, [...ids, ...ids]);
     // By rowid: the FTS table has no index on id, so deleting by id scanned the whole table for
@@ -554,6 +555,44 @@ export class GraphDatabase {
    * name), an infrastructure reference or call by the target's qualified name (resolved by exact
    * qualified name, as infra.ts emits them), anything else by the target's name.
    */
+  /**
+   * Turns call edges back into references when what their resolution read changed: edges that
+   * name the file among the files they depend on (`via`: a supertype the method was looked up in,
+   * the function whose return type typed the receiver, the callers that typed a parameter).
+   */
+  private detachDependentEdges(filePath: string): void {
+    this.requeueEdges(`e.kind = 'calls' AND e.metadata LIKE '%"via"%'
+      AND EXISTS (SELECT 1 FROM json_each(e.metadata, '$.via') WHERE value = ?)`, [filePath]);
+  }
+
+  /**
+   * A sync: the calls on untyped parameters of the functions the changed files call, back to
+   * references, since a new caller may pass another class (see ReferenceResolver.parameterTypes).
+   */
+  requeueParameterEdges(changedFiles: string[]): void {
+    const placeholders = changedFiles.map(() => '?').join(',');
+    this.requeueEdges(`e.kind = 'calls' AND e.metadata LIKE '%"paramOf"%'
+      AND EXISTS (SELECT 1 FROM json_each(e.metadata, '$.paramOf') p WHERE p.value IN (
+        SELECT c.target FROM edges c JOIN nodes cs ON cs.id = c.source WHERE c.kind = 'calls' AND cs.file_path IN (${placeholders})))`,
+      changedFiles);
+  }
+
+  /** Call edges matching a condition (on `e`) back to unresolved references, as detachIncomingEdges does. */
+  private requeueEdges(condition: string, params: unknown[]): void {
+    const rows = this.db.all(`SELECT e.rowid AS rid FROM edges e WHERE ${condition} AND e.confidence = 'extracted'`, params) as any[];
+    if (rows.length === 0) return;
+    for (let i = 0; i < rows.length; i += 500) {
+      const ids = rows.slice(i, i + 500).map(r => r.rid);
+      const marks = ids.map(() => '?').join(',');
+      this.db.run(
+        `INSERT INTO unresolved_refs (source_id, ref_name, ref_kind, file_path, line, column, metadata)
+         SELECT e.source, t.name, 'function', s.file_path, e.line, e.column, e.metadata
+         FROM edges e JOIN nodes t ON t.id = e.target JOIN nodes s ON s.id = e.source
+         WHERE e.rowid IN (${marks})`, ids);
+      this.db.run(`DELETE FROM edges WHERE rowid IN (${marks})`, ids);
+    }
+  }
+
   private detachIncomingEdges(filePath: string): void {
     this.db.run(
       `INSERT INTO unresolved_refs (source_id, ref_name, ref_kind, file_path, line, column, metadata)
