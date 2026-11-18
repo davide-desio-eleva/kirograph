@@ -14,6 +14,7 @@ import { extractNotebook } from './notebook';
 import { extractSql } from './sql';
 import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
 import { receiverInfo, declaredReturnType, calleeOf, memberObject } from './receiver-types';
+import { LANG_SPECS } from './lang-specs';
 import { extractHcl, extractYaml, extractHelmTemplate, augmentBash, extractJsonConfig } from './infra';
 
 export interface UnresolvedRef {
@@ -77,6 +78,30 @@ function validatePath(filePath: string, projectRoot: string): boolean {
  * Extract symbols from a single file.
  * Optionally accepts pre-read content for batch I/O efficiency.
  */
+/**
+ * The TypeScript of an Astro component's frontmatter, as symbols of the `.astro` file. The source is
+ * blanked outside the block (newlines kept), so lines and columns are the file's own.
+ */
+async function extractAstroFrontmatter(root: any, source: string, relPath: string, now: number,
+  nodes: Node[], edges: Edge[], unresolvedRefs: UnresolvedRef[]): Promise<void> {
+  const block = root.namedChildren.find((c: any) => c.type === 'frontmatter')?.namedChildren
+    .find((c: any) => c.type === 'frontmatter_js_block');
+  if (!block) return;
+  const ts = await getParser('typescript');
+  if (!ts) return;
+  const blank = (s: string) => s.replace(/[^\n]/g, ' ');
+  const code = blank(source.slice(0, block.startIndex)) + source.slice(block.startIndex, block.endIndex) + blank(source.slice(block.endIndex));
+  const tree = ts.parse(code);
+  const first = nodes.length;
+  try {
+    walkTree(tree.rootNode, code, relPath, 'typescript', nodes, edges, unresolvedRefs, now);
+  } finally {
+    tree.delete?.();
+  }
+  // Read as TypeScript, they are the Astro file's symbols (same language family for resolution)
+  for (let i = first; i < nodes.length; i++) nodes[i].language = 'astro';
+}
+
 /**
  * Constructs only C++ has, at the start of a line: a namespace, a template, a class with a body or
  * a base, an access specifier. `extern "C"` and `#ifdef __cplusplus` are in C headers too.
@@ -229,6 +254,8 @@ export async function extractFile(filePath: string, projectRoot: string, content
       walkTree(tree.rootNode, source, relPath, language, nodes, edges, unresolvedRefs, now);
       // Shell: the files a script sources, and the calls to its functions
       if (language === 'bash') augmentBash(tree.rootNode, source, relPath, now, { nodes, edges, unresolvedRefs });
+      // Astro: the component script between the `---` fences is TypeScript
+      if (language === 'astro') await extractAstroFrontmatter(tree.rootNode, source, relPath, now, nodes, edges, unresolvedRefs);
     }
 
     let routeMounts: RouteMountFact[] | undefined;
@@ -550,6 +577,15 @@ function walkTree(
     return;
   }
 
+  // A language's own imports (R's library(x), Nix's import ./x.nix, SCSS's @use)
+  const spec = LANG_SPECS[language];
+  const specImport = spec?.importOf?.(node, source);
+  if (specImport) {
+    const importNode = extractImport(node, source, filePath, language, unresolvedRefs, now, parentId, specImport);
+    if (importNode) nodes.push(importNode);
+    return;
+  }
+
   // Handle import statements
   if (IMPORT_NODE_TYPES.has(node.type)) {
     const importNode = extractImport(node, source, filePath, language, unresolvedRefs, now, parentId);
@@ -616,8 +652,16 @@ function walkTree(
     kind = refineDartClassKind(node, source);
   }
 
+  // A language's own symbols (see lang-specs): they decide the kind and the name
+  let specName: string | undefined;
+  const specSymbol = spec?.symbol?.(node, source);
+  if (specSymbol !== undefined) {
+    kind = specSymbol?.kind ?? null;
+    specName = specSymbol?.name;
+  }
+
   if (kind) {
-    const name = extractName(node, source, language, kind);
+    const name = specName ?? extractName(node, source, language, kind);
     if (name) {
       const id = makeNodeId(filePath, kind, name, node.startPosition.row + 1);
       const visibility = extractVisibility(node, source, language);
@@ -848,9 +892,11 @@ function extractImport(
   language: Language,
   unresolvedRefs: UnresolvedRef[],
   now: number,
-  parentId?: string
+  parentId?: string,
+  /** The module, when the language's spec read it (see lang-specs) */
+  modulePathOf?: string,
 ): Node | null {
-  const modulePath = extractImportSource(node, source, language);
+  const modulePath = modulePathOf ?? extractImportSource(node, source, language);
   if (!modulePath) return null;
 
   const id = makeNodeId(filePath, 'import', modulePath, node.startPosition.row + 1);
@@ -1436,6 +1482,22 @@ function collectCallRefs(node: any, source: string, sourceId: string, unresolved
 }
 
 function walkForCalls(node: any, source: string, sourceId: string, unresolvedRefs: UnresolvedRef[], language: Language): void {
+  // A language's own calls (see lang-specs): commands, applications, module instances
+  const specCall = LANG_SPECS[language]?.call?.(node, source);
+  if (specCall !== undefined) {
+    if (specCall) {
+      unresolvedRefs.push({
+        sourceId,
+        refName: specCall.name,
+        refKind: 'function',
+        line: node.startPosition.row + 1,
+        column: node.startPosition.column,
+        ...(specCall.receiver ? { metadata: { receiver: specCall.receiver } } : {}),
+      });
+    }
+    for (let i = 0; i < node.childCount; i++) walkForCalls(node.child(i), source, sourceId, unresolvedRefs, language);
+    return;
+  }
   if (CALL_NODE_TYPES.has(node.type)) {
     const calleeName = extractCallName(node, source);
     if (calleeName) {

@@ -80,6 +80,8 @@ const CONSTRUCTORS = new Set<string>(['class', 'struct']);
 
 function isCallable(n: Node, language: string | undefined): boolean {
   if (CALLABLE.has(n.kind)) return true;
+  // Verilog: instantiating a module is how a module is used
+  if (n.kind === 'module' && n.language === 'verilog') return true;
   if (DATA_LANGUAGES.has(n.language)) return true; // a job, a script: only reached from its own language
   return language !== undefined && JS_FAMILY.has(language) && VALUE_KINDS.has(n.kind);
 }
