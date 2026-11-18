@@ -32,6 +32,37 @@ const files: Record<string, string> = {
     '',
   ].join('\n'),
   'src/loose.js': 'export function shown(x) { return format(x); }\n',
+  // A non-test file never calls into a test: `src/storage.js` seeks its own file, not the stub
+  'src/storage.js': 'export function rewind(file) { return file.seek(0); }\n',
+  'test/fake-file.test.js': 'export class FakeFile {\n  seek(n) { return n; }\n}\n',
+  // Python: a class re-exported by its package, a submodule, and a standard library name
+  'pkg/__init__.py': '',
+  'pkg/template/__init__.py': 'from .base import Template\n',
+  'pkg/template/base.py': 'class Template:\n    pass\n',
+  'pkg/backends/django.py': 'class Template:\n    pass\n',
+  'pkg/db/__init__.py': '',
+  'pkg/db/models/__init__.py': 'from pkg.db.models.fields import CharField\n',
+  'pkg/db/models/fields.py': 'class CharField:\n    pass\n',
+  'pkg/forms/__init__.py': '',
+  'pkg/forms/fields.py': 'class CharField:\n    pass\n',
+  'pkg/utils/__init__.py': '',
+  'pkg/utils/copy.py': 'def deepcopy(x):\n    return x\n',
+  'app/views.py': [
+    'import copy',
+    'from pkg.template import Template',
+    'from pkg.db import models',
+    'from pkg.forms import fields',
+    '',
+    'def render():',
+    '    return Template()',
+    '',
+    'def field():',
+    '    return models.CharField()',
+    '',
+    'def clone(x):',
+    '    return copy.deepcopy(x)',
+    '',
+  ].join('\n'),
 };
 
 beforeAll(async () => {
@@ -81,5 +112,22 @@ describe('call resolution by name', () => {
 
   it('a bare call does not reach a value of another file (a parameter of the name)', () => {
     expect(calls.later).toBeUndefined();
+  });
+
+  it('code that is not a test does not call into a test', () => {
+    expect(calls.rewind).toBeUndefined();
+  });
+
+  it('a Python call reaches the class its package re-exports', () => {
+    expect(calls.render).toEqual(['pkg/template/base.py::Template']);
+  });
+
+  it('a Python call through a module reaches the class of that module', () => {
+    // `from pkg.db import models` imports a submodule; `fields` is imported too, from forms
+    expect(calls.field).toEqual(['pkg/db/models/fields.py::CharField']);
+  });
+
+  it('a Python standard library module is not a project file of the same name', () => {
+    expect(calls.clone).toBeUndefined();
   });
 });

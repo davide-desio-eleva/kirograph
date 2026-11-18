@@ -57,6 +57,7 @@ export class ReferenceResolver {
    * bridge resolvers need whole nodes and load them when they first ask (see _buildBridgeContext).
    */
   warmCaches(full = true): void {
+    this.pythonModules = null;
     this.nameCache.clear();
     this.qualifiedNameCache.clear();
     this.kindCache.clear();
@@ -216,6 +217,7 @@ export class ReferenceResolver {
 
           const attemptedStrategies: string[] = [];
           let targetId: string | null = null;
+          let extraTargets: string[] = [];
 
           if (refKind === 'reference' || refKind === 'qualified_call') {
             // Infrastructure references (infra.ts): the exact qualified name, nothing looser
@@ -223,7 +225,14 @@ export class ReferenceResolver {
             targetId = this.qualifiedNameCache.get(refName)?.id ?? null;
           } else if (refKind === 'import') {
             attemptedStrategies.push('import-path');
-            targetId = this._resolveImportPath(refName, filePath);
+            if (filePath.endsWith('.py')) {
+              // A module, and the submodules among the names it imports (`from django.db import models`)
+              const targets = this._resolvePythonImport(refName, filePath, refMetadata ? JSON.parse(refMetadata).names : undefined);
+              targetId = targets[0] ?? null;
+              extraTargets = targets.slice(1);
+            } else {
+              targetId = this._resolveImportPath(refName, filePath);
+            }
           } else if (refKind === 'extends' || refKind === 'implements') {
             attemptedStrategies.push('type-name');
             targetId = this._resolveTypeName(refName);
@@ -272,6 +281,10 @@ export class ReferenceResolver {
               metadata: refMetadata ? JSON.parse(refMetadata) : undefined,
             };
             batchEdges.push(edge);
+            for (const extra of extraTargets) {
+              batchEdges.push({ ...edge, target: extra });
+              calls.addImport(filePath, extra);
+            }
             resolvedIds.push(refId);
             if (edgeKind === 'imports') calls.addImport(filePath, targetId);
             resolved++;
@@ -516,6 +529,58 @@ export class ReferenceResolver {
     return null;
   }
 
+  /** Python modules by every dotted suffix of their path (`db.models`, `django.db.models`), and a node of each file. */
+  private pythonModules: { byKey: Map<string, string[]>; nodeOf: Map<string, string> } | null = null;
+
+  /**
+   * The files a Python import names: the module (`from .base import x`, `import django.db`), and
+   * those of the imported names that are submodules (`from django.db import models`). As node ids
+   * of those files, the module first. A module outside the project resolves to nothing.
+   */
+  private _resolvePythonImport(module: string, sourceFilePath: string, names?: string[]): string[] {
+    if (!this.pythonModules) {
+      const byKey = new Map<string, string[]>();
+      const nodeOf = new Map<string, string>();
+      // A folder with an __init__.py is a package: a module path starts at a folder that is not
+      // one (the project root, `src/`), so `import copy` is the standard library's, not django/utils/copy.py
+      const rawDb = (this.db as any).db;
+      const packages = new Set<string>(
+        (rawDb.all(`SELECT path FROM files WHERE path LIKE '%__init__.py'`) as any[])
+          .map(r => String(r.path).replace(/\/?__init__\.py$/, '')));
+      for (const n of this.nodeByIdCache.values()) {
+        if (!n.filePath.endsWith('.py') || nodeOf.has(n.filePath)) continue;
+        nodeOf.set(n.filePath, n.id);
+        const parts = n.filePath.replace(/\.py$/, '').replace(/(^|\/)__init__$/, '').split('/').filter(Boolean);
+        for (let i = 0; i < parts.length; i++) {
+          if (i > 0 && packages.has(parts.slice(0, i).join('/'))) continue;
+          const key = parts.slice(i).join('.');
+          const list = byKey.get(key);
+          if (list) list.push(n.filePath); else byKey.set(key, [n.filePath]);
+        }
+      }
+      this.pythonModules = { byKey, nodeOf };
+    }
+    const { byKey, nodeOf } = this.pythonModules;
+    const fileOf = (mod: string): string | undefined => {
+      const dots = /^\.*/.exec(mod)![0].length;
+      if (dots === 0) {
+        // The shortest path that ends with the module: `django/db/models/__init__.py` for django.db.models
+        return byKey.get(mod)?.reduce((a, b) => (a.length <= b.length ? a : b));
+      }
+      const dir = sourceFilePath.split('/').slice(0, -1);
+      const base = dir.slice(0, Math.max(0, dir.length - (dots - 1))).join('/');
+      const rel = mod.slice(dots).replace(/\./g, '/');
+      const prefix = base ? base + '/' : '';
+      const candidates = rel ? [`${prefix}${rel}.py`, `${prefix}${rel}/__init__.py`] : [`${prefix}__init__.py`];
+      return candidates.find(f => nodeOf.has(f));
+    };
+    const files: string[] = [];
+    const add = (f: string | undefined) => { if (f && !files.includes(f)) files.push(f); };
+    add(fileOf(module));
+    for (const name of names ?? []) add(fileOf(module.endsWith('.') ? module + name : `${module}.${name}`));
+    return files.filter(f => f !== sourceFilePath).map(f => nodeOf.get(f)!);
+  }
+
   private _resolveImportPath(importPath: string, sourceFilePath: string): string | null {
     // ── 1. Relative path (JS/TS etc.) ──────────────────────────────────────────
     if (importPath.startsWith('.')) {
@@ -595,7 +660,22 @@ export class ReferenceResolver {
     return {
       byName: name => this.nameCache.get(name) ?? [],
       node: id => this.nodeByIdCache.get(id),
-      importedFiles: filePath => imports.get(filePath),
+      importedFiles: filePath => {
+        // What the file imports, and what the package files among those re-export
+        // (`__init__.py`, `index.ts`): `from django.template import Template` reaches template/base.py
+        const direct = imports.get(filePath);
+        if (!direct) return undefined;
+        const all = new Set(direct);
+        const queue = [...direct].map(f => ({ f, depth: 1 }));
+        while (queue.length > 0) {
+          const { f, depth } = queue.shift()!;
+          if (depth > 3 || !BARREL_FILE.test(f)) continue;
+          for (const next of imports.get(f) ?? []) {
+            if (!all.has(next)) { all.add(next); queue.push({ f: next, depth: depth + 1 }); }
+          }
+        }
+        return all;
+      },
       owner: id => {
         if (!owners) {
           owners = new Map();
@@ -739,6 +819,9 @@ export class ReferenceResolver {
 }
 
 /** Files the bridge resolvers look at (see resolution/bridges). */
+/** Files that gather and re-export a package's symbols. */
+const BARREL_FILE = /(^|\/)(__init__\.py|index\.(ts|tsx|js|jsx|mjs|cjs))$/;
+
 const BRIDGE_FILE = /(\.(tsx?|jsx?|m|mm|h|swift|java|kt|dart)|(^|\/)(package\.json|expo-module\.config\.json))$/;
 
 /**

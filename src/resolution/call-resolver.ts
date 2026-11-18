@@ -92,7 +92,6 @@ function receiverName(receiver: string): string {
 }
 
 const baseName = (filePath: string): string => filePath.replace(/^.*\//, '').replace(/\..*$/, '');
-const dirName = (filePath: string): string => filePath.replace(/\/[^/]*$/, '').replace(/^.*\//, '');
 const squash = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /** Whether a candidate is a member of a type: reached through an instance, never by a bare name. */
@@ -106,7 +105,7 @@ function isMember(n: Node, ctx: CallContext): boolean {
  * Whether the receiver names what the candidate belongs to. The receiver's last word is the
  * thing it is (`userService` is a service, `onResponseHook` a hook): a member is reached when
  * that word is in its type's name (`UserService`), a function of a module or file when it is in
- * the module's, file's or folder's name (`helpers.slugify()`, Go's `strings.Split()`). A value
+ * the module's, file's or folder's name (`helpers.slugify()`, `models.CharField()`, Go's `strings.Split()`). A value
  * (`const send = …`) only through a receiver that is its file's name (`utils.send()`).
  */
 function receiverReaches(receiver: string, candidate: Node, ctx: CallContext): boolean {
@@ -119,7 +118,9 @@ function receiverReaches(receiver: string, candidate: Node, ctx: CallContext): b
     return squash(owner?.name ?? baseName(candidate.filePath)) === squash(name);
   }
   if (owner) return squash(owner.name) === squash(name) || words(owner.name).includes(head);
-  return [baseName(candidate.filePath), dirName(candidate.filePath)].some(n => words(n).includes(head));
+  // A function or class of a module: the receiver is the module or one of its packages
+  // (`models.CharField()` → django/db/models/fields/__init__.py)
+  return candidate.filePath.replace(/\.[^/.]+$/, '').split('/').some(n => words(n).includes(head));
 }
 
 const first = (nodes: Node[]): Node =>
@@ -128,10 +129,17 @@ const first = (nodes: Node[]): Node =>
 /** The one candidate, or null. */
 const only = (nodes: Node[]): Node | null => (nodes.length === 1 ? nodes[0] : null);
 
+/** Test code: a test file, or a file in a test folder. */
+const TEST_PATH = /(^|\/)(tests?|__tests__|__mocks__|spec|specs|e2e|testing\/fixtures)\/|(^|\/)(test_[^/]*|[^/]*_test\.[^/.]+|[^/]*\.(test|spec)\.[^/]+|conftest\.py)$/;
+export const isTestPath = (filePath: string): boolean => TEST_PATH.test(filePath);
+
 export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
   const source = ctx.node(ref.sourceId);
   const language = source?.language;
-  const candidates = ctx.byName(ref.name).filter(n => isCallTarget(n, language) && isCallable(n, language));
+  // Code that is not a test never calls into a test: a stub or a fixture of the name is not it
+  const fromTest = isTestPath(ref.filePath);
+  const candidates = ctx.byName(ref.name).filter(n =>
+    isCallTarget(n, language) && isCallable(n, language) && (fromTest || !isTestPath(n.filePath)));
   if (candidates.length === 0) return null;
   const sameFile = (nodes: Node[]) => nodes.filter(n => n.filePath === ref.filePath);
   const imported = ctx.importedFiles(ref.filePath);
@@ -151,11 +159,16 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
 
   // A call on another receiver: a member or function of what the receiver names
   if (ref.receiver !== undefined) {
-    const reached = candidates.filter(n => receiverReaches(ref.receiver!, n, ctx));
+    // A function or class of a module only in a module the file imports, when its imports are known
+    // (`copy.deepcopy()` is the standard library's, not a project's copy.py)
+    const inScope = (n: Node) => isMember(n, ctx) || !imported || imported.size === 0 || imported.has(n.filePath) || n.filePath === ref.filePath;
+    const reached = candidates.filter(n => receiverReaches(ref.receiver!, n, ctx) && inScope(n));
     if (reached.length === 0) {
-      // A class through its module (`models.CharField(…)`): the one class of the name
+      // A class through its module (`models.CharField(…)`): the one of the name the file imports,
+      // or the one in the project
       const types = candidates.filter(n => CONSTRUCTORS.has(n.kind) && !isMember(n, ctx));
-      return only(types);
+      const importedTypes = inImported(types);
+      return importedTypes.length > 0 ? only(importedTypes) : only(types);
     }
     if (reached.length === 1) return reached[0];
     const exact = reached.filter(n => squash(ctx.owner(n.id)?.name ?? baseName(n.filePath)) === squash(receiverName(ref.receiver!)));

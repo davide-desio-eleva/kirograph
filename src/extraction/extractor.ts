@@ -801,16 +801,29 @@ function extractImport(
     updatedAt: now,
   };
 
-  // Register as unresolved import for later file-level resolution
+  // Register as unresolved import for later file-level resolution. A Python `from X import a, b`
+  // keeps the names: `a` can be a submodule (`from django.db import models`)
+  const names = node.type === 'import_from_statement' ? pythonImportedNames(node, source) : [];
   unresolvedRefs.push({
     sourceId: id,
     refName: modulePath,
     refKind: 'import',
     line: node.startPosition.row + 1,
     column: node.startPosition.column,
+    ...(names.length > 0 ? { metadata: { names } } : {}),
   });
 
   return importNode;
+}
+
+/** The names a Python `from X import a, b as c` imports: a, b. */
+function pythonImportedNames(node: any, source: string): string[] {
+  const names: string[] = [];
+  for (const child of node.childrenForFieldName?.('name') ?? []) {
+    const name = child.type === 'aliased_import' ? child.childForFieldName('name') : child;
+    if (name?.type === 'dotted_name') names.push(source.slice(name.startIndex, name.endIndex));
+  }
+  return names;
 }
 
 /** Extract the module path string from an import statement node */
