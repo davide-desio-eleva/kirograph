@@ -12,7 +12,7 @@ import type { GraphDatabase } from '../db/database';
 import type { KiroGraphConfig } from '../config';
 import { resolveCall, isCallTarget, type CallContext } from './call-resolver';
 
-const SUPERTYPE_KINDS = new Set<string>(['class', 'interface', 'struct', 'trait', 'protocol', 'component']);
+const SUPERTYPE_KINDS = new Set<string>(['class', 'interface', 'struct', 'trait', 'protocol', 'component', 'type_alias']);
 import { logDebug, logWarn } from '../errors';
 import { runBridgeResolvers, type BridgeResolutionResult } from './bridges';
 
