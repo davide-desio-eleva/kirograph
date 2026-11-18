@@ -283,7 +283,7 @@ function receiverNode(call: any): any {
   if (named) return named;
   const fn = calleeOf(call);
   if (!fn) return null;
-  if (fn.type === 'member_expression' || fn.type === 'attribute' || fn.type === 'field_expression' || fn.type === 'selector_expression') {
+  if (fn.type === 'member_expression' || fn.type === 'attribute' || fn.type === 'field_expression' || fn.type === 'selector_expression' || fn.type === 'navigation_expression') {
     return fn.childForFieldName('object') ?? fn.childForFieldName('operand') ?? fn.namedChild(0);
   }
   return null;
@@ -295,7 +295,10 @@ function calledName(call: any, source: string): string | undefined {
   if (named) return text(named, source);
   const fn = calleeOf(call);
   if (!fn) return undefined;
-  const last = fn.childForFieldName('property') ?? fn.childForFieldName('attribute') ?? fn.childForFieldName('field') ?? fn;
+  const last = fn.childForFieldName('property') ?? fn.childForFieldName('attribute') ?? fn.childForFieldName('field')
+    ?? (fn.type === 'navigation_expression'
+      ? (fn.lastNamedChild?.type === 'navigation_suffix' ? fn.lastNamedChild.childForFieldName('suffix') ?? fn.lastNamedChild.lastNamedChild : fn.lastNamedChild)
+      : fn);
   const name = text(last, source);
   return /^[A-Za-z_$][\w$]*$/.test(name) ? name : undefined;
 }

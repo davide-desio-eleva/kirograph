@@ -82,10 +82,35 @@ function inlineParentIncludes(srcDir) {
   }
 }
 
+/**
+ * The WASM runtime gives a scanner no stdio and no exit. A scanner that reports running out of
+ * memory (`fprintf(stderr, …); exit(1);`, Swift's) would not link: in a WASM build that report is
+ * dropped and the exit becomes a trap. Nothing else in the scanner changes.
+ */
+function shimStdio(srcDir) {
+  const file = join(srcDir, 'scanner.c');
+  if (!existsSync(file)) return;
+  const text = readFileSync(file, 'utf8');
+  if (text.startsWith('/* kirograph-wasm-shim */') || !/\b(stderr|exit\s*\()/.test(text)) return;
+  writeFileSync(file, [
+    '/* kirograph-wasm-shim */',
+    '#include <stdio.h>',
+    '#include <stdlib.h>',
+    '#define fprintf(...) ((void)0)',
+    '#define exit(code) __builtin_trap()',
+    text,
+  ].join('\n'));
+}
+
 /** Compiles one language to its WASM file. */
 async function build(lang, spec) {
   const src = await fetchSources(spec);
   const dir = join(src, spec.dir ?? '.');
+  // A grammar pinned between releases has no generated parser: the pinned CLI generates it from
+  // grammar.js, so the same commit and the same CLI give the same parser
+  if (spec.generate && !existsSync(join(dir, 'src', 'parser.c'))) {
+    execFileSync(cli, ['generate'], { cwd: dir, stdio: ['ignore', 'ignore', 'inherit'] });
+  }
   if (!existsSync(join(dir, 'src', 'parser.c'))) throw new Error(`${lang}: no generated parser in ${dir}/src`);
   // Grammars older than tree-sitter 0.24 have no tree-sitter.json, which the CLI needs
   if (!existsSync(join(dir, 'tree-sitter.json'))) {
@@ -95,6 +120,7 @@ async function build(lang, spec) {
     }));
   }
   inlineParentIncludes(join(dir, 'src'));
+  shimStdio(join(dir, 'src'));
   mkdirSync(wasmDir, { recursive: true });
   execFileSync(cli, ['build', '--wasm', '-o', wasmPath(lang), dir], { stdio: ['ignore', 'ignore', 'inherit'] });
 }

@@ -569,6 +569,11 @@ function walkTree(
   // Python/Go/Rust/Java/C# variable and constant types
   if (!kind) kind = getLanguageSpecificKind(node.type, language);
 
+  // Kotlin: a constructor parameter with val / var is a property of the class (`data class User(val id: Int)`)
+  if (language === 'kotlin' && node.type === 'class_parameter' && node.namedChildren.some((c: any) => c.type === 'binding_pattern_kind')) {
+    kind = 'property';
+  }
+
   // C / C++: a struct, class or enum is a declaration only with a body (`struct node *p` names
   // one); a function inside a class body, or defined as `Class::name`, is a method; a member
   // function a class body declares (its definition is elsewhere) is a method too
@@ -696,6 +701,7 @@ function getLanguageSpecificKind(type: string, lang: Language): NodeKind | null 
       break;
     case 'kotlin':
       if (type === 'property_declaration') return 'variable';
+      if (type === 'object_declaration') return 'class';   // `object Registry { … }`: a singleton
       break;
     case 'swift':
       if (type === 'property_declaration') return 'property';
@@ -937,8 +943,12 @@ function extractImportSource(node: any, source: string, language: Language): str
 
   // C#: using Namespace.Name;
   if (node.type === 'using_directive') {
+    // `using Alias = Foo.Bar;`: the import is Foo.Bar, not the alias (the `name` field since
+    // tree-sitter-c-sharp 0.21, a name_equals before)
+    const alias = node.childForFieldName?.('name');
     for (let i = 0; i < node.childCount; i++) {
       const child = node.child(i);
+      if (alias && child.startIndex === alias.startIndex && child.endIndex === alias.endIndex) continue;
       if (child.type === 'qualified_name' || child.type === 'identifier') {
         return source.slice(child.startIndex, child.endIndex);
       }
@@ -949,7 +959,8 @@ function extractImportSource(node: any, source: string, language: Language): str
   if (node.type === 'import_declaration' || node.type === 'import_header') {
     const text = source.slice(node.startIndex, node.endIndex).trim();
     const m = text.match(/^import\s+(.+?)[;\s*]*$/);
-    if (m) return m[1].trim();
+    // Kotlin `import a.b.C as D`: the import is a.b.C
+    if (m) return m[1].replace(/\s+as\s+[\w`]+$/, '').trim();
   }
 
   // PHP: use Foo\Bar
@@ -1288,8 +1299,14 @@ const CALL_NODE_TYPES = new Set([
  * Extract the callee name from a call node.
  * Uses named field lookup first (more precise), then falls back to first-child heuristic.
  */
-/** Member access expressions: `a.b` in JS/TS, Python, Rust and C, Go. */
-const MEMBER_ACCESS = new Set(['member_expression', 'attribute', 'field_expression', 'selector_expression']);
+/** The member a Kotlin / Swift navigation names: its last child, or the suffix's name (Swift). */
+export function navigationMember(nav: any): any {
+  const last = nav.lastNamedChild;
+  return last?.type === 'navigation_suffix' ? last.childForFieldName('suffix') ?? last.lastNamedChild : last;
+}
+
+/** Member access expressions: `a.b` in JS/TS, Python, Rust and C, Go, Kotlin, Swift. */
+const MEMBER_ACCESS = new Set(['member_expression', 'attribute', 'field_expression', 'selector_expression', 'navigation_expression']);
 
 function extractCallName(node: any, source: string): string | null {
   // Named fields — Java uses 'name', Python/Ruby use 'function'/'method', Elixir uses 'target'
@@ -1310,6 +1327,7 @@ function extractCallName(node: any, source: string): string | null {
   }
   const member = fn && MEMBER_ACCESS.has(fn.type)
     ? fn.childForFieldName('property') ?? fn.childForFieldName('attribute') ?? fn.childForFieldName('field')
+      ?? (fn.type === 'navigation_expression' ? navigationMember(fn) : null)
     : null;
   if (member) {
     const text = source.slice(member.startIndex, member.endIndex).trim();
@@ -1610,7 +1628,7 @@ function extractTypeName(node: any, source: string): string | null {
  * C#:  base_list  children → all are either base class or interface (can't distinguish without types)
  * Java: superclass → extends; super_interfaces / extends_interfaces → implements / extends
  */
-const INHERITANCE_LANGUAGES = new Set<Language>(['csharp', 'java', 'typescript', 'tsx', 'javascript', 'jsx', 'python']);
+const INHERITANCE_LANGUAGES = new Set<Language>(['csharp', 'java', 'typescript', 'tsx', 'javascript', 'jsx', 'python', 'kotlin']);
 
 function extractInheritance(
   node: any,
@@ -1642,6 +1660,20 @@ function extractInheritance(
       } else if (child.type === 'extends_type_clause') {
         for (const ty of child.namedChildren) push(ty, 'extends');
       }
+    }
+    return;
+  }
+
+  // Kotlin: class A(…) : Base(), Api — a constructor call names the superclass, a type an interface
+  if (language === 'kotlin') {
+    const specs = node.namedChildren.flatMap((c: any) =>
+      c.type === 'delegation_specifier' ? [c] : c.type === 'delegation_specifiers' ? c.namedChildren : []);
+    for (const spec of specs) {
+      const inner = spec.namedChild(0);
+      const call = inner?.type === 'constructor_invocation';
+      const userType = call ? inner.namedChild(0) : inner;
+      const id = userType?.type === 'user_type' ? userType.lastNamedChild : null;
+      if (id) push(id, call ? 'extends' : 'implements');
     }
     return;
   }
