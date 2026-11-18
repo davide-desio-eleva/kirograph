@@ -14,14 +14,14 @@
     },
     "bash": {
       "package": "tree-sitter-bash",
-      "version": "0.20.5",
+      "version": "0.25.1",
       "symbol": "bash",
       "fingerprint": {
-        "abi": 14,
-        "states": 7671,
+        "abi": 15,
+        "states": 7571,
         "kinds": 280,
         "fields": 19,
-        "hash": "b93cbd487d16a3ac"
+        "hash": "316df83a30ce1eb9"
       }
     },
     "c": {
@@ -62,14 +62,14 @@
     },
     "css": {
       "package": "tree-sitter-css",
-      "version": "0.20.0",
+      "version": "0.25.0",
       "symbol": "css",
       "fingerprint": {
-        "abi": 14,
-        "states": 352,
-        "kinds": 124,
+        "abi": 15,
+        "states": 442,
+        "kinds": 151,
         "fields": 0,
-        "hash": "cb45a741e13567e2"
+        "hash": "a08085a152dfe2a7"
       }
     },
     "dart": {
@@ -86,14 +86,14 @@
     },
     "elixir": {
       "package": "tree-sitter-elixir",
-      "version": "0.1.1",
+      "version": "0.3.5",
       "symbol": "elixir",
       "fingerprint": {
         "abi": 14,
-        "states": 6986,
-        "kinds": 236,
+        "states": 7001,
+        "kinds": 235,
         "fields": 9,
-        "hash": "2041163ad1ede19a"
+        "hash": "8263f41957332d2a"
       }
     },
     "elm": {
@@ -144,7 +144,7 @@
     },
     "html": {
       "package": "tree-sitter-html",
-      "version": "0.20.4",
+      "version": "0.23.2",
       "symbol": "html",
       "fingerprint": {
         "abi": 14,
@@ -202,15 +202,15 @@
       }
     },
     "lua": {
-      "package": "tree-sitter-lua",
-      "version": "2.1.3",
+      "package": "@tree-sitter-grammars/tree-sitter-lua",
+      "version": "0.4.1",
       "symbol": "lua",
       "fingerprint": {
-        "abi": 13,
-        "states": 255,
-        "kinds": 125,
-        "fields": 20,
-        "hash": "0412edd64b579fc4"
+        "abi": 15,
+        "states": 262,
+        "kinds": 137,
+        "fields": 22,
+        "hash": "9943e33b0e16192b"
       }
     },
     "nix": {
@@ -226,27 +226,27 @@
     },
     "objc": {
       "package": "tree-sitter-objc",
-      "version": "2.1.0",
+      "version": "3.0.2",
       "symbol": "objc",
       "fingerprint": {
         "abi": 14,
-        "states": 9561,
-        "kinds": 570,
-        "fields": 46,
-        "hash": "62304e7db19e10dd"
+        "states": 6799,
+        "kinds": 588,
+        "fields": 48,
+        "hash": "2e74e823a0cde6fd"
       }
     },
     "ocaml": {
       "package": "tree-sitter-ocaml",
-      "version": "0.20.4",
-      "dir": "ocaml",
+      "version": "0.24.2",
+      "dir": "grammars/ocaml",
       "symbol": "ocaml",
       "fingerprint": {
         "abi": 14,
-        "states": 22341,
-        "kinds": 427,
-        "fields": 13,
-        "hash": "3678a1639353dc26"
+        "states": 23760,
+        "kinds": 444,
+        "fields": 38,
+        "hash": "fddc1f81f341b401"
       }
     },
     "pascal": {
@@ -379,14 +379,14 @@
     },
     "solidity": {
       "github": "JoranHonig/tree-sitter-solidity",
-      "version": "b239a95f94cfcc6e7b3e961bc73a28d55e214f02",
+      "version": "048fe686cb1fde267243739b8bdbec8fc3a55272",
       "symbol": "solidity",
       "fingerprint": {
-        "abi": 14,
-        "states": 815,
-        "kinds": 512,
-        "fields": 33,
-        "hash": "736804e89fcd0f46"
+        "abi": 15,
+        "states": 977,
+        "kinds": 531,
+        "fields": 35,
+        "hash": "cad122d8df3b079b"
       }
     },
     "sql": {
@@ -452,14 +452,14 @@
     },
     "vue": {
       "github": "tree-sitter-grammars/tree-sitter-vue",
-      "version": "7e48557b903a9db9c38cea3b7839ef7e1f36c693",
+      "version": "ce8011a414fdf8091f4e4071752efc376f4afb08",
       "symbol": "vue",
       "fingerprint": {
-        "abi": 14,
-        "states": 190,
-        "kinds": 59,
+        "abi": 15,
+        "states": 170,
+        "kinds": 67,
         "fields": 0,
-        "hash": "44511228b10bb840"
+        "hash": "e5ec95153d35512f"
       }
     },
     "yaml": {
