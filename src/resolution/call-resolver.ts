@@ -222,8 +222,9 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
     const inScope = (n: Node) => isMember(n, ctx) || !imported || imported.size === 0 || imported.has(n.filePath) || n.filePath === ref.filePath;
     const reached = candidates.filter(n => receiverReaches(ref.receiver!, n, ctx) && inScope(n));
     if (reached.length === 0) {
-      // A class through its module (`models.CharField(…)`): the one of the name the file imports,
-      // or the one in the project
+      // A class through its module (`models.CharField(…)`), in the languages where a module is a
+      // value: the one of the name the file imports, or the one in the project
+      if (language === undefined || !(language === 'python' || JS_FAMILY.has(language))) return null;
       const types = candidates.filter(n => CONSTRUCTORS.has(n.kind) && !isMember(n, ctx));
       const importedTypes = inImported(types);
       return importedTypes.length > 0 ? only(importedTypes) : only(types);

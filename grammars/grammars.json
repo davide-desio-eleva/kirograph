@@ -26,26 +26,26 @@
     },
     "c": {
       "package": "tree-sitter-c",
-      "version": "0.20.8",
+      "version": "0.24.1",
       "symbol": "c",
       "fingerprint": {
-        "abi": 14,
-        "states": 2300,
-        "kinds": 351,
+        "abi": 15,
+        "states": 2015,
+        "kinds": 363,
         "fields": 39,
-        "hash": "3a1af844ce0aa6a9"
+        "hash": "99d87df627ddb4a4"
       }
     },
     "cpp": {
       "package": "tree-sitter-cpp",
-      "version": "0.20.5",
+      "version": "0.23.4",
       "symbol": "cpp",
       "fingerprint": {
         "abi": 14,
-        "states": 9551,
-        "kinds": 527,
+        "states": 8637,
+        "kinds": 543,
         "fields": 50,
-        "hash": "daa7e551543d1d44"
+        "hash": "15b640f00cc68180"
       }
     },
     "csharp": {
@@ -121,14 +121,14 @@
     },
     "go": {
       "package": "tree-sitter-go",
-      "version": "0.20.0",
+      "version": "0.25.0",
       "symbol": "go",
       "fingerprint": {
-        "abi": 14,
-        "states": 1378,
-        "kinds": 216,
+        "abi": 15,
+        "states": 1442,
+        "kinds": 219,
         "fields": 35,
-        "hash": "dd81b96c5785727a"
+        "hash": "f92d25d465572144"
       }
     },
     "hcl": {
@@ -156,14 +156,14 @@
     },
     "java": {
       "package": "tree-sitter-java",
-      "version": "0.20.2",
+      "version": "0.23.5",
       "symbol": "java",
       "fingerprint": {
         "abi": 14,
-        "states": 1381,
-        "kinds": 322,
+        "states": 1385,
+        "kinds": 321,
         "fields": 40,
-        "hash": "10c620e1ce7e1d9d"
+        "hash": "d8ec0926352c216b"
       }
     },
     "javascript": {
@@ -297,14 +297,14 @@
     },
     "python": {
       "package": "tree-sitter-python",
-      "version": "0.21.0",
+      "version": "0.25.0",
       "symbol": "python",
       "fingerprint": {
-        "abi": 14,
-        "states": 2831,
+        "abi": 15,
+        "states": 2786,
         "kinds": 274,
         "fields": 32,
-        "hash": "d604c912e315af2e"
+        "hash": "8ccb758b0ef1afab"
       }
     },
     "r": {
@@ -344,14 +344,14 @@
     },
     "rust": {
       "package": "tree-sitter-rust",
-      "version": "0.20.4",
+      "version": "0.24.0",
       "symbol": "rust",
       "fingerprint": {
-        "abi": 14,
-        "states": 3107,
-        "kinds": 326,
-        "fields": 28,
-        "hash": "de5ba9f834af3950"
+        "abi": 15,
+        "states": 3823,
+        "kinds": 355,
+        "fields": 31,
+        "hash": "6bc2bf2f70e2b350"
       }
     },
     "scala": {
