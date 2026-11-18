@@ -319,16 +319,15 @@
       "from": "compiled by hand before 1.6.0"
     },
     "rescript": {
-      "prebuilt": true,
-      "from": "tree-sitter-wasms@0.1.13",
-      "source": "rescript-lang/tree-sitter-rescript@6376fa028f31aa4e26ca2c8f007e322cd2a5eb4a",
-      "note": "the generated parser is not committed at that revision",
+      "github": "rescript-lang/tree-sitter-rescript",
+      "version": "v6.0.0",
+      "symbol": "rescript",
       "fingerprint": {
-        "abi": 14,
-        "states": 2940,
-        "kinds": 326,
-        "fields": 30,
-        "hash": "4a8aa79850b4b635"
+        "abi": 15,
+        "states": 5077,
+        "kinds": 353,
+        "fields": 31,
+        "hash": "4765bdb11e22bde8"
       }
     },
     "ruby": {

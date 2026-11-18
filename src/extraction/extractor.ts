@@ -559,6 +559,11 @@ function walkTree(
   // Python/Go/Rust/Java/C# variable and constant types
   if (!kind) kind = getLanguageSpecificKind(node.type, language);
 
+  // ReScript: `let f = (x) => …` is a function, any other let a variable
+  if (language === 'rescript' && node.type === 'let_binding') {
+    kind = node.childForFieldName('body')?.type === 'function' ? 'function' : 'variable';
+  }
+
   // Dart: refine class_definition kind based on superclass (Widget → component)
   if (language === 'dart' && node.type === 'class_definition' && kind === 'class') {
     kind = refineDartClassKind(node, source);
@@ -717,8 +722,8 @@ function getLanguageSpecificKind(type: string, lang: Language): NodeKind | null 
       if (type === 'declaration') return 'variable';
       break;
     case 'rescript':
+      // type_declaration is a type_alias for every language (KIND_MAP)
       if (type === 'let_binding') return 'function';
-      if (type === 'type_definition') return 'type_alias';
       if (type === 'module_declaration') return 'module';
       break;
     case 'sql':
@@ -966,6 +971,19 @@ function extractName(node: any, source: string, _lang: Language, kind: NodeKind)
         if (lastId) return lastId;
       }
     }
+  }
+
+  // ReScript: the name is the let's pattern, or in the type or module binding
+  if (_lang === 'rescript') {
+    let id: any = null;
+    if (node.type === 'let_binding') id = node.childForFieldName('pattern');
+    else if (node.type === 'type_declaration' || node.type === 'module_declaration') {
+      const binding = node.namedChildren.find((c: any) => c.type === 'type_binding' || c.type === 'module_binding');
+      id = binding?.childForFieldName('name');
+    }
+    return id && (id.type === 'value_identifier' || id.type === 'type_identifier' || id.type === 'module_identifier')
+      ? source.slice(id.startIndex, id.endIndex)
+      : null;
   }
 
   // Standard: look for first named-identifier child
