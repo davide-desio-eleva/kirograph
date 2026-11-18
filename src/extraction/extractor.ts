@@ -13,6 +13,7 @@ import { initGrammars, getParser, hasWasmGrammar } from './grammars';
 import { extractNotebook } from './notebook';
 import { extractSql } from './sql';
 import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
+import { receiverInfo, declaredReturnType } from './receiver-types';
 import { extractHcl, extractYaml, extractHelmTemplate, augmentBash, extractJsonConfig } from './infra';
 
 export interface UnresolvedRef {
@@ -594,6 +595,10 @@ function walkTree(
         isAbstract: isAbstract(node),
         updatedAt: now,
       };
+      if (kind === 'function' || kind === 'method' || kind === 'constant' || kind === 'variable') {
+        const returnType = declaredReturnType(node, source, language);
+        if (returnType) graphNode.returnType = returnType;
+      }
       nodes.push(graphNode);
 
       if (parentId) {
@@ -603,8 +608,8 @@ function walkTree(
       // Collect call references within this symbol
       collectCallRefs(node, source, id, unresolvedRefs, language);
 
-      // Extract inheritance edges for C# and Java class/interface nodes
-      if ((kind === 'class' || kind === 'interface') && (language === 'csharp' || language === 'java')) {
+      // Extract inheritance edges for class/interface nodes
+      if ((kind === 'class' || kind === 'interface') && INHERITANCE_LANGUAGES.has(language)) {
         extractInheritance(node, source, language, id, unresolvedRefs);
       }
 
@@ -626,6 +631,12 @@ function walkTree(
 
 function getLanguageSpecificKind(type: string, lang: Language): NodeKind | null {
   switch (lang) {
+    case 'typescript':
+    case 'tsx':
+      // The methods an interface or an abstract class declares: what a call through a receiver
+      // of that type reaches
+      if (type === 'method_signature' || type === 'abstract_method_signature') return 'method';
+      break;
     case 'python':
       if (type === 'assignment') return 'variable';
       break;
@@ -801,16 +812,29 @@ function extractImport(
     updatedAt: now,
   };
 
-  // Register as unresolved import for later file-level resolution
+  // Register as unresolved import for later file-level resolution. A Python `from X import a, b`
+  // keeps the names: `a` can be a submodule (`from django.db import models`)
+  const names = node.type === 'import_from_statement' ? pythonImportedNames(node, source) : [];
   unresolvedRefs.push({
     sourceId: id,
     refName: modulePath,
     refKind: 'import',
     line: node.startPosition.row + 1,
     column: node.startPosition.column,
+    ...(names.length > 0 ? { metadata: { names } } : {}),
   });
 
   return importNode;
+}
+
+/** The names a Python `from X import a, b as c` imports: a, b. */
+function pythonImportedNames(node: any, source: string): string[] {
+  const names: string[] = [];
+  for (const child of node.childrenForFieldName?.('name') ?? []) {
+    const name = child.type === 'aliased_import' ? child.childForFieldName('name') : child;
+    if (name?.type === 'dotted_name') names.push(source.slice(name.startIndex, name.endIndex));
+  }
+  return names;
 }
 
 /** Extract the module path string from an import statement node */
@@ -931,6 +955,10 @@ function stripQuotes(s: string): string {
 
 // ── Name extraction ───────────────────────────────────────────────────────────
 
+/** Node types that are a plain name. */
+const NAME_TYPES = new Set(['identifier', 'property_identifier', 'type_identifier', 'simple_identifier',
+  'word', 'name', 'constant', 'field_identifier', 'private_property_identifier']);
+
 function extractName(node: any, source: string, _lang: Language, kind: NodeKind): string | null {
   // For variable/constant declarations (lexical_declaration, variable_declaration),
   // the identifier is inside a variable_declarator child
@@ -984,6 +1012,12 @@ function extractName(node: any, source: string, _lang: Language, kind: NodeKind)
     return id && (id.type === 'value_identifier' || id.type === 'type_identifier' || id.type === 'module_identifier')
       ? source.slice(id.startIndex, id.endIndex)
       : null;
+  }
+
+  // The declaration's own name field: a Java `Journal journal()` is `journal`, not its return type
+  const nameField = node.childForFieldName?.('name');
+  if (nameField && NAME_TYPES.has(nameField.type)) {
+    return source.slice(nameField.startIndex, nameField.endIndex);
   }
 
   // Standard: look for first named-identifier child
@@ -1183,6 +1217,9 @@ const CALL_NODE_TYPES = new Set([
  * Extract the callee name from a call node.
  * Uses named field lookup first (more precise), then falls back to first-child heuristic.
  */
+/** Member access expressions: `a.b` in JS/TS, Python, Rust and C, Go. */
+const MEMBER_ACCESS = new Set(['member_expression', 'attribute', 'field_expression', 'selector_expression']);
+
 function extractCallName(node: any, source: string): string | null {
   // Named fields — Java uses 'name', Python/Ruby use 'function'/'method', Elixir uses 'target'
   for (const field of ['name', 'method', 'function', 'target']) {
@@ -1195,7 +1232,16 @@ function extractCallName(node: any, source: string): string | null {
       }
     }
   }
-  // Fallback: first child, take final segment of dotted access (covers JS/TS, C#, Go, Rust…)
+  // A member access: the member's name (`save` in `makeRepo().save()`, `repo.save()`, `self.x.save()`)
+  const fn = node.childForFieldName?.('function') ?? node.child(0);
+  const member = fn && MEMBER_ACCESS.has(fn.type)
+    ? fn.childForFieldName('property') ?? fn.childForFieldName('attribute') ?? fn.childForFieldName('field')
+    : null;
+  if (member) {
+    const text = source.slice(member.startIndex, member.endIndex).trim();
+    if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(text)) return text;
+  }
+  // Fallback: first child, take final segment of dotted access (covers C#, Kotlin, Swift…)
   const funcNode = node.child(0);
   if (funcNode) {
     const rawName = source.slice(funcNode.startIndex, funcNode.endIndex).split('(')[0].trim();
@@ -1207,6 +1253,31 @@ function extractCallName(node: any, source: string): string | null {
   return null;
 }
 
+/**
+ * What a call is made on: `pattern` in `pattern.test(s)`, `this.users` in `this.users.find(id)`,
+ * `os.path` in `os.path.join(a)`. Undefined for a bare call (`build()`). Resolution uses it to
+ * tell a method of some object from a function of the project with the same name.
+ */
+export function callReceiver(node: any, source: string): string | undefined {
+  const named = node.childForFieldName?.('object') ?? node.childForFieldName?.('receiver');
+  if (named) return source.slice(named.startIndex, named.endIndex).trim() || undefined;
+  const fn = node.childForFieldName?.('function') ?? node.child(0);
+  if (fn && MEMBER_ACCESS.has(fn.type)) {
+    const obj = fn.childForFieldName('object') ?? fn.childForFieldName('operand') ?? fn.namedChild(0);
+    if (obj) return source.slice(obj.startIndex, obj.endIndex).trim() || undefined;
+  }
+  for (const field of ['name', 'method', 'function', 'target']) {
+    const f = node.childForFieldName?.(field);
+    if (f && (f.type === 'identifier' || f.type === 'name' || f.type === 'property_identifier' || f.type === 'type_identifier')) return undefined;
+  }
+  const callee = node.child(0);
+  if (!callee) return undefined;
+  const raw = source.slice(callee.startIndex, callee.endIndex).split('(')[0].trim();
+  const dot = raw.lastIndexOf('.');
+  if (dot <= 0 || raw.length >= 100) return undefined;
+  return raw.slice(0, dot).replace(/\?$/, '').trim() || undefined;
+}
+
 function collectCallRefs(node: any, source: string, sourceId: string, unresolvedRefs: UnresolvedRef[], language: Language): void {
   walkForCalls(node, source, sourceId, unresolvedRefs, language);
 }
@@ -1216,6 +1287,13 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
     const calleeName = extractCallName(node, source);
     if (calleeName) {
       const metadata: Record<string, unknown> = {};
+      const receiver = callReceiver(node, source);
+      if (receiver) {
+        metadata.receiver = receiver;
+        const info = receiverInfo(node, receiver, source, language);
+        if (info.type) metadata.receiverType = info.type;
+        if (info.call) metadata.receiverCall = info.call;
+      }
       if (JS_TS_LANGUAGES.has(language)) {
         const argKind = classifyFirstArgument(node, source);
         if (argKind) metadata.argKind = argKind;
@@ -1458,6 +1536,8 @@ function extractTypeName(node: any, source: string): string | null {
  * C#:  base_list  children → all are either base class or interface (can't distinguish without types)
  * Java: superclass → extends; super_interfaces / extends_interfaces → implements / extends
  */
+const INHERITANCE_LANGUAGES = new Set<Language>(['csharp', 'java', 'typescript', 'tsx', 'javascript', 'jsx', 'python']);
+
 function extractInheritance(
   node: any,
   source: string,
@@ -1465,6 +1545,41 @@ function extractInheritance(
   classNodeId: string,
   unresolvedRefs: UnresolvedRef[],
 ): void {
+  // A supertype by its last name: `m.Base<T>` → Base. A call (`mixin(Base)`) names none
+  const push = (typeNode: any, refKind: 'extends' | 'implements') => {
+    let n = typeNode;
+    if (n?.type === 'generic_type') n = n.childForFieldName('name') ?? n.namedChild(0);
+    if (!n || !['identifier', 'type_identifier', 'member_expression', 'nested_type_identifier', 'attribute'].includes(n.type)) return;
+    const name = source.slice(n.startIndex, n.endIndex).split('.').pop()!.trim();
+    if (/^[A-Za-z_$][\w$]*$/.test(name)) {
+      unresolvedRefs.push({ sourceId: classNodeId, refName: name, refKind, line: n.startPosition.row + 1, column: n.startPosition.column });
+    }
+  };
+
+  // TypeScript / JavaScript: class_heritage → extends_clause (value) / implements_clause; JS has the value directly
+  if (JS_TS_LANGUAGES.has(language) || language === 'jsx') {
+    for (const child of node.namedChildren) {
+      if (child.type === 'class_heritage') {
+        for (const clause of child.namedChildren) {
+          if (clause.type === 'extends_clause') push(clause.childForFieldName('value') ?? clause.namedChild(0), 'extends');
+          else if (clause.type === 'implements_clause') for (const ty of clause.namedChildren) push(ty, 'implements');
+          else push(clause, 'extends');
+        }
+      } else if (child.type === 'extends_type_clause') {
+        for (const ty of child.namedChildren) push(ty, 'extends');
+      }
+    }
+    return;
+  }
+
+  // Python: class A(B, m.C, metaclass=M)
+  if (language === 'python') {
+    for (const arg of node.childForFieldName('superclasses')?.namedChildren ?? []) {
+      if (arg.type === 'identifier' || arg.type === 'attribute') push(arg, 'extends');
+    }
+    return;
+  }
+
   for (let i = 0; i < node.childCount; i++) {
     const child = node.child(i);
 

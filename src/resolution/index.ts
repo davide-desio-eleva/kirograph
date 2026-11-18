@@ -8,7 +8,9 @@
 import type { Node, NodeKind, Edge } from '../types';
 import type { GraphDatabase } from '../db/database';
 import type { KiroGraphConfig } from '../config';
-import { matchReference } from './name-matcher';
+import { resolveCall, isCallTarget, type CallContext } from './call-resolver';
+
+const SUPERTYPE_KINDS = new Set<string>(['class', 'interface', 'struct', 'trait', 'protocol', 'component']);
 import { logDebug, logWarn } from '../errors';
 import { runBridgeResolvers, type BridgeResolutionResult } from './bridges';
 
@@ -57,6 +59,7 @@ export class ReferenceResolver {
    * bridge resolvers need whole nodes and load them when they first ask (see _buildBridgeContext).
    */
   warmCaches(full = true): void {
+    this.pythonModules = null;
     this.nameCache.clear();
     this.qualifiedNameCache.clear();
     this.kindCache.clear();
@@ -72,13 +75,13 @@ export class ReferenceResolver {
       ? rawDb.all(
         `SELECT id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column,
                 end_column, signature, visibility, is_exported, is_async, is_static, is_abstract,
-                decorators, type_parameters, updated_at FROM nodes`)
-      : rawDb.all('SELECT id, kind, name, qualified_name, file_path FROM nodes');
+                decorators, type_parameters, return_type, updated_at FROM nodes`)
+      : rawDb.all('SELECT id, kind, name, qualified_name, file_path, language, start_line, return_type FROM nodes');
 
     for (const row of rows) {
       const node: Node = full
         ? this._rowToNode(row)
-        : { id: row.id, kind: row.kind, name: row.name, qualifiedName: row.qualified_name, filePath: row.file_path } as Node;
+        : { id: row.id, kind: row.kind, name: row.name, qualifiedName: row.qualified_name, filePath: row.file_path, language: row.language, startLine: row.start_line, returnType: row.return_type ?? undefined } as Node;
 
       // nameCache
       const nameList = this.nameCache.get(node.name) ?? [];
@@ -177,7 +180,11 @@ export class ReferenceResolver {
     }
 
     const rawDb = (this.db as any).db;
-    const refs: any[] = rawDb.all('SELECT * FROM unresolved_refs');
+    // Imports first, then supertypes: a call prefers the functions of the files its file imports,
+    // and looks a method up in the supertypes of the receiver's type
+    const refs: any[] = rawDb.all(`SELECT * FROM unresolved_refs ORDER BY
+      CASE ref_kind WHEN 'import' THEN 0 WHEN 'extends' THEN 1 WHEN 'implements' THEN 1 ELSE 2 END, id`);
+    const calls = this.callContext();
     let resolved = 0;
     const total = refs.length;
 
@@ -214,6 +221,7 @@ export class ReferenceResolver {
 
           const attemptedStrategies: string[] = [];
           let targetId: string | null = null;
+          let extraTargets: string[] = [];
 
           if (refKind === 'reference' || refKind === 'qualified_call') {
             // Infrastructure references (infra.ts): the exact qualified name, nothing looser
@@ -221,57 +229,43 @@ export class ReferenceResolver {
             targetId = this.qualifiedNameCache.get(refName)?.id ?? null;
           } else if (refKind === 'import') {
             attemptedStrategies.push('import-path');
-            targetId = this._resolveImportPath(refName, filePath);
+            if (filePath.endsWith('.py')) {
+              // A module, and the submodules among the names it imports (`from django.db import models`)
+              const targets = this._resolvePythonImport(refName, filePath, refMetadata ? JSON.parse(refMetadata).names : undefined);
+              targetId = targets[0] ?? null;
+              extraTargets = targets.slice(1);
+            } else {
+              targetId = this._resolveImportPath(refName, filePath);
+            }
           } else if (refKind === 'extends' || refKind === 'implements') {
             attemptedStrategies.push('type-name');
-            targetId = this._resolveTypeName(refName);
+            targetId = this._resolveSupertype(refName, sourceId, filePath, calls);
           } else {
             attemptedStrategies.push('framework');
 
-            // Strategy 2: Qualified name match (confidence 0.95)
+            // Qualified name match (confidence 0.95)
             attemptedStrategies.push('qualified');
             const qualifiedNode = this.qualifiedNameCache.get(refName);
             if (qualifiedNode) {
               targetId = qualifiedNode.id;
             }
 
-            // Strategy 3: Method call pattern (confidence 0.85)
-            if (!targetId && refName.includes('.')) {
-              attemptedStrategies.push('method');
-              const methodPart = refName.slice(refName.lastIndexOf('.') + 1);
-              const methodCandidates = this.nameCache.get(methodPart) ?? [];
-              if (methodCandidates.length > 0) {
-                targetId = methodCandidates[0].id;
-              }
-            }
-
-            // Strategy 4: Exact name match (confidence 0.9)
+            // By name, with the receiver the call is made on (see call-resolver)
             if (!targetId) {
-              attemptedStrategies.push('exact');
-              const exactCandidates = this.nameCache.get(refName) ?? [];
-              if (exactCandidates.length > 0) {
-                targetId = exactCandidates[0].id;
-              }
-            }
+              const meta = refMetadata ? JSON.parse(refMetadata) : undefined;
+              const dot = refName.lastIndexOf('.');
+              const name = dot > 0 ? refName.slice(dot + 1) : refName;
+              const receiver: string | undefined = meta?.receiver ?? (dot > 0 ? refName.slice(0, dot) : undefined);
+              const call = { name, receiver, receiverType: meta?.receiverType as string | undefined, receiverCall: meta?.receiverCall, sourceId, filePath };
+              attemptedStrategies.push(receiver !== undefined ? 'method' : 'exact');
+              targetId = resolveCall(call, calls)?.id ?? null;
 
-            // Strategy 5: Fuzzy / lowercase match (confidence 0.5)
-            if (!targetId) {
-              attemptedStrategies.push('fuzzy');
+              // Case-insensitive, for the languages whose names are (only when no node has the exact name)
               const threshold = this.config.fuzzyResolutionThreshold ?? 0.5;
-              const lowerRef = refName.toLowerCase();
-              const fuzzyCandidates = this.lowerNameCache.get(lowerRef) ?? [];
-
-              if (fuzzyCandidates.length > 0) {
-                const match = matchReference(refName, fuzzyCandidates, threshold);
-                if (match) {
-                  targetId = match.nodeId;
-                }
+              if (!targetId && threshold <= 0.5 && !this.nameCache.has(name)) {
+                attemptedStrategies.push('fuzzy');
+                targetId = resolveCall(call, { ...calls, byName: n => this.lowerNameCache.get(n.toLowerCase()) ?? [] })?.id ?? null;
               }
-
-              // No full-scan fallback here: the lowercase index above already holds every node
-              // whose name matches case-insensitively, and the exact, qualified and method
-              // strategies were answered from their indexes earlier. A scan of all nodes per
-              // unresolved reference only repeated that work.
             }
           }
 
@@ -287,10 +281,17 @@ export class ReferenceResolver {
               kind: edgeKind,
               line: line ?? undefined,
               column: column ?? undefined,
+              // The receiver stays: a sync turns the edge back into this reference (#101)
               metadata: refMetadata ? JSON.parse(refMetadata) : undefined,
             };
             batchEdges.push(edge);
+            for (const extra of extraTargets) {
+              batchEdges.push({ ...edge, target: extra });
+              calls.addImport(filePath, extra);
+            }
             resolvedIds.push(refId);
+            if (edgeKind === 'imports') calls.addImport(filePath, targetId);
+            if (edgeKind === 'extends' || edgeKind === 'implements') calls.addSupertype(sourceId, targetId);
             resolved++;
           } else {
             // Nothing to write when the same list is already recorded: a reference that stays
@@ -533,6 +534,58 @@ export class ReferenceResolver {
     return null;
   }
 
+  /** Python modules by every dotted suffix of their path (`db.models`, `django.db.models`), and a node of each file. */
+  private pythonModules: { byKey: Map<string, string[]>; nodeOf: Map<string, string> } | null = null;
+
+  /**
+   * The files a Python import names: the module (`from .base import x`, `import django.db`), and
+   * those of the imported names that are submodules (`from django.db import models`). As node ids
+   * of those files, the module first. A module outside the project resolves to nothing.
+   */
+  private _resolvePythonImport(module: string, sourceFilePath: string, names?: string[]): string[] {
+    if (!this.pythonModules) {
+      const byKey = new Map<string, string[]>();
+      const nodeOf = new Map<string, string>();
+      // A folder with an __init__.py is a package: a module path starts at a folder that is not
+      // one (the project root, `src/`), so `import copy` is the standard library's, not django/utils/copy.py
+      const rawDb = (this.db as any).db;
+      const packages = new Set<string>(
+        (rawDb.all(`SELECT path FROM files WHERE path LIKE '%__init__.py'`) as any[])
+          .map(r => String(r.path).replace(/\/?__init__\.py$/, '')));
+      for (const n of this.nodeByIdCache.values()) {
+        if (!n.filePath.endsWith('.py') || nodeOf.has(n.filePath)) continue;
+        nodeOf.set(n.filePath, n.id);
+        const parts = n.filePath.replace(/\.py$/, '').replace(/(^|\/)__init__$/, '').split('/').filter(Boolean);
+        for (let i = 0; i < parts.length; i++) {
+          if (i > 0 && packages.has(parts.slice(0, i).join('/'))) continue;
+          const key = parts.slice(i).join('.');
+          const list = byKey.get(key);
+          if (list) list.push(n.filePath); else byKey.set(key, [n.filePath]);
+        }
+      }
+      this.pythonModules = { byKey, nodeOf };
+    }
+    const { byKey, nodeOf } = this.pythonModules;
+    const fileOf = (mod: string): string | undefined => {
+      const dots = /^\.*/.exec(mod)![0].length;
+      if (dots === 0) {
+        // The shortest path that ends with the module: `django/db/models/__init__.py` for django.db.models
+        return byKey.get(mod)?.reduce((a, b) => (a.length <= b.length ? a : b));
+      }
+      const dir = sourceFilePath.split('/').slice(0, -1);
+      const base = dir.slice(0, Math.max(0, dir.length - (dots - 1))).join('/');
+      const rel = mod.slice(dots).replace(/\./g, '/');
+      const prefix = base ? base + '/' : '';
+      const candidates = rel ? [`${prefix}${rel}.py`, `${prefix}${rel}/__init__.py`] : [`${prefix}__init__.py`];
+      return candidates.find(f => nodeOf.has(f));
+    };
+    const files: string[] = [];
+    const add = (f: string | undefined) => { if (f && !files.includes(f)) files.push(f); };
+    add(fileOf(module));
+    for (const name of names ?? []) add(fileOf(module.endsWith('.') ? module + name : `${module}.${name}`));
+    return files.filter(f => f !== sourceFilePath).map(f => nodeOf.get(f)!);
+  }
+
   private _resolveImportPath(importPath: string, sourceFilePath: string): string | null {
     // ── 1. Relative path (JS/TS etc.) ──────────────────────────────────────────
     if (importPath.startsWith('.')) {
@@ -592,22 +645,83 @@ export class ReferenceResolver {
   }
 
   /**
-   * Resolve a bare type name to a node ID.
-   * Used for extends/implements refs where we have only the unqualified type name.
-   * Prefers class/interface/trait/protocol nodes over other kinds.
+   * What the call resolver reads: nodes by name and id, the files each file imports (the import
+   * edges already in the graph, and those this pass makes), and each node's owner.
    */
-  private _resolveTypeName(name: string): string | null {
-    const candidates = this.nameCache.get(name) ?? [];
-    if (candidates.length > 0) {
-      const preferred = candidates.find(n =>
-        n.kind === 'class' || n.kind === 'interface' || n.kind === 'trait' || n.kind === 'protocol'
-      );
-      return (preferred ?? candidates[0]).id;
-    }
-    // Try as a fully-qualified name
-    const qualified = this.qualifiedNameCache.get(name);
-    if (qualified) return qualified.id;
-    return null;
+  private callContext(): CallContext & { addImport(filePath: string, targetId: string): void; addSupertype(id: string, superId: string): void } {
+    const rawDb = (this.db as any).db;
+    const imports = new Map<string, Set<string>>();
+    const add = (from: string, to: string) => {
+      if (from === to) return;
+      let set = imports.get(from);
+      if (!set) imports.set(from, (set = new Set()));
+      set.add(to);
+    };
+    for (const r of rawDb.all(`
+      SELECT s.file_path AS f, t.file_path AS t FROM edges e
+      JOIN nodes s ON s.id = e.source JOIN nodes t ON t.id = e.target
+      WHERE e.kind = 'imports'`) as any[]) add(r.f, r.t);
+    let owners: Map<string, { id: string; name: string; kind: string }> | null = null;
+    const supers = new Map<string, string[]>();
+    const addSuper = (id: string, s: string) => {
+      const list = supers.get(id);
+      if (!list) supers.set(id, [s]); else if (!list.includes(s)) list.push(s);
+    };
+    for (const r of rawDb.all(`SELECT source, target FROM edges WHERE kind IN ('extends', 'implements')`) as any[]) addSuper(r.source, r.target);
+    return {
+      byName: name => this.nameCache.get(name) ?? [],
+      node: id => this.nodeByIdCache.get(id),
+      importedFiles: filePath => {
+        // What the file imports, and what the package files among those re-export
+        // (`__init__.py`, `index.ts`): `from django.template import Template` reaches template/base.py
+        const direct = imports.get(filePath);
+        if (!direct) return undefined;
+        const all = new Set(direct);
+        const queue = [...direct].map(f => ({ f, depth: 1 }));
+        while (queue.length > 0) {
+          const { f, depth } = queue.shift()!;
+          if (depth > 3 || !BARREL_FILE.test(f)) continue;
+          for (const next of imports.get(f) ?? []) {
+            if (!all.has(next)) { all.add(next); queue.push({ f: next, depth: depth + 1 }); }
+          }
+        }
+        return all;
+      },
+      owner: id => {
+        if (!owners) {
+          owners = new Map();
+          for (const r of rawDb.all(`
+            SELECT e.target AS id, s.id AS owner, s.name AS name, s.kind AS kind FROM edges e JOIN nodes s ON s.id = e.source
+            WHERE e.kind = 'contains' AND s.kind IN ('class', 'struct', 'interface', 'trait', 'protocol',
+              'module', 'namespace', 'component', 'enum')`) as any[]) owners.set(r.id, { id: r.owner, name: r.name, kind: r.kind });
+        }
+        return owners.get(id);
+      },
+      supertypes: id => supers.get(id) ?? [],
+      addSupertype: addSuper,
+      addImport: (filePath, targetId) => {
+        const target = this.nodeByIdCache.get(targetId);
+        if (target) add(filePath, target.filePath);
+      },
+    };
+  }
+
+  /**
+   * The type a class extends or implements, by name: in the class's language family, in its own
+   * file, else in a file it imports, else the one type of the name. Several left: none, rather than
+   * a wrong supertype for the methods looked up through it.
+   */
+  private _resolveSupertype(name: string, sourceId: string, filePath: string, calls: CallContext): string | null {
+    const source = this.nodeByIdCache.get(sourceId);
+    const types = (this.nameCache.get(name) ?? []).filter(n =>
+      SUPERTYPE_KINDS.has(n.kind) && n.id !== sourceId && isCallTarget(n, source?.language));
+    if (types.length === 0) return null;
+    const local = types.filter(n => n.filePath === filePath);
+    if (local.length > 0) return local[0].id;
+    const imported = calls.importedFiles(filePath);
+    const fromImports = imported ? types.filter(n => imported.has(n.filePath)) : [];
+    if (fromImports.length > 0) return fromImports.length === 1 ? fromImports[0].id : null;
+    return types.length === 1 ? types[0].id : null;
   }
 
   /**
@@ -634,6 +748,7 @@ export class ReferenceResolver {
       isAbstract: row.is_abstract === 1,
       decorators: row.decorators ? JSON.parse(row.decorators) : undefined,
       typeParameters: row.type_parameters ? JSON.parse(row.type_parameters) : undefined,
+      returnType: row.return_type ?? undefined,
       updatedAt: row.updated_at,
     };
   }
@@ -717,6 +832,9 @@ export class ReferenceResolver {
 }
 
 /** Files the bridge resolvers look at (see resolution/bridges). */
+/** Files that gather and re-export a package's symbols. */
+const BARREL_FILE = /(^|\/)(__init__\.py|index\.(ts|tsx|js|jsx|mjs|cjs))$/;
+
 const BRIDGE_FILE = /(\.(tsx?|jsx?|m|mm|h|swift|java|kt|dart)|(^|\/)(package\.json|expo-module\.config\.json))$/;
 
 /**

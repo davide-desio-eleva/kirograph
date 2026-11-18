@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS nodes (
   is_abstract INTEGER NOT NULL DEFAULT 0,
   decorators TEXT,
   type_parameters TEXT,
+  -- Declared return type of a function or method (the class name), for call resolution
+  return_type TEXT,
   updated_at INTEGER NOT NULL,
   -- Complexity metrics (nullable; populated when enableComplexity=true)
   complexity_cyclomatic INTEGER,
