@@ -864,7 +864,18 @@ export class ReferenceResolver {
           for (const r of rawDb.all(`
             SELECT e.target AS id, s.id AS owner, s.name AS name, s.kind AS kind FROM edges e JOIN nodes s ON s.id = e.source
             WHERE e.kind = 'contains' AND s.kind IN ('class', 'struct', 'interface', 'trait', 'protocol',
-              'module', 'namespace', 'component', 'enum')`) as any[]) owners.set(r.id, { id: r.owner, name: r.name, kind: r.kind });
+              'module', 'namespace', 'component', 'enum', 'type_alias')`) as any[]) owners.set(r.id, { id: r.owner, name: r.name, kind: r.kind });
+          // Go: a method is declared outside its type; its receiver names it (`func (s *Server) Run()`),
+          // a type of that name in the same package (folder)
+          for (const r of rawDb.all(`SELECT id, file_path, signature FROM nodes
+            WHERE language = 'go' AND kind = 'method' AND signature LIKE 'func (%'`) as any[]) {
+            const recv = /^func\s*\(\s*\w*\s*\*?\s*([A-Za-z_]\w*)/.exec(String(r.signature))?.[1];
+            if (!recv || owners.has(r.id)) continue;
+            const dir = String(r.file_path).replace(/\/[^/]*$/, '');
+            const type = (this.nameCache.get(recv) ?? []).find(n => n.language === 'go' && n.kind !== 'method' && n.kind !== 'function'
+              && n.filePath.replace(/\/[^/]*$/, '') === dir);
+            if (type) owners.set(r.id, { id: type.id, name: type.name, kind: type.kind });
+          }
         }
         return owners.get(id);
       },

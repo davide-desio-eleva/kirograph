@@ -75,7 +75,7 @@ const IMPLICIT_SELF = new Set<string>(['java', 'kotlin', 'scala', 'swift', 'csha
 /** Receivers that are the object the caller belongs to. */
 const SELF_RECEIVERS = /^(?:this|self|super|cls|Self|base|static|\$this|@)$/;
 /** Owners whose members are reached through an instance or the type, not by a bare name. */
-const TYPE_KINDS = new Set<string>(['class', 'struct', 'interface', 'trait', 'protocol', 'component', 'enum']);
+const TYPE_KINDS = new Set<string>(['class', 'struct', 'interface', 'trait', 'protocol', 'component', 'enum', 'type_alias']);
 const CONSTRUCTORS = new Set<string>(['class', 'struct']);
 
 function isCallable(n: Node, language: string | undefined): boolean {
