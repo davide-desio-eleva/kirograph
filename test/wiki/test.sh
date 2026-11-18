@@ -1501,19 +1501,17 @@ else
   DB_WIKI_COUNT=$(node -e "
     process.stderr.write = () => true;
     const path = require('path');
-    const Database = require(path.join('$ROOT','node_modules','node-sqlite3-wasm')).default;
-    const db = new Database('$DB');
-    const r = db.exec('SELECT COUNT(*) FROM wiki_pages');
-    console.log(r[0].values[0][0]);
+    const { Database } = require(path.join('$ROOT','dist','db','sqlite.js'));
+    const db = new Database('$DB', { readOnly: true });
+    console.log(db.get('SELECT COUNT(*) AS c FROM wiki_pages').c);
     db.close();
   " 2>/dev/null || echo "0")
   DB_FTS_COUNT=$(node -e "
     process.stderr.write = () => true;
     const path = require('path');
-    const Database = require(path.join('$ROOT','node_modules','node-sqlite3-wasm')).default;
-    const db = new Database('$DB');
-    const r = db.exec(\"SELECT name FROM sqlite_master WHERE type='table' AND name='wiki_fts'\");
-    console.log(r.length && r[0].values.length ? '1' : '0');
+    const { Database } = require(path.join('$ROOT','dist','db','sqlite.js'));
+    const db = new Database('$DB', { readOnly: true });
+    console.log(db.get(\"SELECT name FROM sqlite_master WHERE type='table' AND name='wiki_fts'\") ? '1' : '0');
     db.close();
   " 2>/dev/null || echo "0")
 fi
@@ -1537,12 +1535,12 @@ else
   node -e "
     process.stderr.write = () => true;
     const path = require('path');
-    const Database = require(path.join('$ROOT','node_modules','node-sqlite3-wasm')).default;
-    const db = new Database('$DB');
-    const r = db.exec('SELECT slug, title, source_count FROM wiki_pages ORDER BY updated_at DESC LIMIT 10');
-    if (!r.length || !r[0].values.length) { console.log('  (vuoto)'); db.close(); process.exit(0); }
-    for (const row of r[0].values)
-      console.log('     ' + String(row[0]).padEnd(28) + '  ' + String(row[1]).padEnd(30) + '  src:' + row[2]);
+    const { Database } = require(path.join('$ROOT','dist','db','sqlite.js'));
+    const db = new Database('$DB', { readOnly: true });
+    const rows = db.all('SELECT slug, title, source_count FROM wiki_pages ORDER BY updated_at DESC LIMIT 10');
+    if (!rows.length) { console.log('  (vuoto)'); db.close(); process.exit(0); }
+    for (const row of rows)
+      console.log('     ' + String(row.slug).padEnd(28) + '  ' + String(row.title).padEnd(30) + '  src:' + row.source_count);
     db.close();
   " 2>/dev/null || warn "Impossibile leggere wiki_pages dal DB"
 fi

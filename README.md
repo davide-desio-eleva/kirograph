@@ -161,7 +161,7 @@ Everything is stored in a local SQLite database (`.kirograph/kirograph.db`). **N
 
 ## Requirements
 
-- Node.js >= 18
+- Node.js >= 22.16 (KiroGraph uses its built-in SQLite, `node:sqlite`, with full-text search)
 - Kiro IDE (fully supported)
 - Other MCP-capable tools (experimental — see [Integrations](docs/guide/integrations.md))
 

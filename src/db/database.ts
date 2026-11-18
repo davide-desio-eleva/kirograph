@@ -1,6 +1,6 @@
 /**
  * KiroGraph Database Layer
- * Wraps node-sqlite3-wasm for portability (no native bindings needed).
+ * SQLite through Node's own `node:sqlite` (see sqlite.ts), in WAL mode.
  */
 
 import * as path from 'path';
@@ -9,10 +9,8 @@ import type { Node, Edge, FileRecord, NodeKind, Language, GraphStats, NodeContex
 import type { ArchPackage, ArchLayer, ArchPackageDep, ArchLayerDep, ArchCoupling } from '../architecture/types';
 import type { RouteMountFact } from '../extraction/extractor';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { Database } = require('node-sqlite3-wasm');
-import { BusyRetryDatabase, clearStaleDbLock, dbLockTiming } from './db-lock';
-import { recoverHotJournal } from './journal-recovery';
+import { Database } from './sqlite';
+import { BusyRetryDatabase, dbLockTiming, liveDbWriters } from './db-lock';
 
 /** Languages whose references infra.ts resolves by exact qualified name. */
 const INFRA_LANGUAGES = "('hcl', 'yaml', 'json', 'bash')";
@@ -24,6 +22,31 @@ const MAX_PARAMS_PER_STATEMENT = 1000;
 /** Rows per statement, largest first. Powers of two keep the number of distinct statements small. */
 const GROUP_SIZES = [128, 64, 32, 16, 8, 4, 2, 1];
 
+/**
+ * Before the first open by 1.6.0 of a database KiroGraph 1.5.x used: the switch to WAL must not
+ * happen while a 1.5.x process still has it open. Those processes use the WASM driver, which
+ * ignores SQLite's file locks and cannot read a WAL database: they lock by creating the directory
+ * `kirograph.db.lock` and keep a marker in `db-writers/` while they work. When one is live, the
+ * open fails and says to stop it. Otherwise their leftovers are removed; a journal a killed 1.5.x
+ * process left behind is rolled back by SQLite itself on the first read.
+ */
+function leaveLegacyDriver(dbDir: string, dbPath: string): void {
+  const lockDir = path.join(dbDir, 'kirograph.db.lock');
+  const writersDir = path.join(dbDir, 'db-writers');
+  if (!fs.existsSync(lockDir) && !fs.existsSync(writersDir)) return;
+  if (fs.existsSync(dbPath)) {
+    const live = liveDbWriters(dbDir);
+    if (live.length > 0) {
+      throw new Error(
+        `KiroGraph 1.5 or older is still using this project's database (pid ${live.join(', ')}). ` +
+        'Stop it first (close the IDE or the MCP server that runs it, and any running sync): ' +
+        'KiroGraph 1.6 switches the database to WAL, which older versions cannot open.');
+    }
+  }
+  fs.rmSync(lockDir, { recursive: true, force: true });
+  fs.rmSync(writersDir, { recursive: true, force: true });
+}
+
 export class GraphDatabase {
   private db: any;
   private projectRoot: string;
@@ -34,20 +57,13 @@ export class GraphDatabase {
     fs.mkdirSync(dbDir, { recursive: true });
     const dbPath = path.join(dbDir, 'kirograph.db');
 
-    // ── Lock check ────────────────────────────────────────────────────────────
-    // The WASM driver locks by creating kirograph.db.lock and never removes it when the
-    // process dies. A stale one is cleared here. A live holder is waited for by the driver's
-    // busy_timeout (set first in the PRAGMAs below), so a long sync is not cut short.
-    const lockPath = path.join(dbDir, 'kirograph.db.lock');
-    const lockFree = clearStaleDbLock(dbDir, lockPath);
-    // A process killed mid-write leaves a hot journal that the driver can never roll back by
-    // itself (see journal-recovery.ts); without this the open waits for the busy timeout and fails
-    if (lockFree) recoverHotJournal(dbPath, lockPath);
+    leaveLegacyDriver(dbDir, dbPath);
 
-    this.db = new BusyRetryDatabase(new Database(dbPath), dbDir, lockPath);
+    this.db = new BusyRetryDatabase(new Database(dbPath));
+    // busy_timeout first: switching to WAL takes the write lock, and another 1.6 process may hold it
+    this.db.exec(`PRAGMA busy_timeout=${dbLockTiming.busyMs};`);
+    this.db.exec('PRAGMA journal_mode=WAL;');
     this.db.exec(`
-      PRAGMA busy_timeout=${dbLockTiming.busyMs};
-      PRAGMA journal_mode=WAL;
       PRAGMA foreign_keys=ON;
       PRAGMA synchronous=NORMAL;
       PRAGMA cache_size=-64000;
@@ -446,9 +462,8 @@ export class GraphDatabase {
   searchNodes(query: string, opts: SearchOptions = {}): Node[] {
     const { kinds, languages, limit = 20 } = opts;
     // Sanitize for FTS5: strip special chars and append wildcard.
-    // Both the MATCH value and LIMIT are inlined (not bound via ?) because
-    // node-sqlite3-wasm passes bound parameters through to FTS5's own query
-    // parser before SQLite substitutes them, causing "syntax error near ?".
+    // Both the MATCH value and LIMIT are inlined (not bound via ?): the value is
+    // sanitized below to letters, digits and spaces, so inlining it is safe.
     const safe = query
       .replace(/\b(AND|OR|NOT)\b/g, ' ')       // FTS5 boolean operators
       .replace(/['"*()?\-+^~:{}\\\.\/,]/g, ' ')  // FTS5 special chars (incl. / and ,)

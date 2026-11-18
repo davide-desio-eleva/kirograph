@@ -12,6 +12,19 @@
 import { Command } from 'commander';
 import { installCrashHandler } from './crash-handler';
 
+// KiroGraph's database is Node's own SQLite with full-text search, there from Node 22.16 on: say
+// so at once instead of failing on the first query. (Checked by version: loading SQLite to test it
+// would slow every hook.)
+{
+  const [major, minor] = process.versions.node.split('.').map(Number);
+  if (major < 22 || (major === 22 && minor < 16)) {
+    process.stderr.write(
+      `KiroGraph needs Node.js 22.16 or later (its built-in SQLite with full-text search). ` +
+      `This is Node.js ${process.versions.node}: upgrade it, for example with \`nvm install 22\`.\n`);
+    process.exit(1);
+  }
+}
+
 declare const __CLI_VERSION__: string;
 
 const HOT_COMMANDS = new Set(['sync', 'sync-if-dirty', 'mark-dirty']);

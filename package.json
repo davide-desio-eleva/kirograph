@@ -70,7 +70,6 @@
     "@huggingface/transformers": "^4.2.0",
     "commander": "^14.0.2",
     "figlet": "^1.11.0",
-    "node-sqlite3-wasm": "0.8.55",
     "parquetjs-lite": "^0.8.7",
     "picomatch": "^4.0.3",
     "tree-sitter-wasms": "^0.1.11",
@@ -111,7 +110,7 @@
   },
   "devDependencies": {
     "@types/figlet": "^1.7.0",
-    "@types/node": "^20.0.0",
+    "@types/node": "^22.20.5",
     "@types/picomatch": "^4.0.2",
     "esbuild": "^0.28.0",
     "tsx": "^4.21.0",
@@ -119,7 +118,7 @@
     "vitest": "^4.1.2"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.16.0"
   },
   "overrides": {
     "tar": "^7.5.11",
