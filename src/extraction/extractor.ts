@@ -1207,6 +1207,26 @@ function extractCallName(node: any, source: string): string | null {
   return null;
 }
 
+/**
+ * What a call is made on: `pattern` in `pattern.test(s)`, `this.users` in `this.users.find(id)`,
+ * `os.path` in `os.path.join(a)`. Undefined for a bare call (`build()`). Resolution uses it to
+ * tell a method of some object from a function of the project with the same name.
+ */
+export function callReceiver(node: any, source: string): string | undefined {
+  const named = node.childForFieldName?.('object') ?? node.childForFieldName?.('receiver');
+  if (named) return source.slice(named.startIndex, named.endIndex).trim() || undefined;
+  for (const field of ['name', 'method', 'function', 'target']) {
+    const f = node.childForFieldName?.(field);
+    if (f && (f.type === 'identifier' || f.type === 'name' || f.type === 'property_identifier' || f.type === 'type_identifier')) return undefined;
+  }
+  const callee = node.child(0);
+  if (!callee) return undefined;
+  const raw = source.slice(callee.startIndex, callee.endIndex).split('(')[0].trim();
+  const dot = raw.lastIndexOf('.');
+  if (dot <= 0 || raw.length >= 100) return undefined;
+  return raw.slice(0, dot).replace(/\?$/, '').trim() || undefined;
+}
+
 function collectCallRefs(node: any, source: string, sourceId: string, unresolvedRefs: UnresolvedRef[], language: Language): void {
   walkForCalls(node, source, sourceId, unresolvedRefs, language);
 }
@@ -1216,6 +1236,8 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
     const calleeName = extractCallName(node, source);
     if (calleeName) {
       const metadata: Record<string, unknown> = {};
+      const receiver = callReceiver(node, source);
+      if (receiver) metadata.receiver = receiver;
       if (JS_TS_LANGUAGES.has(language)) {
         const argKind = classifyFirstArgument(node, source);
         if (argKind) metadata.argKind = argKind;

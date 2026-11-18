@@ -8,7 +8,7 @@
 import type { Node, NodeKind, Edge } from '../types';
 import type { GraphDatabase } from '../db/database';
 import type { KiroGraphConfig } from '../config';
-import { matchReference } from './name-matcher';
+import { resolveCall, type CallContext } from './call-resolver';
 import { logDebug, logWarn } from '../errors';
 import { runBridgeResolvers, type BridgeResolutionResult } from './bridges';
 
@@ -20,18 +20,6 @@ export interface ResolutionResult {
   total: number;
   durationMs: number;
   bridgeResult?: BridgeResolutionResult;
-}
-
-/**
- * Languages that describe data or configuration: their nodes (CI jobs, package.json scripts,
- * Terraform blocks, CSS rules) are named like functions but are not what code calls. A call
- * resolved by name only reaches them from a file of the same language; from other languages the
- * resolver takes the next candidate, or leaves the reference unresolved.
- */
-const DATA_LANGUAGES = new Set<string>(['yaml', 'json', 'hcl', 'css', 'scss', 'html']);
-
-export function isCallTarget(target: Node, sourceLanguage: string | undefined): boolean {
-  return !DATA_LANGUAGES.has(target.language) || target.language === sourceLanguage;
 }
 
 // ── ReferenceResolver ─────────────────────────────────────────────────────────
@@ -85,12 +73,12 @@ export class ReferenceResolver {
         `SELECT id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column,
                 end_column, signature, visibility, is_exported, is_async, is_static, is_abstract,
                 decorators, type_parameters, updated_at FROM nodes`)
-      : rawDb.all('SELECT id, kind, name, qualified_name, file_path, language FROM nodes');
+      : rawDb.all('SELECT id, kind, name, qualified_name, file_path, language, start_line FROM nodes');
 
     for (const row of rows) {
       const node: Node = full
         ? this._rowToNode(row)
-        : { id: row.id, kind: row.kind, name: row.name, qualifiedName: row.qualified_name, filePath: row.file_path, language: row.language } as Node;
+        : { id: row.id, kind: row.kind, name: row.name, qualifiedName: row.qualified_name, filePath: row.file_path, language: row.language, startLine: row.start_line } as Node;
 
       // nameCache
       const nameList = this.nameCache.get(node.name) ?? [];
@@ -189,7 +177,9 @@ export class ReferenceResolver {
     }
 
     const rawDb = (this.db as any).db;
-    const refs: any[] = rawDb.all('SELECT * FROM unresolved_refs');
+    // Imports first: a call prefers the functions of the files its file imports
+    const refs: any[] = rawDb.all(`SELECT * FROM unresolved_refs ORDER BY ref_kind <> 'import', id`);
+    const calls = this.callContext();
     let resolved = 0;
     const total = refs.length;
 
@@ -239,47 +229,30 @@ export class ReferenceResolver {
             targetId = this._resolveTypeName(refName);
           } else {
             attemptedStrategies.push('framework');
-            const sourceLanguage = this.nodeByIdCache.get(sourceId)?.language;
-            const callable = (n: Node) => isCallTarget(n, sourceLanguage);
 
-            // Strategy 2: Qualified name match (confidence 0.95)
+            // Qualified name match (confidence 0.95)
             attemptedStrategies.push('qualified');
             const qualifiedNode = this.qualifiedNameCache.get(refName);
             if (qualifiedNode) {
               targetId = qualifiedNode.id;
             }
 
-            // Strategy 3: Method call pattern (confidence 0.85)
-            if (!targetId && refName.includes('.')) {
-              attemptedStrategies.push('method');
-              const methodPart = refName.slice(refName.lastIndexOf('.') + 1);
-              targetId = (this.nameCache.get(methodPart) ?? []).find(callable)?.id ?? null;
-            }
-
-            // Strategy 4: Exact name match (confidence 0.9)
+            // By name, with the receiver the call is made on (see call-resolver)
             if (!targetId) {
-              attemptedStrategies.push('exact');
-              targetId = (this.nameCache.get(refName) ?? []).find(callable)?.id ?? null;
-            }
+              const meta = refMetadata ? JSON.parse(refMetadata) : undefined;
+              const dot = refName.lastIndexOf('.');
+              const name = dot > 0 ? refName.slice(dot + 1) : refName;
+              const receiver: string | undefined = meta?.receiver ?? (dot > 0 ? refName.slice(0, dot) : undefined);
+              const call = { name, receiver, sourceId, filePath };
+              attemptedStrategies.push(receiver !== undefined ? 'method' : 'exact');
+              targetId = resolveCall(call, calls)?.id ?? null;
 
-            // Strategy 5: Fuzzy / lowercase match (confidence 0.5)
-            if (!targetId) {
-              attemptedStrategies.push('fuzzy');
+              // Case-insensitive, for the languages whose names are (only when no node has the exact name)
               const threshold = this.config.fuzzyResolutionThreshold ?? 0.5;
-              const lowerRef = refName.toLowerCase();
-              const fuzzyCandidates = (this.lowerNameCache.get(lowerRef) ?? []).filter(callable);
-
-              if (fuzzyCandidates.length > 0) {
-                const match = matchReference(refName, fuzzyCandidates, threshold);
-                if (match) {
-                  targetId = match.nodeId;
-                }
+              if (!targetId && threshold <= 0.5 && !this.nameCache.has(name)) {
+                attemptedStrategies.push('fuzzy');
+                targetId = resolveCall(call, { ...calls, byName: n => this.lowerNameCache.get(n.toLowerCase()) ?? [] })?.id ?? null;
               }
-
-              // No full-scan fallback here: the lowercase index above already holds every node
-              // whose name matches case-insensitively, and the exact, qualified and method
-              // strategies were answered from their indexes earlier. A scan of all nodes per
-              // unresolved reference only repeated that work.
             }
           }
 
@@ -295,10 +268,12 @@ export class ReferenceResolver {
               kind: edgeKind,
               line: line ?? undefined,
               column: column ?? undefined,
+              // The receiver stays: a sync turns the edge back into this reference (#101)
               metadata: refMetadata ? JSON.parse(refMetadata) : undefined,
             };
             batchEdges.push(edge);
             resolvedIds.push(refId);
+            if (edgeKind === 'imports') calls.addImport(filePath, targetId);
             resolved++;
           } else {
             // Nothing to write when the same list is already recorded: a reference that stays
@@ -597,6 +572,45 @@ export class ReferenceResolver {
     }
     // Then fall back to the prefix cache: return any class/interface in this namespace
     return this.namespacePrefixCache.get(importPath) ?? null;
+  }
+
+  /**
+   * What the call resolver reads: nodes by name and id, the files each file imports (the import
+   * edges already in the graph, and those this pass makes), and each node's owner.
+   */
+  private callContext(): CallContext & { addImport(filePath: string, targetId: string): void } {
+    const rawDb = (this.db as any).db;
+    const imports = new Map<string, Set<string>>();
+    const add = (from: string, to: string) => {
+      if (from === to) return;
+      let set = imports.get(from);
+      if (!set) imports.set(from, (set = new Set()));
+      set.add(to);
+    };
+    for (const r of rawDb.all(`
+      SELECT s.file_path AS f, t.file_path AS t FROM edges e
+      JOIN nodes s ON s.id = e.source JOIN nodes t ON t.id = e.target
+      WHERE e.kind = 'imports'`) as any[]) add(r.f, r.t);
+    let owners: Map<string, { name: string; kind: string }> | null = null;
+    return {
+      byName: name => this.nameCache.get(name) ?? [],
+      node: id => this.nodeByIdCache.get(id),
+      importedFiles: filePath => imports.get(filePath),
+      owner: id => {
+        if (!owners) {
+          owners = new Map();
+          for (const r of rawDb.all(`
+            SELECT e.target AS id, s.name AS name, s.kind AS kind FROM edges e JOIN nodes s ON s.id = e.source
+            WHERE e.kind = 'contains' AND s.kind IN ('class', 'struct', 'interface', 'trait', 'protocol',
+              'module', 'namespace', 'component', 'enum')`) as any[]) owners.set(r.id, { name: r.name, kind: r.kind });
+        }
+        return owners.get(id);
+      },
+      addImport: (filePath, targetId) => {
+        const target = this.nodeByIdCache.get(targetId);
+        if (target) add(filePath, target.filePath);
+      },
+    };
   }
 
   /**
