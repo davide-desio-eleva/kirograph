@@ -168,14 +168,14 @@
     },
     "javascript": {
       "package": "tree-sitter-javascript",
-      "version": "0.20.4",
+      "version": "0.25.0",
       "symbol": "javascript",
       "fingerprint": {
-        "abi": 14,
-        "states": 2874,
-        "kinds": 271,
-        "fields": 38,
-        "hash": "340de81b9cf39c10"
+        "abi": 15,
+        "states": 1870,
+        "kinds": 265,
+        "fields": 36,
+        "hash": "671809d1e9176e3b"
       }
     },
     "julia": {
@@ -414,28 +414,28 @@
     },
     "tsx": {
       "package": "tree-sitter-typescript",
-      "version": "0.20.5",
+      "version": "0.23.2",
       "dir": "tsx",
       "symbol": "tsx",
       "fingerprint": {
         "abi": 14,
-        "states": 7647,
-        "kinds": 405,
-        "fields": 44,
-        "hash": "a08919b8272a880a"
+        "states": 5986,
+        "kinds": 400,
+        "fields": 43,
+        "hash": "3aa0bde90f33253a"
       }
     },
     "typescript": {
       "package": "tree-sitter-typescript",
-      "version": "0.20.5",
+      "version": "0.23.2",
       "dir": "typescript",
       "symbol": "typescript",
       "fingerprint": {
         "abi": 14,
-        "states": 7594,
-        "kinds": 385,
-        "fields": 43,
-        "hash": "8ae3050586501817"
+        "states": 5870,
+        "kinds": 383,
+        "fields": 40,
+        "hash": "ef341fe4e2d06df4"
       }
     },
     "verilog": {

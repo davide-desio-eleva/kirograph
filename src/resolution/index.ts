@@ -22,6 +22,18 @@ export interface ResolutionResult {
   bridgeResult?: BridgeResolutionResult;
 }
 
+/**
+ * Languages that describe data or configuration: their nodes (CI jobs, package.json scripts,
+ * Terraform blocks, CSS rules) are named like functions but are not what code calls. A call
+ * resolved by name only reaches them from a file of the same language; from other languages the
+ * resolver takes the next candidate, or leaves the reference unresolved.
+ */
+const DATA_LANGUAGES = new Set<string>(['yaml', 'json', 'hcl', 'css', 'scss', 'html']);
+
+export function isCallTarget(target: Node, sourceLanguage: string | undefined): boolean {
+  return !DATA_LANGUAGES.has(target.language) || target.language === sourceLanguage;
+}
+
 // ── ReferenceResolver ─────────────────────────────────────────────────────────
 
 export class ReferenceResolver {
@@ -73,12 +85,12 @@ export class ReferenceResolver {
         `SELECT id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column,
                 end_column, signature, visibility, is_exported, is_async, is_static, is_abstract,
                 decorators, type_parameters, updated_at FROM nodes`)
-      : rawDb.all('SELECT id, kind, name, qualified_name, file_path FROM nodes');
+      : rawDb.all('SELECT id, kind, name, qualified_name, file_path, language FROM nodes');
 
     for (const row of rows) {
       const node: Node = full
         ? this._rowToNode(row)
-        : { id: row.id, kind: row.kind, name: row.name, qualifiedName: row.qualified_name, filePath: row.file_path } as Node;
+        : { id: row.id, kind: row.kind, name: row.name, qualifiedName: row.qualified_name, filePath: row.file_path, language: row.language } as Node;
 
       // nameCache
       const nameList = this.nameCache.get(node.name) ?? [];
@@ -227,6 +239,8 @@ export class ReferenceResolver {
             targetId = this._resolveTypeName(refName);
           } else {
             attemptedStrategies.push('framework');
+            const sourceLanguage = this.nodeByIdCache.get(sourceId)?.language;
+            const callable = (n: Node) => isCallTarget(n, sourceLanguage);
 
             // Strategy 2: Qualified name match (confidence 0.95)
             attemptedStrategies.push('qualified');
@@ -239,19 +253,13 @@ export class ReferenceResolver {
             if (!targetId && refName.includes('.')) {
               attemptedStrategies.push('method');
               const methodPart = refName.slice(refName.lastIndexOf('.') + 1);
-              const methodCandidates = this.nameCache.get(methodPart) ?? [];
-              if (methodCandidates.length > 0) {
-                targetId = methodCandidates[0].id;
-              }
+              targetId = (this.nameCache.get(methodPart) ?? []).find(callable)?.id ?? null;
             }
 
             // Strategy 4: Exact name match (confidence 0.9)
             if (!targetId) {
               attemptedStrategies.push('exact');
-              const exactCandidates = this.nameCache.get(refName) ?? [];
-              if (exactCandidates.length > 0) {
-                targetId = exactCandidates[0].id;
-              }
+              targetId = (this.nameCache.get(refName) ?? []).find(callable)?.id ?? null;
             }
 
             // Strategy 5: Fuzzy / lowercase match (confidence 0.5)
@@ -259,7 +267,7 @@ export class ReferenceResolver {
               attemptedStrategies.push('fuzzy');
               const threshold = this.config.fuzzyResolutionThreshold ?? 0.5;
               const lowerRef = refName.toLowerCase();
-              const fuzzyCandidates = this.lowerNameCache.get(lowerRef) ?? [];
+              const fuzzyCandidates = (this.lowerNameCache.get(lowerRef) ?? []).filter(callable);
 
               if (fuzzyCandidates.length > 0) {
                 const match = matchReference(refName, fuzzyCandidates, threshold);
