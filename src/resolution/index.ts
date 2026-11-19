@@ -10,7 +10,7 @@ import * as path from 'path';
 import type { Node, NodeKind, Edge } from '../types';
 import type { GraphDatabase } from '../db/database';
 import type { KiroGraphConfig } from '../config';
-import { resolveCall, isCallTarget, recordVia, takeVia, type CallContext } from './call-resolver';
+import { resolveCall, isCallTarget, recordVia, takeVia, TYPE_KINDS, type CallContext } from './call-resolver';
 import { ImportResolver } from './import-resolver';
 
 const SUPERTYPE_KINDS = new Set<string>(['class', 'interface', 'struct', 'trait', 'protocol', 'component', 'type_alias']);
@@ -43,9 +43,10 @@ function argumentOf(m: any, param: { index: number; name: string }): string | nu
   return m.kwSpread ? null : 'default';
 }
 
-/** A parameter typed by its callers: the class (and its file, since several may have the name). */
-interface ParameterType { type: string; typeFile?: string; via: string[]; of: string[] }
-const PARAMETER_TYPE_KINDS = new Set(['class', 'struct', 'interface', 'trait', 'protocol', 'enum', 'type_alias', 'component']);
+/** A parameter typed by its callers: the class name, and which classes of the name (none: a library's). */
+interface ParameterType { type: string; typeIds?: string[]; via: string[]; of: string[] }
+/** Languages whose files import the classes they name. */
+const IMPORTING_LANGUAGES = new Set(['javascript', 'typescript', 'tsx', 'jsx', 'python']);
 
 /** The call context, plus what a resolution pass adds to it as it goes. */
 type ResolverContext = CallContext & { addImport(filePath: string, targetId: string): void; addSupertype(id: string, superId: string): void };
@@ -236,15 +237,52 @@ export class ReferenceResolver {
     const rawDb = (this.db as any).db;
     const out = new Map<number, ParameterType>();
     const byParam = new Map<string, ParameterType | null>();
-    // The classes a caller may pass, as the caller sees the name: its file's, the ones it imports,
-    // else every one of the name (the method called then tells them apart, as for any receiver)
-    const classesSeenFrom = (name: string, callerFile: string): Node[] => {
-      const types = calls.byName(name).filter(n => PARAMETER_TYPE_KINDS.has(n.kind));
+    // The classes a caller may pass, as the caller sees the name: its file's, the ones it imports;
+    // in a language whose files import what they name (JavaScript, TypeScript, Python), none else
+    // (a class it neither declares nor imports is a library's); in the others every one of the name
+    const classesSeenFrom = (name: string, callerFile: string, callerLanguage: string): Node[] => {
+      const types = calls.byName(name).filter(n => TYPE_KINDS.has(n.kind));
       const own = types.filter(n => n.filePath === callerFile);
       if (own.length > 0) return own;
       const imported = calls.importedFiles(callerFile);
       const seen = imported ? types.filter(n => imported.has(n.filePath)) : [];
-      return seen.length > 0 ? seen : types;
+      if (seen.length > 0) return seen;
+      // Neither declared nor imported: a library's, when every import of the file that resolved to
+      // nothing is a library's too (`events`); one that may be the project's (`./x`, a module of the
+      // project's names that is ambiguous) may be where the class comes from
+      return IMPORTING_LANGUAGES.has(callerLanguage) && importedFromLibrary(callerFile, name) ? [] : types;
+    };
+    // Whether a file imports the name from a library: an import that resolved to nothing, of a module
+    // that cannot be the project's (`events`, not `./x` nor a module named as a project file), that
+    // names it (`import { EventEmitter } from 'events'`, `X = require('x')`, `from lib import X`).
+    // A class reached otherwise (`new context.Reply()`) may be the project's
+    let projectModules: Set<string> | null = null;
+    const texts = new Map<string, string>();
+    const importedFromLibrary = (file: string, name: string): boolean => {
+      if (!projectModules) {
+        projectModules = new Set();
+        for (const r of rawDb.all(`SELECT path FROM files`) as any[]) {
+          for (const seg of String(r.path).split('/')) projectModules.add(seg.replace(/\.[^.]+$/, ''));
+        }
+      }
+      const modules = projectModules;
+      const maybeProject = (s: string) => /^[./~]/.test(s) || s.startsWith('@/') || modules.has(s.split(/[./]/)[0]);
+      const specs = (rawDb.all(`SELECT ref_name AS s FROM unresolved_refs WHERE file_path = ? AND ref_kind = 'import'`, [file]) as any[])
+        .map(r => String(r.s)).filter(s => !maybeProject(s));
+      if (specs.length === 0 || !this.projectRoot) return false;
+      let text = texts.get(file);
+      if (text === undefined) {
+        try { text = fs.readFileSync(path.join(this.projectRoot, file), 'utf8'); } catch { text = ''; }
+        texts.set(file, text);
+      }
+      const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const n = esc(name);
+      return specs.some(spec => {
+        const m = esc(spec);
+        return new RegExp(`import[^;]*\\b${n}\\b[^;]*from\\s*['"]${m}['"]`).test(text!)
+          || new RegExp(`\\b${n}\\b[^=\\n]*=\\s*require\\(\\s*['"]${m}['"]`).test(text!)
+          || new RegExp(`from\\s+${m}\\s+import\\s[^\\n]*\\b${n}\\b`).test(text!);
+      });
     };
     for (const ref of waiting) {
       let param: { lines: number[]; index: number; name: string } | undefined;
@@ -261,9 +299,13 @@ export class ReferenceResolver {
           // A constructor's callers call its class
           const targets = [fn.id];
           if (fn.name === '__init__' || fn.name === 'constructor') { const owner = calls.owner(fn.id); if (owner) targets.push(owner.id); }
-          const callers: any[] = rawDb.all(`SELECT e.metadata AS m, s.file_path AS f FROM edges e JOIN nodes s ON s.id = e.source
+          const callers: any[] = rawDb.all(`SELECT e.metadata AS m, s.file_path AS f, s.language AS l FROM edges e JOIN nodes s ON s.id = e.source
             WHERE e.kind = 'calls' AND e.target IN (${targets.map(() => '?').join(',')})`, targets);
-          const seen = new Map<string, { name: string; classes: Node[] }>();
+          // The classes every caller may pass (the intersection of what each sees), or the one
+          // library class all of them pass
+          let common: Map<string, Node> | null = null;
+          let library: string | null = null;
+          let name: string | null = null;
           const files = new Set<string>();
           let unknown = callers.length === 0;
           for (const c of callers) {
@@ -274,14 +316,25 @@ export class ReferenceResolver {
             const t = argumentOf(m, param);
             if (t === 'default') continue;
             if (!t) { unknown = true; break; }
+            if (name !== null && name !== t) { unknown = true; break; }
+            name = t;
             // A class of no project file is a library's: the parameter is one, its methods none of ours
-            const classes = classesSeenFrom(t, c.f);
-            seen.set(classes.length > 0 ? classes.map(n => n.id).sort().join(',') : `library:${t}`, { name: t, classes });
+            const classes = classesSeenFrom(t, c.f, c.l);
+            if (classes.length === 0) {
+              if (common) { unknown = true; break; }
+              library = t;
+              continue;
+            }
+            if (library) { unknown = true; break; }
+            const ids = new Map(classes.map(n => [n.id, n] as [string, Node]));
+            const before = common as Map<string, Node> | null;
+            const next: Map<string, Node> = before ? new Map([...before.entries()].filter(([id]) => ids.has(id))) : ids;
+            common = next;
+            if (next.size === 0) { unknown = true; break; }
           }
-          // Every caller passes the same class (or the same classes of one name, as it sees them)
-          if (!unknown && seen.size === 1) {
-            const { name, classes } = [...seen.values()][0];
-            found = { type: name, typeFile: classes.length === 1 ? classes[0].filePath : undefined, via: [...files].sort(), of: targets };
+          if (!unknown && name !== null && (library || common)) {
+            // A library's class: no ids, so none of the project's classes of the name
+            found = { type: name, typeIds: common ? [...common.keys()].sort() : [], via: [...files].sort(), of: targets };
           }
         }
         byParam.set(key, found);
@@ -380,7 +433,7 @@ export class ReferenceResolver {
               const dot = refName.lastIndexOf('.');
               const name = dot > 0 ? refName.slice(dot + 1) : refName;
               const receiver: string | undefined = meta?.receiver ?? (dot > 0 ? refName.slice(0, dot) : undefined);
-              const call = { name, receiver, receiverType: (inferred?.get(refId)?.type ?? meta?.receiverType) as string | undefined, receiverTypeFile: inferred?.get(refId)?.typeFile, receiverCall: meta?.receiverCall, sourceId, filePath, line: line ?? undefined, parameter: meta?.parameter === true };
+              const call = { name, receiver, receiverType: (inferred?.get(refId)?.type ?? meta?.receiverType) as string | undefined, receiverTypeIds: inferred?.get(refId)?.typeIds, receiverCall: meta?.receiverCall, sourceId, filePath, line: line ?? undefined, parameter: meta?.parameter === true };
               attemptedStrategies.push(receiver !== undefined ? 'method' : 'exact');
               recordVia();
               targetId = resolveCall(call, calls)?.id ?? null;
@@ -859,8 +912,22 @@ export class ReferenceResolver {
     const fileOf = (mod: string): string | undefined => {
       const dots = /^\.*/.exec(mod)![0].length;
       if (dots === 0) {
-        // The shortest path that ends with the module: `django/db/models/__init__.py` for django.db.models
-        return byKey.get(mod)?.reduce((a, b) => (a.length <= b.length ? a : b));
+        const candidates = byKey.get(mod);
+        if (!candidates || candidates.length <= 1) return candidates?.[0];
+        // Several modules of the path: the one by the importing file, or in the nearest folder
+        // above it (a script's folder is on sys.path: `from types import X` next to types.py)
+        const rel = mod.replace(/\./g, '/');
+        const dir = sourceFilePath.split('/').slice(0, -1);
+        for (let i = dir.length; i >= 0; i--) {
+          const prefix = dir.slice(0, i).join('/');
+          const near = candidates.filter(c => c === (prefix ? `${prefix}/` : '') + `${rel}.py` || c === (prefix ? `${prefix}/` : '') + `${rel}/__init__.py`);
+          if (near.length > 0) return near[0];
+        }
+        // Else the shortest path (`django/db/models/__init__.py` for django.db.models), when only
+        // one is that short: two of a length are a guess
+        const shortest = Math.min(...candidates.map(c => c.length));
+        const shortestOnes = candidates.filter(c => c.length === shortest);
+        return shortestOnes.length === 1 ? shortestOnes[0] : undefined;
       }
       const dir = sourceFilePath.split('/').slice(0, -1);
       const base = dir.slice(0, Math.max(0, dir.length - (dots - 1))).join('/');

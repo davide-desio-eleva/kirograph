@@ -15,6 +15,7 @@ async function extract(name: string, lines: string[]) {
       symbols: (r?.nodes ?? []).map(n => `${n.kind} ${n.name}`),
       calls: [...new Set((r?.unresolvedRefs ?? []).filter(x => x.refKind === 'function')
         .map(x => `${x.refName}${x.metadata?.receiver ? `(${x.metadata.receiver})` : ''}`))],
+      positions: [...new Set((r?.unresolvedRefs ?? []).filter(x => x.refKind === 'function').map(x => `${x.refName}@${x.line}:${x.column}`))],
       supertypes: (r?.unresolvedRefs ?? []).filter(x => x.refKind === 'extends' || x.refKind === 'implements')
         .map(x => `${byId.get(x.sourceId)} ${x.refKind} ${x.refName}`),
     };
@@ -57,6 +58,30 @@ describe('component scripts', () => {
   it('Svelte: a component of markup only is a module, what its imports point at', async () => {
     const r = await extract('Button.svelte', ['<button class="btn"><slot /></button>']);
     expect(r.symbols).toEqual(['module Button']);
+  });
+});
+
+describe('call positions: the name called, so the calls of a chain are apart', () => {
+  const cases: Array<[string, string[], string[]]> = [
+    ['a.ts', ['function f() {', '  new A().save().save();', '}'], ['save@2:10', 'save@2:17']],
+    ['a.py', ['def f():', '    A().save().save()'], ['A@2:4', 'save@2:8', 'save@2:15']],
+    ['a.rb', ['class A', '  def f', '    Foo.new.save.save', '    x.empty?', '  end', 'end'], ['save@3:17', 'save@3:12', 'new@3:8', 'empty?@4:6']],
+    ['a.kt', ['fun f() {', '  Foo().save().save()', '}'], ['save@2:15', 'save@2:8', 'Foo@2:2']],
+    ['a.swift', ['func f() {', '  Foo().save().save()', '}'], ['save@2:15', 'save@2:8', 'Foo@2:2']],
+    ['a.lua', ['local function f()', '  obj:a():b()', 'end'], ['b@2:10', 'a@2:6']],
+    ['a.php', ['<?php', 'function f() {', '  (new Foo())->save()->save();', '}'], ['save@3:23', 'save@3:15', 'Foo@3:3']],
+    ['a.ex', ['defmodule M do', '  def f do', '    Foo.bar().baz()', '  end', 'end'], ['baz@3:14', 'bar@3:8']],
+  ];
+  for (const [name, lines, expected] of cases) {
+    it(name, async () => {
+      const r = await extract(name, lines);
+      for (const p of expected) expect(r.positions).toContain(p);
+    });
+  }
+
+  it('a chain over several lines: each call on its own line', async () => {
+    const r = await extract('b.rb', ['class B', '  def f', '    Foo.new', '      .bar', '      .baz', '  end', 'end']);
+    expect(r.positions).toEqual(expect.arrayContaining(['bar@4:7', 'baz@5:7']));
   });
 });
 

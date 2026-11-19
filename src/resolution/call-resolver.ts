@@ -26,8 +26,8 @@ export interface CallRef {
   receiverCall?: { name: string; receiver?: string; receiverType?: string; receiverCall?: CallRef['receiverCall']; element?: true };
   sourceId: string;
   filePath: string;
-  /** The file of the receiver's type, when the name alone is ambiguous (a parameter typed by its callers). */
-  receiverTypeFile?: string;
+  /** Which classes of the name the receiver may be (a parameter typed by its callers): ids. */
+  receiverTypeIds?: string[];
   /** The line of the call. */
   line?: number;
   /** A bare call of a parameter of an enclosing function (`done()`): the function passed in. */
@@ -85,7 +85,7 @@ const IMPLICIT_SELF = new Set<string>(['java', 'kotlin', 'scala', 'swift', 'csha
 /** Receivers that are the object the caller belongs to. */
 const SELF_RECEIVERS = /^(?:this|self|super|cls|Self|base|static|\$this|@)$/;
 /** Owners whose members are reached through an instance or the type, not by a bare name. */
-const TYPE_KINDS = new Set<string>(['class', 'struct', 'interface', 'trait', 'protocol', 'component', 'enum', 'type_alias']);
+export const TYPE_KINDS = new Set<string>(['class', 'struct', 'interface', 'trait', 'protocol', 'component', 'enum', 'type_alias']);
 const CONSTRUCTORS = new Set<string>(['class', 'struct']);
 
 function isCallable(n: Node, language: string | undefined): boolean {
@@ -267,9 +267,13 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
       isCallTarget(n, language) && (fromTest || !isTestPath(n.filePath)));
     // A type outside the project (a library's): its methods are not the project's
     if (types.length === 0) return null;
-    // The file the type was found in (by the callers of a parameter): that one
-    const named = ref.receiverTypeFile ? types.filter(n => n.filePath === ref.receiverTypeFile) : [];
-    if (named.length > 0) return memberOf(named.map(n => n.id), candidates, ctx);
+    // The classes the callers of a parameter pass: those, and no other of the name (when this
+    // caller may not reach them, a test's stub from code that is not a test: nothing)
+    if (ref.receiverTypeIds) {
+      const ids = new Set(ref.receiverTypeIds);
+      const named = types.filter(n => ids.has(n.id));
+      return named.length > 0 ? memberOf(named.map(n => n.id), candidates, ctx) : null;
+    }
     const local = sameFile(types);
     const fromImports = inImported(types);
     // Ruby names a type without importing it: one of another gem of the repository (rack-protection's

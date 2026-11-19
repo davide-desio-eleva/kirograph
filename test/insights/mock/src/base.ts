@@ -1,20 +1,6 @@
-/** Base service interface */
-export interface IService {
-  init(): void;
-  destroy(): void;
+/** Base service abstraction */
+export abstract class BaseService {
+  abstract process(input: string): string;
+  validate(input: string): boolean { return input.length > 0; }
 }
-
-/** Base repository interface */
-export interface IRepository<T> {
-  findById(id: string): T | null;
-  findAll(): T[];
-}
-
-/** Abstract base class */
-export abstract class BaseService implements IService {
-  protected name: string;
-  constructor(name: string) { this.name = name; }
-  abstract init(): void;
-  destroy(): void { /* cleanup */ }
-  protected log(msg: string): void { console.log(`[${this.name}] ${msg}`); }
-}
+export interface Repository<T> { findById(id: string): T | null; findAll(): T[]; }

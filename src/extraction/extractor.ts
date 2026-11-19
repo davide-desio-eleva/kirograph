@@ -1542,7 +1542,14 @@ function extractCallName(node: any, source: string): string | null {
       const t = f.type;
       if (t === 'identifier' || t === 'name' || t === 'property_identifier' || t === 'type_identifier') {
         const text = source.slice(f.startIndex, f.endIndex).trim();
-        if (text && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(text)) return text;
+        // Ruby's predicate and bang methods: `empty?`, `save!`
+        if (text && (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(text) || (field === 'method' && /^[a-zA-Z_]\w*[?!]$/.test(text)))) return text;
+      }
+      // Elixir: `Foo.bar()`'s target is a dot, whose right side is the name
+      if (t === 'dot') {
+        const right = f.childForFieldName('right');
+        const text = right ? source.slice(right.startIndex, right.endIndex).trim() : '';
+        if (/^[a-zA-Z_]\w*[?!]?$/.test(text)) return text;
       }
     }
   }
@@ -1615,10 +1622,16 @@ function collectCallRefs(node: any, source: string, sourceId: string, unresolved
 
 /** The node of the name a call calls: `save` in `repo.save()`, `f` in `f()`. */
 function calledNameNode(call: any): any {
+  // Ruby's method
+  const method = call.childForFieldName?.('method');
+  if (method) return method;
+  // Java's and PHP's name; Lua's `name` is the whole callee (`obj:a`), read below
   const named = call.childForFieldName?.('name');
-  if (named) return named;
-  const fn = calleeOf(call);
+  if (named && !MEMBER_ACCESS.has(named.type)) return named;
+  const fn = named ?? call.childForFieldName?.('target') ?? calleeOf(call);
   if (!fn) return null;
+  if (fn.type === 'dot') return fn.childForFieldName('right') ?? fn;            // Elixir
+  if (fn.type === 'navigation_expression') return navigationMember(fn) ?? fn;  // Kotlin, Swift
   return fn.childForFieldName?.('property') ?? fn.childForFieldName?.('attribute') ?? fn.childForFieldName?.('field')
     ?? fn.childForFieldName?.('method') ?? fn.childForFieldName?.('name') ?? fn;
 }
@@ -1632,8 +1645,8 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
         sourceId,
         refName: specCall.name,
         refKind: 'function',
-        line: node.startPosition.row + 1,
-        column: node.startPosition.column,
+        line: (calledNameNode(node) ?? node).startPosition.row + 1,
+        column: (calledNameNode(node) ?? node).startPosition.column,
         ...(specCall.receiver ? { metadata: (() => {
           const type = moreReceiverType(node, specCall.receiver, source, language);
           return type ? { receiver: specCall.receiver, receiverType: type } : { receiver: specCall.receiver };

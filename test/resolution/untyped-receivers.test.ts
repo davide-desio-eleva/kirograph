@@ -428,6 +428,18 @@ describe('Review cases: shadowing, project generics, arguments, comprehensions, 
     'amb/one/lib.py': 'def amb_use(thing):\n    thing.save()\n',
     'amb/one/__init__.py': '',
     'amb/one/caller.py': 'from .types import AmbLedger\nfrom .lib import amb_use\n\ndef amb_caller():\n    amb_use(AmbLedger())\n',
+    // Callers that see a class of a shared name through different sets agree on what they share
+    //   (a file that imports nothing sees every class of the name; one that declares it, its own)
+    'shared/use.py': 'def use_shared(thing):\n    thing.save()\n\ndef call_unseen():\n    use_shared(Shared())\n',
+    'shared/own.py': 'from use import use_shared\n\nclass Shared:\n    def save(self): pass\n\ndef call_own():\n    use_shared(Shared())\n',
+    'shared/other.py': 'class Shared:\n    def save(self): pass\n',
+    // A library class of the name of a project class the caller does not import: the library's
+    'lib/bus.ts': 'export class EventEmitter { emit() {} save() {} }\n',
+    'lib/use.ts': 'export function useEmitter(emitter) { emitter.save(); }\n',
+    'lib/caller.ts': "import { EventEmitter } from 'events';\nimport { useEmitter } from './use';\nexport function callEmitter() { useEmitter(new EventEmitter()); }\n",
+    // Called only by a test with a stub of the name: not the project's class
+    'stub/repo.py': 'class StubRepo:\n    def save(self): pass\n\ndef process(repo):\n    repo.save()\n',
+    'stub/tests/test_process.py': 'from stub.repo import process\n\nclass StubRepo:\n    def save(self): pass\n\ndef test_it():\n    process(StubRepo())\n',
     // Ruby: locals bound by multiple assignment, ||=, rescue, for: not methods called without parentheses
     'rb2/lib/r.rb': [
       'class RbLedger',
@@ -485,6 +497,18 @@ describe('Review cases: shadowing, project generics, arguments, comprehensions, 
 
   it('a class of a name two classes have: the one its callers import', () => {
     expect(calls.amb_use).toEqual(['amb/one/types.py::AmbLedger']);
+  });
+
+  it('callers seeing a shared class name through different sets: the class they share', () => {
+    expect(calls.use_shared).toEqual(['shared/own.py::Shared']);
+  });
+
+  it("a library class named as a project class the caller does not import: the library's", () => {
+    expect(calls.useEmitter).toBeUndefined();
+  });
+
+  it("a parameter only a test passes a stub to: not the project's class of the name", () => {
+    expect(calls.process).toBeUndefined();
   });
 
   it('Ruby: a local bound by multiple assignment is no method call', () => {
