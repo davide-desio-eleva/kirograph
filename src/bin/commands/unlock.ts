@@ -68,6 +68,16 @@ export function register(program: Command): void {
         released++;
       }
 
+      // ── Markers of KiroGraph 1.5 processes (db-writers/) ───────────────────
+      // Only with --force: a marker of a live pid stops 1.6 from switching the database to WAL
+      // under a 1.5 process; when that pid is another program's, this clears it.
+      const writersDir = path.join(dir, 'db-writers');
+      if (opts.force && fs.existsSync(writersDir)) {
+        fs.rmSync(writersDir, { recursive: true, force: true });
+        console.log(`  ${green}✓${reset} KiroGraph 1.5 process markers removed ${dim}(${writersDir})${reset}`);
+        released++;
+      }
+
       if (released === 0) {
         console.log(`  ${dim}No lock file found.${reset}`);
       }

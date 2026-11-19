@@ -1,9 +1,5 @@
 import { DataProcessor } from './processor';
-import { Validator } from './validator';
-
-export class ServiceLayer {
-  private processor = new DataProcessor();
-  private validator = new Validator();
-  process(items: unknown[]): unknown[] { return this.processor.processAll(items); }
-  handle(value: string): boolean { return this.validator.validate(value); }
+export class Service {
+  private p = new DataProcessor();
+  run(items: unknown[]): unknown[] { return this.p.processAll(items); }
 }

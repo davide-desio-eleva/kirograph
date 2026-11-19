@@ -20,8 +20,6 @@ const WRITERS_DIR = 'db-writers';
 
 /** Tunables. Exposed mutable so tests can change them. */
 export const dbLockTiming = {
-  /** A 1.5.x marker older than this is not live even if its pid is: the process is idle. */
-  markerFreshMs: 30_000,
   /** How long SQLite itself waits for a busy lock before reporting it (PRAGMA busy_timeout). */
   busyMs: 5_000,
   /** How long in all a statement waits for a lock held by another process before it fails. */
@@ -37,8 +35,10 @@ function isAlive(pid: number): boolean {
 }
 
 /**
- * Pids of other processes of KiroGraph 1.5.x that have the database open: they refresh a marker
- * in `.kirograph/db-writers/<pid>` while they work. Markers of dead processes are removed.
+ * Pids of other processes of KiroGraph 1.5.x that have the database open: such a process keeps a
+ * marker in `.kirograph/db-writers/<pid>` from open to close, refreshed only while it works, so an
+ * old marker of a live pid is an idle process that still has the database open (1.5's own
+ * freshness rule served its lock, not this). Markers of dead processes are removed.
  */
 export function liveDbWriters(dbDir: string): number[] {
   const dir = path.join(dbDir, WRITERS_DIR);
@@ -53,9 +53,7 @@ export function liveDbWriters(dbDir: string): number[] {
       try { fs.unlinkSync(file); } catch { /* already gone */ }
       continue;
     }
-    try {
-      if (Date.now() - fs.statSync(file).mtimeMs < dbLockTiming.markerFreshMs) live.push(pid);
-    } catch { /* removed meanwhile */ }
+    if (fs.existsSync(file)) live.push(pid);
   }
   return live;
 }
@@ -178,7 +176,9 @@ export class BusyRetryDatabase {
       try {
         return fn();
       } catch (err) {
-        if (!/database is locked|SQLITE_BUSY|database table is locked/i.test(String((err as Error)?.message ?? err))) throw err;
+        // Busy: another process holds the lock (SQLite waited busyMs already). Not `database table is
+        // locked` (SQLITE_LOCKED): a conflict inside this connection, which waiting never ends
+        if (!/database is locked|SQLITE_BUSY/i.test(String((err as Error)?.message ?? err))) throw err;
         deadline ||= Date.now() + dbLockTiming.maxWaitMs;
         if (Date.now() >= deadline) throw err;
       }

@@ -10,7 +10,7 @@ import * as path from 'path';
 import type { Node, NodeKind, Edge } from '../types';
 import type { GraphDatabase } from '../db/database';
 import type { KiroGraphConfig } from '../config';
-import { resolveCall, isCallTarget, type CallContext } from './call-resolver';
+import { resolveCall, isCallTarget, recordVia, takeVia, TYPE_KINDS, type CallContext } from './call-resolver';
 import { ImportResolver } from './import-resolver';
 
 const SUPERTYPE_KINDS = new Set<string>(['class', 'interface', 'struct', 'trait', 'protocol', 'component', 'type_alias']);
@@ -28,6 +28,28 @@ export interface ResolutionResult {
 }
 
 // ── ReferenceResolver ─────────────────────────────────────────────────────────
+
+/**
+ * The class a call passes for a parameter, from the arguments recorded on its edge (see
+ * extraction's argumentTypes): 'default' when it passes nothing there, null when the code does not
+ * tell the class (or a spread hides which argument it is).
+ */
+function argumentOf(m: any, param: { index: number; name: string }): string | null {
+  if (Array.isArray(m.kwNames) && m.kwNames.includes(param.name)) return m.kwTypes?.[param.name] ?? null;
+  const argc: number | undefined = m.argc;
+  if (argc === -1) return null;
+  if (argc !== undefined && param.index < argc) return m.argTypes?.[param.index] ?? null;
+  // Not passed by position: a `**kwargs` may pass it, else the default
+  return m.kwSpread ? null : 'default';
+}
+
+/** A parameter typed by its callers: the class name, and which classes of the name (none: a library's). */
+interface ParameterType { type: string; typeIds?: string[]; via: string[]; of: string[] }
+/** Languages whose files import the classes they name. */
+const IMPORTING_LANGUAGES = new Set(['javascript', 'typescript', 'tsx', 'jsx', 'python']);
+
+/** The call context, plus what a resolution pass adds to it as it goes. */
+type ResolverContext = CallContext & { addImport(filePath: string, targetId: string): void; addSupertype(id: string, superId: string): void };
 
 export class ReferenceResolver {
   private db: GraphDatabase;
@@ -147,7 +169,7 @@ export class ReferenceResolver {
     const start = Date.now();
 
     this.warmCaches(false);
-    const resolvedCount = await this.resolveUnresolvedRefs(onProgress);
+    const resolvedCount = await this.resolveUnresolvedRefs(onProgress, changedFiles);
 
     // Count remaining unresolved
     const rawDb = (this.db as any).db;
@@ -180,7 +202,7 @@ export class ReferenceResolver {
    * Process all pending unresolved references using warm caches.
    * Returns the count of newly resolved edges.
    */
-  async resolveUnresolvedRefs(onProgress?: (current: number, total: number) => void): Promise<number> {
+  async resolveUnresolvedRefs(onProgress?: (current: number, total: number) => void, changedFiles?: string[]): Promise<number> {
     if (!this.cacheWarmed) {
       this.warmCaches();
     }
@@ -191,6 +213,141 @@ export class ReferenceResolver {
     const refs: any[] = rawDb.all(`SELECT * FROM unresolved_refs ORDER BY
       CASE ref_kind WHEN 'import' THEN 0 WHEN 'extends' THEN 1 WHEN 'implements' THEN 1 ELSE 2 END, id`);
     const calls = this.callContext();
+    // A call on an untyped parameter waits for every other call: its type is what the function's
+    // callers pass, read from their edges
+    const onParameter = (r: any) => typeof r.metadata === 'string' && r.metadata.includes('"receiverParam"');
+    let resolved = this.resolvePass(refs.filter(r => !onParameter(r)), calls, onProgress);
+    // A sync: the functions the changed files call may have new callers, so their parameters
+    // are typed again
+    if (changedFiles && changedFiles.length > 0) this.db.requeueParameterEdges(changedFiles);
+    const waiting: any[] = rawDb.all(`SELECT * FROM unresolved_refs WHERE metadata LIKE '%"receiverParam"%' ORDER BY id`);
+    resolved += this.resolvePass(waiting, calls, onProgress, this.parameterTypes(waiting, calls));
+    this.db.pruneEdgeDeps();
+    return resolved;
+  }
+
+  /**
+   * The type of each untyped parameter some call's receiver is: the one class every caller of its
+   * function passes (by position or by keyword), from the arguments recorded on their call edges.
+   * A caller whose argument is unknown leaves the parameter untyped; one that passes no argument
+   * there (the default) does not count. Calls resolved this way are no callers here, so the
+   * result does not depend on the order of resolution.
+   */
+  private parameterTypes(waiting: any[], calls: CallContext): Map<number, ParameterType> {
+    const rawDb = (this.db as any).db;
+    const out = new Map<number, ParameterType>();
+    const byParam = new Map<string, ParameterType | null>();
+    // The classes a caller may pass, as the caller sees the name: its file's, the ones it imports;
+    // in a language whose files import what they name (JavaScript, TypeScript, Python), none else
+    // (a class it neither declares nor imports is a library's); in the others every one of the name
+    const classesSeenFrom = (name: string, callerFile: string, callerLanguage: string): Node[] => {
+      const types = calls.byName(name).filter(n => TYPE_KINDS.has(n.kind));
+      const own = types.filter(n => n.filePath === callerFile);
+      if (own.length > 0) return own;
+      const imported = calls.importedFiles(callerFile);
+      const seen = imported ? types.filter(n => imported.has(n.filePath)) : [];
+      if (seen.length > 0) return seen;
+      // Neither declared nor imported: a library's, when every import of the file that resolved to
+      // nothing is a library's too (`events`); one that may be the project's (`./x`, a module of the
+      // project's names that is ambiguous) may be where the class comes from
+      return IMPORTING_LANGUAGES.has(callerLanguage) && importedFromLibrary(callerFile, name) ? [] : types;
+    };
+    // Whether a file imports the name from a library: an import that resolved to nothing, of a module
+    // that cannot be the project's (`events`, not `./x` nor a module named as a project file), that
+    // names it (`import { EventEmitter } from 'events'`, `X = require('x')`, `from lib import X`).
+    // A class reached otherwise (`new context.Reply()`) may be the project's
+    let projectModules: Set<string> | null = null;
+    const texts = new Map<string, string>();
+    const importedFromLibrary = (file: string, name: string): boolean => {
+      if (!projectModules) {
+        projectModules = new Set();
+        for (const r of rawDb.all(`SELECT path FROM files`) as any[]) {
+          for (const seg of String(r.path).split('/')) projectModules.add(seg.replace(/\.[^.]+$/, ''));
+        }
+      }
+      const modules = projectModules;
+      const maybeProject = (s: string) => /^[./~]/.test(s) || s.startsWith('@/') || modules.has(s.split(/[./]/)[0]);
+      const specs = (rawDb.all(`SELECT ref_name AS s FROM unresolved_refs WHERE file_path = ? AND ref_kind = 'import'`, [file]) as any[])
+        .map(r => String(r.s)).filter(s => !maybeProject(s));
+      if (specs.length === 0 || !this.projectRoot) return false;
+      let text = texts.get(file);
+      if (text === undefined) {
+        try { text = fs.readFileSync(path.join(this.projectRoot, file), 'utf8'); } catch { text = ''; }
+        texts.set(file, text);
+      }
+      const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const n = esc(name);
+      return specs.some(spec => {
+        const m = esc(spec);
+        return new RegExp(`import[^;]*\\b${n}\\b[^;]*from\\s*['"]${m}['"]`).test(text!)
+          || new RegExp(`\\b${n}\\b[^=\\n]*=\\s*require\\(\\s*['"]${m}['"]`).test(text!)
+          || new RegExp(`from\\s+${m}\\s+import\\s[^\\n]*\\b${n}\\b`).test(text!);
+      });
+    };
+    for (const ref of waiting) {
+      let param: { lines: number[]; index: number; name: string } | undefined;
+      try { param = JSON.parse(ref.metadata).receiverParam; } catch { continue; }
+      if (!param || !Array.isArray(param.lines)) continue;
+      const key = `${ref.file_path}:${param.lines.join(',')}:${param.index}:${param.name}`;
+      let found = byParam.get(key);
+      if (found === undefined) {
+        found = null;
+        const fn: any = rawDb.get(`SELECT id, name FROM nodes WHERE file_path = ? AND start_line IN (${param.lines.map(() => '?').join(',')})
+          AND kind IN ('function', 'method', 'constant', 'variable') ORDER BY CASE kind WHEN 'method' THEN 0 WHEN 'function' THEN 1 ELSE 2 END LIMIT 1`,
+          [ref.file_path, ...param.lines]);
+        if (fn) {
+          // A constructor's callers call its class
+          const targets = [fn.id];
+          if (fn.name === '__init__' || fn.name === 'constructor') { const owner = calls.owner(fn.id); if (owner) targets.push(owner.id); }
+          const callers: any[] = rawDb.all(`SELECT e.metadata AS m, s.file_path AS f, s.language AS l FROM edges e JOIN nodes s ON s.id = e.source
+            WHERE e.kind = 'calls' AND e.target IN (${targets.map(() => '?').join(',')})`, targets);
+          // The classes every caller may pass (the intersection of what each sees), or the one
+          // library class all of them pass
+          let common: Map<string, Node> | null = null;
+          let library: string | null = null;
+          let name: string | null = null;
+          const files = new Set<string>();
+          let unknown = callers.length === 0;
+          for (const c of callers) {
+            let m: any;
+            try { m = c.m ? JSON.parse(c.m) : {}; } catch { m = {}; }
+            if (m.receiverParam) continue;
+            files.add(c.f);
+            const t = argumentOf(m, param);
+            if (t === 'default') continue;
+            if (!t) { unknown = true; break; }
+            if (name !== null && name !== t) { unknown = true; break; }
+            name = t;
+            // A class of no project file is a library's: the parameter is one, its methods none of ours
+            const classes = classesSeenFrom(t, c.f, c.l);
+            if (classes.length === 0) {
+              if (common) { unknown = true; break; }
+              library = t;
+              continue;
+            }
+            if (library) { unknown = true; break; }
+            const ids = new Map(classes.map(n => [n.id, n] as [string, Node]));
+            const before = common as Map<string, Node> | null;
+            const next: Map<string, Node> = before ? new Map([...before.entries()].filter(([id]) => ids.has(id))) : ids;
+            common = next;
+            if (next.size === 0) { unknown = true; break; }
+          }
+          if (!unknown && name !== null && (library || common)) {
+            // A library's class: no ids, so none of the project's classes of the name
+            found = { type: name, typeIds: common ? [...common.keys()].sort() : [], via: [...files].sort(), of: targets };
+          }
+        }
+        byParam.set(key, found);
+      }
+      if (found) out.set(ref.id, found);
+    }
+    return out;
+  }
+
+  /** Resolves references in batched transactions; `inferred` types the receivers of some of them. */
+  private resolvePass(refs: any[], calls: ResolverContext, onProgress?: (current: number, total: number) => void,
+    inferred?: Map<number, ParameterType>): number {
+    const rawDb = (this.db as any).db;
     let resolved = 0;
     const total = refs.length;
 
@@ -209,7 +366,7 @@ export class ReferenceResolver {
       const strategiesToRecord = new Map<string, number[]>(); // strategies JSON -> ref ids
 
       // Wrap each batch in a transaction — dramatically reduces write amplification
-      rawDb.run('BEGIN');
+      rawDb.run('BEGIN IMMEDIATE');
       try {
         for (let i = batchStart; i < batchEnd; i++) {
           const ref = refs[i];
@@ -228,6 +385,7 @@ export class ReferenceResolver {
           const attemptedStrategies: string[] = [];
           let targetId: string | null = null;
           let extraTargets: string[] = [];
+          let viaFiles: string[] = [];
 
           if (refKind === 'reference' || refKind === 'qualified_call') {
             // Infrastructure references (infra.ts): the exact qualified name, nothing looser
@@ -275,8 +433,9 @@ export class ReferenceResolver {
               const dot = refName.lastIndexOf('.');
               const name = dot > 0 ? refName.slice(dot + 1) : refName;
               const receiver: string | undefined = meta?.receiver ?? (dot > 0 ? refName.slice(0, dot) : undefined);
-              const call = { name, receiver, receiverType: meta?.receiverType as string | undefined, receiverCall: meta?.receiverCall, sourceId, filePath };
+              const call = { name, receiver, receiverType: (inferred?.get(refId)?.type ?? meta?.receiverType) as string | undefined, receiverTypeIds: inferred?.get(refId)?.typeIds, receiverCall: meta?.receiverCall, sourceId, filePath, line: line ?? undefined, parameter: meta?.parameter === true };
               attemptedStrategies.push(receiver !== undefined ? 'method' : 'exact');
+              recordVia();
               targetId = resolveCall(call, calls)?.id ?? null;
 
               // Case-insensitive, for the languages whose names are (only when no node has the exact name)
@@ -285,6 +444,7 @@ export class ReferenceResolver {
                 attemptedStrategies.push('fuzzy');
                 targetId = resolveCall(call, { ...calls, byName: n => this.lowerNameCache.get(n.toLowerCase()) ?? [] })?.id ?? null;
               }
+              viaFiles = takeVia();
             }
           }
 
@@ -294,14 +454,24 @@ export class ReferenceResolver {
               : refKind === 'extends' ? 'extends'
               : refKind === 'implements' ? 'implements'
               : 'calls';
+            // The receiver stays: a sync turns the edge back into this reference (#101)
+            let metadata: Record<string, any> | undefined = refMetadata ? JSON.parse(refMetadata) : undefined;
+            if (edgeKind === 'calls') {
+              // What else the resolution read: a sync re-resolves the call when it changes
+              const inf = inferred?.get(refId);
+              const targetFile = calls.node(targetId)?.filePath;
+              const files = [...new Set([...viaFiles, ...(inf?.via ?? [])])].filter(f => f !== filePath && f !== targetFile).sort();
+              if (metadata) { delete metadata.via; delete metadata.paramOf; }
+              if (files.length > 0) metadata = { ...metadata, via: files };
+              if (inf) metadata = { ...metadata, paramOf: inf.of };
+            }
             const edge: Edge = {
               source: sourceId,
               target: targetId,
               kind: edgeKind,
               line: line ?? undefined,
               column: column ?? undefined,
-              // The receiver stays: a sync turns the edge back into this reference (#101)
-              metadata: refMetadata ? JSON.parse(refMetadata) : undefined,
+              metadata,
             };
             batchEdges.push(edge);
             for (const extra of extraTargets) {
@@ -322,7 +492,9 @@ export class ReferenceResolver {
             }
           }
         }
+        const lastEdge = this.db.maxEdgeId();
         this.db.insertEdges(batchEdges);
+        this.db.recordEdgeDeps(lastEdge);
         for (const group of idGroups(resolvedIds)) {
           rawDb.run(`DELETE FROM unresolved_refs WHERE id IN (${group.map(() => '?').join(',')})`, group);
         }
@@ -740,8 +912,22 @@ export class ReferenceResolver {
     const fileOf = (mod: string): string | undefined => {
       const dots = /^\.*/.exec(mod)![0].length;
       if (dots === 0) {
-        // The shortest path that ends with the module: `django/db/models/__init__.py` for django.db.models
-        return byKey.get(mod)?.reduce((a, b) => (a.length <= b.length ? a : b));
+        const candidates = byKey.get(mod);
+        if (!candidates || candidates.length <= 1) return candidates?.[0];
+        // Several modules of the path: the one by the importing file, or in the nearest folder
+        // above it (a script's folder is on sys.path: `from types import X` next to types.py)
+        const rel = mod.replace(/\./g, '/');
+        const dir = sourceFilePath.split('/').slice(0, -1);
+        for (let i = dir.length; i >= 0; i--) {
+          const prefix = dir.slice(0, i).join('/');
+          const near = candidates.filter(c => c === (prefix ? `${prefix}/` : '') + `${rel}.py` || c === (prefix ? `${prefix}/` : '') + `${rel}/__init__.py`);
+          if (near.length > 0) return near[0];
+        }
+        // Else the shortest path (`django/db/models/__init__.py` for django.db.models), when only
+        // one is that short: two of a length are a guess
+        const shortest = Math.min(...candidates.map(c => c.length));
+        const shortestOnes = candidates.filter(c => c.length === shortest);
+        return shortestOnes.length === 1 ? shortestOnes[0] : undefined;
       }
       const dir = sourceFilePath.split('/').slice(0, -1);
       const base = dir.slice(0, Math.max(0, dir.length - (dots - 1))).join('/');
@@ -819,7 +1005,7 @@ export class ReferenceResolver {
    * What the call resolver reads: nodes by name and id, the files each file imports (the import
    * edges already in the graph, and those this pass makes), and each node's owner.
    */
-  private callContext(): CallContext & { addImport(filePath: string, targetId: string): void; addSupertype(id: string, superId: string): void } {
+  private callContext(): ResolverContext {
     const rawDb = (this.db as any).db;
     const imports = new Map<string, Set<string>>();
     const add = (from: string, to: string) => {
@@ -833,6 +1019,8 @@ export class ReferenceResolver {
       JOIN nodes s ON s.id = e.source JOIN nodes t ON t.id = e.target
       WHERE e.kind = 'imports'`) as any[]) add(r.f, r.t);
     let owners: Map<string, { id: string; name: string; kind: string }> | null = null;
+    let containers: Map<string, string> | null = null;
+    const typesByFile = new Map<string, Array<{ id: string; name: string; kind: string; start: number; end: number }>>();
     const supers = new Map<string, string[]>();
     const addSuper = (id: string, s: string) => {
       const list = supers.get(id);
@@ -878,6 +1066,24 @@ export class ReferenceResolver {
           }
         }
         return owners.get(id);
+      },
+      typeAt: (filePath, line) => {
+        let types = typesByFile.get(filePath);
+        if (!types) {
+          types = (rawDb.all(`SELECT id, name, kind, start_line AS start, end_line AS end FROM nodes WHERE file_path = ? AND kind IN
+            ('class', 'struct', 'interface', 'trait', 'protocol', 'module', 'enum', 'component')`, [filePath]) as any[]);
+          typesByFile.set(filePath, types);
+        }
+        let best: { id: string; name: string; kind: string; start: number; end: number } | undefined;
+        for (const t of types) if (t.start <= line && line <= t.end && (!best || t.end - t.start < best.end - best.start)) best = t;
+        return best && { id: best.id, name: best.name, kind: best.kind };
+      },
+      container: id => {
+        if (!containers) {
+          containers = new Map();
+          for (const r of rawDb.all(`SELECT source, target FROM edges WHERE kind = 'contains'`) as any[]) containers.set(r.target, r.source);
+        }
+        return containers.get(id);
       },
       supertypes: id => supers.get(id) ?? [],
       cVisible: (filePath, candidate) => {
@@ -1054,13 +1260,22 @@ function expandPastingMacros(text: string): string {
         body = body.replace(new RegExp(`\\b${name}\\s*\\(([^()]*)\\)`, 'g'), (_m, args: string) => {
           const values = args.split(',').map(s => s.trim());
           let r = f.body;
-          f.params.forEach((p, i) => { r = r.replace(new RegExp(`\\b${p}\\b`, 'g'), values[i] ?? ''); });
+          f.params.forEach((p, i) => {
+            // A variadic parameter (`...`, `args...`) takes the rest of the arguments
+            const variadic = /^(\w*)\s*\.\.\.$/.exec(p);
+            const name = variadic ? (variadic[1] || '__VA_ARGS__') : p;
+            if (!/^\w+$/.test(name)) return;
+            const value = variadic ? values.slice(i).join(', ') : values[i] ?? '';
+            r = r.replace(new RegExp(`\\b${name}\\b`, 'g'), value);
+          });
           return r.replace(/\s*##\s*/g, '');
         });
       }
       out = body;
     }
   }
+  // Kept for the headers of one resolution, not for the life of a server
+  if (expandedCache.size >= 512) expandedCache.clear();
   expandedCache.set(text, out);
   return out;
 }

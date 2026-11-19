@@ -1,12 +1,1 @@
-{
-  "name": "mock-architecture",
-  "version": "1.0.0",
-  "private": true,
-  "dependencies": {
-    "lodash": "^4.17.21",
-    "express": "^4.18.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.0.0"
-  }
-}
+{"name":"mock-arch-mcp","version":"1.0.0","private":true,"dependencies":{"lodash":"^4.17.21","express":"^4.18.0"},"devDependencies":{"typescript":"^5.0.0"}}

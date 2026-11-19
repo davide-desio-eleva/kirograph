@@ -13,9 +13,9 @@ import { initGrammars, getParser, hasWasmGrammar } from './grammars';
 import { extractNotebook } from './notebook';
 import { extractSql } from './sql';
 import { extractRoutes, JS_TS_LANGUAGES, type RouteMount } from './routes';
-import { receiverInfo, declaredReturnType, calleeOf, memberObject } from './receiver-types';
+import { receiverInfo, declaredReturnType, calleeOf, memberObject, callsParameter, argumentTypes, resetReceiverCaches } from './receiver-types';
 import { LANG_SPECS } from './lang-specs';
-import { moreReceiverType } from './receiver-types-more';
+import { moreReceiverType, rubyReturnType, rubyIsLocal } from './receiver-types-more';
 import { extractHcl, extractYaml, extractHelmTemplate, augmentBash, extractJsonConfig } from './infra';
 
 export interface UnresolvedRef {
@@ -137,6 +137,7 @@ async function extractScriptBlocks(blocks: ScriptBlock[], source: string, relPat
     try {
       walkTree(tree.rootNode, code, relPath, block.language, nodes, edges, unresolvedRefs, now);
     } finally {
+      resetReceiverCaches();
       tree.delete?.();
     }
     for (let i = first; i < nodes.length; i++) nodes[i].language = language;
@@ -241,7 +242,16 @@ export async function extractFile(filePath: string, projectRoot: string, content
       // Svelte: no grammar for its markup, but its <script> blocks are TypeScript / JavaScript
       if (language === 'svelte') {
         const nodes: Node[] = [], edges: Edge[] = [], unresolvedRefs: UnresolvedRef[] = [];
-        await extractScriptBlocks(scriptBlocksOf(source), source, relPath, language, Date.now(), nodes, edges, unresolvedRefs);
+        const now = Date.now();
+        await extractScriptBlocks(scriptBlocksOf(source), source, relPath, language, now, nodes, edges, unresolvedRefs);
+        // Markup only, or a script with only imports: the component is still what imports point at
+        if (!nodes.some(n => n.kind !== 'import')) {
+          const name = path.basename(relPath).replace(/\.[^.]+$/, '');
+          const lines = source.split('\n');
+          nodes.push({ id: makeNodeId(relPath, 'module', name, 1), kind: 'module', name, qualifiedName: `${relPath}::${name}`,
+            filePath: relPath, language, startLine: 1, endLine: lines.length, startColumn: 0,
+            endColumn: lines[lines.length - 1].length, updatedAt: now });
+        }
         return { filePath: relPath, language, contentHash, fileSize, nodes, edges, unresolvedRefs };
       }
       // Language genuinely has no grammar (e.g. Liquid, unknown) — track file but no AST extraction
@@ -381,6 +391,7 @@ export async function extractFile(filePath: string, projectRoot: string, content
 
     return { filePath: relPath, language, contentHash, fileSize, nodes, edges, unresolvedRefs, routeMounts };
   } finally {
+    resetReceiverCaches();
     tree?.delete();
     parser.delete();
   }
@@ -784,13 +795,16 @@ function walkTree(
         updatedAt: now,
       };
       if (kind === 'function' || kind === 'method' || kind === 'constant' || kind === 'variable') {
-        const returnType = declaredReturnType(node, source, language);
+        const returnType = declaredReturnType(node, source, language) ?? (language === 'ruby' ? rubyReturnType(node, source) : undefined);
         if (returnType) graphNode.returnType = returnType;
       }
       nodes.push(graphNode);
 
-      if (parentId) {
-        edges.push({ source: parentId, target: id, kind: 'contains' });
+      // A symbol declared outside its class (`Reply.prototype.send = …`): the class of the file holds it
+      const owner = specSymbol?.owner ? nodes.find(n => n.kind === 'class' && n.name === specSymbol.owner && n.filePath === filePath) : undefined;
+      const holder = owner?.id ?? parentId;
+      if (holder) {
+        edges.push({ source: holder, target: id, kind: 'contains' });
       }
 
       // Collect call references within this symbol
@@ -1528,12 +1542,22 @@ function extractCallName(node: any, source: string): string | null {
       const t = f.type;
       if (t === 'identifier' || t === 'name' || t === 'property_identifier' || t === 'type_identifier') {
         const text = source.slice(f.startIndex, f.endIndex).trim();
-        if (text && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(text)) return text;
+        // Ruby's predicate and bang methods: `empty?`, `save!`
+        if (text && (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(text) || (field === 'method' && /^[a-zA-Z_]\w*[?!]$/.test(text)))) return text;
+      }
+      // Elixir: `Foo.bar()`'s target is a dot, whose right side is the name
+      if (t === 'dot') {
+        const right = f.childForFieldName('right');
+        const text = right ? source.slice(right.startIndex, right.endIndex).trim() : '';
+        if (/^[a-zA-Z_]\w*[?!]?$/.test(text)) return text;
       }
     }
   }
   // A member access: the member's name (`save` in `makeRepo().save()`, `repo.save()`, `self.x.save()`)
   const fn = calleeOf(node);
+  // A call of what a call returns (`self.admin_view(view)(request)`): no name of its own; the inner
+  // call is a call of its own
+  if (fn && CALL_NODE_TYPES.has(fn.type)) return null;
   if (fn && fn !== (node.childForFieldName?.('function') ?? node.child(0)) && fn.type === 'identifier') {
     return source.slice(fn.startIndex, fn.endIndex);
   }
@@ -1596,6 +1620,22 @@ function collectCallRefs(node: any, source: string, sourceId: string, unresolved
   walkForCalls(node, source, sourceId, unresolvedRefs, language);
 }
 
+/** The node of the name a call calls: `save` in `repo.save()`, `f` in `f()`. */
+function calledNameNode(call: any): any {
+  // Ruby's method
+  const method = call.childForFieldName?.('method');
+  if (method) return method;
+  // Java's and PHP's name; Lua's `name` is the whole callee (`obj:a`), read below
+  const named = call.childForFieldName?.('name');
+  if (named && !MEMBER_ACCESS.has(named.type)) return named;
+  const fn = named ?? call.childForFieldName?.('target') ?? calleeOf(call);
+  if (!fn) return null;
+  if (fn.type === 'dot') return fn.childForFieldName('right') ?? fn;            // Elixir
+  if (fn.type === 'navigation_expression') return navigationMember(fn) ?? fn;  // Kotlin, Swift
+  return fn.childForFieldName?.('property') ?? fn.childForFieldName?.('attribute') ?? fn.childForFieldName?.('field')
+    ?? fn.childForFieldName?.('method') ?? fn.childForFieldName?.('name') ?? fn;
+}
+
 function walkForCalls(node: any, source: string, sourceId: string, unresolvedRefs: UnresolvedRef[], language: Language): void {
   // A language's own calls (see lang-specs): commands, applications, module instances
   const specCall = LANG_SPECS[language]?.call?.(node, source);
@@ -1605,8 +1645,8 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
         sourceId,
         refName: specCall.name,
         refKind: 'function',
-        line: node.startPosition.row + 1,
-        column: node.startPosition.column,
+        line: (calledNameNode(node) ?? node).startPosition.row + 1,
+        column: (calledNameNode(node) ?? node).startPosition.column,
         ...(specCall.receiver ? { metadata: (() => {
           const type = moreReceiverType(node, specCall.receiver, source, language);
           return type ? { receiver: specCall.receiver, receiverType: type } : { receiver: specCall.receiver };
@@ -1626,8 +1666,18 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
         const info = receiverInfo(node, receiver, source, language);
         const type = info.type ?? moreReceiverType(node, receiver, source, language);
         if (type) metadata.receiverType = type;
+        if (info.param && !type) metadata.receiverParam = info.param;
         if (info.call) metadata.receiverCall = info.call;
+        // Ruby: `make_ledger.add` calls make_ledger (no parentheses) when it is no local: the receiver is its result
+        else if (!type && language === 'ruby' && /^[a-z_]\w*[?!]?$/.test(receiver) && !/^(self|nil|true|false|super)$/.test(receiver)
+          && !rubyIsLocal(node, receiver, source)) {
+          metadata.receiverCall = { name: receiver };
+        }
+      } else if (callsParameter(node, calleeName, source, language)) {
+        metadata.parameter = true;
       }
+      // The classes it passes: resolution types its callee's untyped parameters by them
+      Object.assign(metadata, argumentTypes(node, source, language));
       if (JS_TS_LANGUAGES.has(language)) {
         const argKind = classifyFirstArgument(node, source);
         if (argKind) metadata.argKind = argKind;
@@ -1637,12 +1687,15 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
         const argKind = classifyGenericArgument(node, source, language);
         if (argKind) metadata.argKind = argKind;
       }
+      // Where the called name is: the calls of a chain (`new A().save().save()`) all start where the
+      // chain does, and would be one edge
+      const at = calledNameNode(node) ?? node;
       unresolvedRefs.push({
         sourceId,
         refName: calleeName,
         refKind: 'function',
-        line: node.startPosition.row + 1,
-        column: node.startPosition.column,
+        line: at.startPosition.row + 1,
+        column: at.startPosition.column,
         ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
       });
     }

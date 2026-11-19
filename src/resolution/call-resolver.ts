@@ -23,9 +23,15 @@ export interface CallRef {
   /** The receiver's declared type, when the code says it (see extraction/receiver-types). */
   receiverType?: string;
   /** The call the receiver is the value of (`getRepo()` in `getRepo().save()`): typed by its return type. */
-  receiverCall?: { name: string; receiver?: string; receiverType?: string; receiverCall?: CallRef['receiverCall'] };
+  receiverCall?: { name: string; receiver?: string; receiverType?: string; receiverCall?: CallRef['receiverCall']; element?: true };
   sourceId: string;
   filePath: string;
+  /** Which classes of the name the receiver may be (a parameter typed by its callers): ids. */
+  receiverTypeIds?: string[];
+  /** The line of the call. */
+  line?: number;
+  /** A bare call of a parameter of an enclosing function (`done()`): the function passed in. */
+  parameter?: boolean;
 }
 
 export interface CallContext {
@@ -35,6 +41,10 @@ export interface CallContext {
   importedFiles(filePath: string): Set<string> | undefined;
   /** The class, struct, module or namespace a node is declared in. */
   owner(id: string): { id: string; name: string; kind: string } | undefined;
+  /** The innermost type (class, struct, …) declared around a line of a file. */
+  typeAt?(filePath: string, line: number): { id: string; name: string; kind: string } | undefined;
+  /** The node that contains a node (a variable's function, a method's class). */
+  container?(id: string): string | undefined;
   /** The types a type extends or implements (resolved edges). */
   supertypes(id: string): string[];
   /**
@@ -75,7 +85,7 @@ const IMPLICIT_SELF = new Set<string>(['java', 'kotlin', 'scala', 'swift', 'csha
 /** Receivers that are the object the caller belongs to. */
 const SELF_RECEIVERS = /^(?:this|self|super|cls|Self|base|static|\$this|@)$/;
 /** Owners whose members are reached through an instance or the type, not by a bare name. */
-const TYPE_KINDS = new Set<string>(['class', 'struct', 'interface', 'trait', 'protocol', 'component', 'enum', 'type_alias']);
+export const TYPE_KINDS = new Set<string>(['class', 'struct', 'interface', 'trait', 'protocol', 'component', 'enum', 'type_alias']);
 const CONSTRUCTORS = new Set<string>(['class', 'struct']);
 
 function isCallable(n: Node, language: string | undefined): boolean {
@@ -114,6 +124,9 @@ function isMember(n: Node, ctx: CallContext): boolean {
   return owner !== undefined && TYPE_KINDS.has(owner.kind);
 }
 
+/** Words that make a name a collection of what its other words name: `article_set`, `user_list`. */
+const COLLECTION_WORDS = new Set(['set', 'list', 'dict', 'map', 'array', 'arr', 'items', 'ids', 'tuple', 'seq', 'collection', 'queue']);
+
 /**
  * Whether the receiver names what the candidate belongs to. The receiver's last word is the
  * thing it is (`userService` is a service, `onResponseHook` a hook): a member is reached when
@@ -130,6 +143,9 @@ function receiverReaches(receiver: string, candidate: Node, ctx: CallContext): b
   if (VALUE_KINDS.has(candidate.kind)) {
     return squash(owner?.name ?? baseName(candidate.filePath)) === squash(name);
   }
+  // A name that ends in a collection word holds several of what its other words name
+  // (`article_set`, `user_list`): only a class of the whole name is it, not `QuerySet`
+  if (owner && recv.length > 1 && COLLECTION_WORDS.has(head) && /^[a-z_]/.test(name)) return squash(owner.name) === squash(name);
   if (owner) return squash(owner.name) === squash(name) || words(owner.name).includes(head);
   // A function or class of a module: the receiver is the module or one of its packages
   // (`models.CharField()` → django/db/models/fields/__init__.py)
@@ -150,6 +166,17 @@ export const isTestPath = (filePath: string): boolean => TEST_PATH.test(filePath
  * The member of the name declared nearest to the given types: in the type itself, else in what it
  * extends or implements, breadth first. Null when neither declares it (a library supertype's).
  */
+/**
+ * The files a resolution read besides the caller's and the target's: the types it looked a member
+ * up in, the function whose return type typed the receiver. A sync re-resolves the call when one
+ * of them changes (an override added to a subclass, a return type changed).
+ */
+let via: Set<string> | null = null;
+/** Starts recording the files the next resolutions read. */
+export function recordVia(): void { via = new Set(); }
+/** The files read since recordVia(), and stops recording. */
+export function takeVia(): string[] { const out = via ? [...via] : []; via = null; return out; }
+
 function memberOf(typeIds: string[], candidates: Node[], ctx: CallContext): Node | null {
   const byOwner = new Map<string, Node[]>();
   for (const n of candidates) {
@@ -162,6 +189,7 @@ function memberOf(typeIds: string[], candidates: Node[], ctx: CallContext): Node
   const seen = new Set<string>(typeIds);
   let level = [...typeIds];
   for (let depth = 0; level.length > 0 && depth < 8; depth++) {
+    if (via) for (const id of level) { const f = ctx.node(id)?.filePath; if (f) via.add(f); }
     const found = level.flatMap(id => byOwner.get(id) ?? []);
     // Overloads of one type are one method; the same name in two unrelated types is a guess
     if (found.length > 0) {
@@ -175,12 +203,47 @@ function memberOf(typeIds: string[], candidates: Node[], ctx: CallContext): Node
   return null;
 }
 
+/** Ruby: the gem (or engine) a file belongs to, the path before its lib/, app/, test/ or spec/ directory. */
+function gemRoot(filePath: string): string {
+  const m = /^(.*?)(?:^|\/)(?:lib|app|test|spec)\//.exec(filePath);
+  return m ? m[1] : '';
+}
+
+/**
+ * The type a call is made from: the class of the method that makes it, or the class itself when the
+ * class's own node holds the call (a type's node collects the calls of everything it contains).
+ */
+function callerTypeOf(ref: CallRef, ctx: CallContext): { id: string; name: string; kind: string } | undefined {
+  // A local variable that holds the call: the type of the function it is declared in
+  for (let id: string | undefined = ref.sourceId, depth = 0; id && depth < 8; id = ctx.container?.(id), depth++) {
+    const node = ctx.node(id);
+    // A type's node also holds the calls of the types nested in it: the innermost one around the call
+    if (node && TYPE_KINDS.has(node.kind)) {
+      return (ref.line !== undefined ? ctx.typeAt?.(ref.filePath, ref.line) : undefined) ?? { id: node.id, name: node.name, kind: node.kind };
+    }
+    const owner = ctx.owner(id);
+    if (owner) return owner;
+    if (!ctx.container) return undefined;
+  }
+  return undefined;
+}
+
 export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
   // A receiver that a call returns: the declared return type of the function that call reaches
   if (ref.receiverType === undefined && ref.receiverCall) {
-    const producer = resolveCall({ ...ref.receiverCall, sourceId: ref.sourceId, filePath: ref.filePath }, ctx);
-    if (producer?.returnType) ref = { ...ref, receiverType: producer.returnType };
+    const producer = resolveCall({ ...ref.receiverCall, sourceId: ref.sourceId, filePath: ref.filePath, line: ref.line }, ctx);
+    if (producer && via) via.add(producer.filePath);
+    // A collection: `Job[]` (Job elements, no type of its own) or `Queue<Job>` (a Queue of Jobs)
+    const returned = producer?.returnType;
+    const generic = returned ? /^(\w+)<(\w+)>$/.exec(returned) : null;
+    const array = returned ? /^(\w+)\[\]$/.exec(returned) : null;
+    const element = generic?.[2] ?? array?.[1];
+    const whole = generic ? generic[1] : array ? undefined : returned;
+    const typed = ref.receiverCall.element ? element : whole;
+    if (typed) ref = { ...ref, receiverType: typed };
   }
+  // A parameter called (`done()`, `resolve(true)`) is whatever function the caller passed
+  if (ref.parameter && ref.receiver === undefined) return null;
   const source = ctx.node(ref.sourceId);
   const language = source?.language;
   // Code that is not a test never calls into a test: a stub or a fixture of the name is not it
@@ -193,21 +256,38 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
   const inImported = (nodes: Node[]) => (imported ? nodes.filter(n => imported.has(n.filePath)) : []);
 
   // A receiver whose type the code declares: the method of that type, or of its supertypes
+  // Ruby: `Sinatra.new(…)` on a module is a method of it, not an instance: the receiver is untyped
+  if (ref.receiverType !== undefined && language === 'ruby' &&
+      ctx.byName(ref.receiverType).some(n => n.language === 'ruby' && n.kind === 'module') &&
+      !ctx.byName(ref.receiverType).some(n => n.language === 'ruby' && n.kind === 'class')) {
+    ref = { ...ref, receiverType: undefined };
+  }
   if (ref.receiverType !== undefined) {
     const types = ctx.byName(ref.receiverType).filter(n => TYPE_KINDS.has(n.kind) &&
       isCallTarget(n, language) && (fromTest || !isTestPath(n.filePath)));
     // A type outside the project (a library's): its methods are not the project's
     if (types.length === 0) return null;
+    // The classes the callers of a parameter pass: those, and no other of the name (when this
+    // caller may not reach them, a test's stub from code that is not a test: nothing)
+    if (ref.receiverTypeIds) {
+      const ids = new Set(ref.receiverTypeIds);
+      const named = types.filter(n => ids.has(n.id));
+      return named.length > 0 ? memberOf(named.map(n => n.id), candidates, ctx) : null;
+    }
     const local = sameFile(types);
     const fromImports = inImported(types);
-    const pool = local.length > 0 ? local : fromImports.length > 0 ? fromImports : types;
+    // Ruby names a type without importing it: one of another gem of the repository (rack-protection's
+    // `Request` is Rack's, not Sinatra's) is not the one meant
+    const project = language === 'ruby' ? types.filter(n => gemRoot(n.filePath) === gemRoot(ref.filePath)) : types;
+    const pool = local.length > 0 ? local : fromImports.length > 0 ? fromImports : project;
+    if (pool.length === 0) return null;
     return memberOf(pool.map(n => n.id), candidates, ctx);
   }
 
   // A call on `super`: the member the caller's supertypes have, never the caller's own override
   // (`super.supportsInterface()` inside supportsInterface); a library parent's: nothing
   if (ref.receiver !== undefined && /^(super|super\(\)|parent|base)$/.test(ref.receiver.trim())) {
-    const callerType = ctx.owner(ref.sourceId);
+    const callerType = callerTypeOf(ref, ctx);
     if (!callerType || !TYPE_KINDS.has(callerType.kind)) return null;
     return memberOf(ctx.supertypes(callerType.id), candidates, ctx);
   }
@@ -215,7 +295,7 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
   // A call on `this` / `self`: a member of the caller's own type, or the one member of the name
   if (ref.receiver !== undefined && SELF_RECEIVERS.test(ref.receiver.trim())) {
     // The caller's class and its supertypes
-    const callerType = ctx.owner(ref.sourceId);
+    const callerType = callerTypeOf(ref, ctx);
     if (callerType && TYPE_KINDS.has(callerType.kind)) {
       const inherited = memberOf([callerType.id], candidates, ctx);
       if (inherited) return inherited;
@@ -223,7 +303,7 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
     const members = candidates.filter(n => isMember(n, ctx));
     const own = sameFile(members);
     if (own.length > 0) {
-      const owner = ctx.owner(ref.sourceId)?.name;
+      const owner = callerTypeOf(ref, ctx)?.name;
       const ofOwner = owner ? own.filter(n => ctx.owner(n.id)?.name === owner) : [];
       return first(ofOwner.length > 0 ? ofOwner : own);
     }
@@ -235,7 +315,10 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
     // A function or class of a module only in a module the file imports, when its imports are known
     // (`copy.deepcopy()` is the standard library's, not a project's copy.py)
     const inScope = (n: Node) => isMember(n, ctx) || !imported || imported.size === 0 || imported.has(n.filePath) || n.filePath === ref.filePath;
-    const reached = candidates.filter(n => receiverReaches(ref.receiver!, n, ctx) && inScope(n));
+    // A wrapper delegates to the object it holds (`self.orig_loader.load()` in `load`): a member of
+    // its own is not the method that calls it
+    const delegating = /^(this|self)\.\w+$/.test(ref.receiver.trim());
+    const reached = candidates.filter(n => receiverReaches(ref.receiver!, n, ctx) && inScope(n) && !(delegating && n.id === ref.sourceId));
     if (reached.length === 0) {
       // A class through its module (`models.CharField(…)`), in the languages where a module is a
       // value: the one of the name the file imports, or the one in the project
@@ -253,7 +336,7 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
   // A bare call where a bare name can be `this`'s: a member of the caller's class or of what it
   // inherits first (`_mint()` in a contract that extends ERC20)
   if (language !== undefined && IMPLICIT_SELF.has(language)) {
-    const callerType = ctx.owner(ref.sourceId);
+    const callerType = callerTypeOf(ref, ctx);
     if (callerType && TYPE_KINDS.has(callerType.kind)) {
       const inherited = memberOf([callerType.id], candidates, ctx);
       if (inherited) return inherited;

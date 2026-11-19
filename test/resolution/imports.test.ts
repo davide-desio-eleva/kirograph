@@ -47,7 +47,8 @@ const files: Record<string, string> = {
   'packages/common/package.json': JSON.stringify({ name: '@acme/common' }),
   'packages/common/index.ts': 'export const common = 1;\n',
   'packages/common/utils/colors.ts': 'export const red = 1;\n',
-  'tsconfig.json': '{ // paths\n  "compilerOptions": { "baseUrl": ".", "paths": { "@app/*": ["web/src/*"] } }\n}\n',
+  // A path alias and a glob of two stars: a slash-star then a star-slash inside strings is no comment
+  'tsconfig.json': '{ // paths\n  "compilerOptions": { "baseUrl": ".", "paths": { "@app/*": ["web/src/*"] } }, /* sources */\n  "include": ["**/*.ts"],\n}\n',
   'web/src/store.ts': 'export const store = 1;\n',
   'web/src/main.ts': "import { common } from '@acme/common';\nimport { red } from '@acme/common/utils/colors.js';\nimport { store } from '@app/store';\nimport { x } from './local.js';\nimport cors from 'cors';\n",
   'web/src/local.ts': 'export const x = 1;\n',

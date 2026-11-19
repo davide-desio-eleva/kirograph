@@ -1,5 +1,4 @@
-export * from './auth';
-export * from './user';
-export * from './token';
-export * from './utils';
-export * from './base';
+export { BaseService } from './base';
+export { AuthService } from './auth';
+export { UserService } from './user';
+export { factorial, fibonacci } from './utils';
