@@ -26,6 +26,8 @@ export interface CallRef {
   receiverCall?: { name: string; receiver?: string; receiverType?: string; receiverCall?: CallRef['receiverCall']; element?: true };
   sourceId: string;
   filePath: string;
+  /** The file of the receiver's type, when the name alone is ambiguous (a parameter typed by its callers). */
+  receiverTypeFile?: string;
   /** The line of the call. */
   line?: number;
   /** A bare call of a parameter of an enclosing function (`done()`): the function passed in. */
@@ -265,6 +267,9 @@ export function resolveCall(ref: CallRef, ctx: CallContext): Node | null {
       isCallTarget(n, language) && (fromTest || !isTestPath(n.filePath)));
     // A type outside the project (a library's): its methods are not the project's
     if (types.length === 0) return null;
+    // The file the type was found in (by the callers of a parameter): that one
+    const named = ref.receiverTypeFile ? types.filter(n => n.filePath === ref.receiverTypeFile) : [];
+    if (named.length > 0) return memberOf(named.map(n => n.id), candidates, ctx);
     const local = sameFile(types);
     const fromImports = inImported(types);
     // Ruby names a type without importing it: one of another gem of the repository (rack-protection's

@@ -292,6 +292,7 @@ describe('Prototype methods, lists, parameters typed by callers of other files, 
       'PJournal.prototype.save = function () {}',
       'function protoCall () { const r = new PRepo(); r.save() }',
       'function protoChain () { const saved = new PRepo().save(); saved.save() }',
+      'function protoChainOne () { new PRepo().save().save() }',
       'module.exports = { PRepo, PJournal }',
       '',
     ].join('\n'));
@@ -341,6 +342,8 @@ describe('Prototype methods, lists, parameters typed by callers of other files, 
       expect(calls.protoCall).toEqual(['proto/repo.js::PRepo']);
       // save() returns this: the second save is PRepo's too
       expect(calls.protoChain).toEqual(['proto/repo.js::PRepo', 'proto/repo.js::PRepo']);
+      // Two calls of one chain start at the same place: two edges all the same
+      expect(calls.protoChainOne).toEqual(['proto/repo.js::PRepo', 'proto/repo.js::PRepo']);
       expect(calls.list_appended).toEqual(['lists/types.py::Ledger']);
       expect(calls.list_returned).toEqual(['lists/types.py::Ledger']);
       expect(calls.list_itself).toBeUndefined();
@@ -419,6 +422,12 @@ describe('Review cases: shadowing, project generics, arguments, comprehensions, 
       '    order.save()',
       '',
     ].join('\n'),
+    // Two classes of the name: the one the caller passes, as the caller sees it
+    'amb/one/types.py': 'class AmbLedger:\n    def save(self): pass\n',
+    'amb/two/types.py': 'class AmbLedger:\n    def save(self): pass\n',
+    'amb/one/lib.py': 'def amb_use(thing):\n    thing.save()\n',
+    'amb/one/__init__.py': '',
+    'amb/one/caller.py': 'from .types import AmbLedger\nfrom .lib import amb_use\n\ndef amb_caller():\n    amb_use(AmbLedger())\n',
     // Ruby: locals bound by multiple assignment, ||=, rescue, for: not methods called without parentheses
     'rb2/lib/r.rb': [
       'class RbLedger',
@@ -472,6 +481,10 @@ describe('Review cases: shadowing, project generics, arguments, comprehensions, 
 
   it("a comprehension's variable leaves the parameter's type", () => {
     expect(calls.comprehension).toEqual(['rv/types.py::PyLedger']);
+  });
+
+  it('a class of a name two classes have: the one its callers import', () => {
+    expect(calls.amb_use).toEqual(['amb/one/types.py::AmbLedger']);
   });
 
   it('Ruby: a local bound by multiple assignment is no method call', () => {

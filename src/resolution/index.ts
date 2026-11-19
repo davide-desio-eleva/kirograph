@@ -43,6 +43,10 @@ function argumentOf(m: any, param: { index: number; name: string }): string | nu
   return m.kwSpread ? null : 'default';
 }
 
+/** A parameter typed by its callers: the class (and its file, since several may have the name). */
+interface ParameterType { type: string; typeFile?: string; via: string[]; of: string[] }
+const PARAMETER_TYPE_KINDS = new Set(['class', 'struct', 'interface', 'trait', 'protocol', 'enum', 'type_alias', 'component']);
+
 /** The call context, plus what a resolution pass adds to it as it goes. */
 type ResolverContext = CallContext & { addImport(filePath: string, targetId: string): void; addSupertype(id: string, superId: string): void };
 
@@ -228,10 +232,20 @@ export class ReferenceResolver {
    * there (the default) does not count. Calls resolved this way are no callers here, so the
    * result does not depend on the order of resolution.
    */
-  private parameterTypes(waiting: any[], calls: CallContext): Map<number, { type: string; via: string[]; of: string[] }> {
+  private parameterTypes(waiting: any[], calls: CallContext): Map<number, ParameterType> {
     const rawDb = (this.db as any).db;
-    const out = new Map<number, { type: string; via: string[]; of: string[] }>();
-    const byParam = new Map<string, { type: string; via: string[]; of: string[] } | null>();
+    const out = new Map<number, ParameterType>();
+    const byParam = new Map<string, ParameterType | null>();
+    // The classes a caller may pass, as the caller sees the name: its file's, the ones it imports,
+    // else every one of the name (the method called then tells them apart, as for any receiver)
+    const classesSeenFrom = (name: string, callerFile: string): Node[] => {
+      const types = calls.byName(name).filter(n => PARAMETER_TYPE_KINDS.has(n.kind));
+      const own = types.filter(n => n.filePath === callerFile);
+      if (own.length > 0) return own;
+      const imported = calls.importedFiles(callerFile);
+      const seen = imported ? types.filter(n => imported.has(n.filePath)) : [];
+      return seen.length > 0 ? seen : types;
+    };
     for (const ref of waiting) {
       let param: { lines: number[]; index: number; name: string } | undefined;
       try { param = JSON.parse(ref.metadata).receiverParam; } catch { continue; }
@@ -249,7 +263,7 @@ export class ReferenceResolver {
           if (fn.name === '__init__' || fn.name === 'constructor') { const owner = calls.owner(fn.id); if (owner) targets.push(owner.id); }
           const callers: any[] = rawDb.all(`SELECT e.metadata AS m, s.file_path AS f FROM edges e JOIN nodes s ON s.id = e.source
             WHERE e.kind = 'calls' AND e.target IN (${targets.map(() => '?').join(',')})`, targets);
-          const types = new Set<string>();
+          const seen = new Map<string, { name: string; classes: Node[] }>();
           const files = new Set<string>();
           let unknown = callers.length === 0;
           for (const c of callers) {
@@ -260,9 +274,15 @@ export class ReferenceResolver {
             const t = argumentOf(m, param);
             if (t === 'default') continue;
             if (!t) { unknown = true; break; }
-            types.add(t);
+            // A class of no project file is a library's: the parameter is one, its methods none of ours
+            const classes = classesSeenFrom(t, c.f);
+            seen.set(classes.length > 0 ? classes.map(n => n.id).sort().join(',') : `library:${t}`, { name: t, classes });
           }
-          if (!unknown && types.size === 1) found = { type: [...types][0], via: [...files].sort(), of: targets };
+          // Every caller passes the same class (or the same classes of one name, as it sees them)
+          if (!unknown && seen.size === 1) {
+            const { name, classes } = [...seen.values()][0];
+            found = { type: name, typeFile: classes.length === 1 ? classes[0].filePath : undefined, via: [...files].sort(), of: targets };
+          }
         }
         byParam.set(key, found);
       }
@@ -273,7 +293,7 @@ export class ReferenceResolver {
 
   /** Resolves references in batched transactions; `inferred` types the receivers of some of them. */
   private resolvePass(refs: any[], calls: ResolverContext, onProgress?: (current: number, total: number) => void,
-    inferred?: Map<number, { type: string; via: string[]; of: string[] }>): number {
+    inferred?: Map<number, ParameterType>): number {
     const rawDb = (this.db as any).db;
     let resolved = 0;
     const total = refs.length;
@@ -360,7 +380,7 @@ export class ReferenceResolver {
               const dot = refName.lastIndexOf('.');
               const name = dot > 0 ? refName.slice(dot + 1) : refName;
               const receiver: string | undefined = meta?.receiver ?? (dot > 0 ? refName.slice(0, dot) : undefined);
-              const call = { name, receiver, receiverType: (inferred?.get(refId)?.type ?? meta?.receiverType) as string | undefined, receiverCall: meta?.receiverCall, sourceId, filePath, line: line ?? undefined, parameter: meta?.parameter === true };
+              const call = { name, receiver, receiverType: (inferred?.get(refId)?.type ?? meta?.receiverType) as string | undefined, receiverTypeFile: inferred?.get(refId)?.typeFile, receiverCall: meta?.receiverCall, sourceId, filePath, line: line ?? undefined, parameter: meta?.parameter === true };
               attemptedStrategies.push(receiver !== undefined ? 'method' : 'exact');
               recordVia();
               targetId = resolveCall(call, calls)?.id ?? null;

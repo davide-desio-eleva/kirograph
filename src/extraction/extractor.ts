@@ -1548,6 +1548,9 @@ function extractCallName(node: any, source: string): string | null {
   }
   // A member access: the member's name (`save` in `makeRepo().save()`, `repo.save()`, `self.x.save()`)
   const fn = calleeOf(node);
+  // A call of what a call returns (`self.admin_view(view)(request)`): no name of its own; the inner
+  // call is a call of its own
+  if (fn && CALL_NODE_TYPES.has(fn.type)) return null;
   if (fn && fn !== (node.childForFieldName?.('function') ?? node.child(0)) && fn.type === 'identifier') {
     return source.slice(fn.startIndex, fn.endIndex);
   }
@@ -1610,6 +1613,16 @@ function collectCallRefs(node: any, source: string, sourceId: string, unresolved
   walkForCalls(node, source, sourceId, unresolvedRefs, language);
 }
 
+/** The node of the name a call calls: `save` in `repo.save()`, `f` in `f()`. */
+function calledNameNode(call: any): any {
+  const named = call.childForFieldName?.('name');
+  if (named) return named;
+  const fn = calleeOf(call);
+  if (!fn) return null;
+  return fn.childForFieldName?.('property') ?? fn.childForFieldName?.('attribute') ?? fn.childForFieldName?.('field')
+    ?? fn.childForFieldName?.('method') ?? fn.childForFieldName?.('name') ?? fn;
+}
+
 function walkForCalls(node: any, source: string, sourceId: string, unresolvedRefs: UnresolvedRef[], language: Language): void {
   // A language's own calls (see lang-specs): commands, applications, module instances
   const specCall = LANG_SPECS[language]?.call?.(node, source);
@@ -1661,12 +1674,15 @@ function walkForCalls(node: any, source: string, sourceId: string, unresolvedRef
         const argKind = classifyGenericArgument(node, source, language);
         if (argKind) metadata.argKind = argKind;
       }
+      // Where the called name is: the calls of a chain (`new A().save().save()`) all start where the
+      // chain does, and would be one edge
+      const at = calledNameNode(node) ?? node;
       unresolvedRefs.push({
         sourceId,
         refName: calleeName,
         refKind: 'function',
-        line: node.startPosition.row + 1,
-        column: node.startPosition.column,
+        line: at.startPosition.row + 1,
+        column: at.startPosition.column,
         ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
       });
     }
