@@ -97,7 +97,18 @@ function isCallable(n: Node, language: string | undefined): boolean {
 }
 
 /** Lowercase words of an identifier: `userService` → user, service; `HTTP_client` → http, client. */
+const wordsOf = new Map<string, string[]>();
+
 function words(name: string): string[] {
+  const known = wordsOf.get(name);
+  if (known) return known;
+  if (wordsOf.size > 200_000) wordsOf.clear();
+  const out = splitWords(name);
+  wordsOf.set(name, out);
+  return out;
+}
+
+function splitWords(name: string): string[] {
   const all = name
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
@@ -109,9 +120,16 @@ function words(name: string): string[] {
 }
 
 /** The last name in a receiver: `userService` in `this.userService`, `path` in `os.path`, `db` in `getDb()`. */
+const receiverNames = new Map<string, string>();
+
 function receiverName(receiver: string): string {
+  const known = receiverNames.get(receiver);
+  if (known !== undefined) return known;
+  if (receiverNames.size > 200_000) receiverNames.clear();
   const m = /([A-Za-z_$][\w$]*)[^\w$]*$/.exec(receiver);
-  return m ? m[1] : receiver;
+  const out = m ? m[1] : receiver;
+  receiverNames.set(receiver, out);
+  return out;
 }
 
 const baseName = (filePath: string): string => filePath.replace(/^.*\//, '').replace(/\..*$/, '');
