@@ -241,11 +241,10 @@ export class GraphDatabase {
     }
 
     if (!applied.has(6)) {
-      // Migration 6: indexes no query needs. edges(source) and edges(target) are the first column of
-      // (source, kind) and (target, kind), which serve those lookups; nothing reads unresolved
-      // references by name or by kind alone. Each was written for every row: an index of django
-      // spent a tenth of its time on them.
-      for (const idx of ['idx_edges_source', 'idx_edges_target', 'idx_unresolved_name', 'idx_unresolved_kind']) {
+      // Migration 6: indexes no query needs: unresolved references are read whole, or by file and
+      // by source, never by name or by kind alone. Each was written for every row (an index of django
+      // spent a tenth of its time on them). The edge indexes by source and by target stay: see schema.sql.
+      for (const idx of ['idx_unresolved_name', 'idx_unresolved_kind']) {
         this.db.run(`DROP INDEX IF EXISTS ${idx}`);
       }
       this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [6, Date.now()]);
@@ -639,7 +638,7 @@ export class GraphDatabase {
        FROM edges e
        JOIN nodes t ON t.id = e.target
        JOIN nodes s ON s.id = e.source
-       WHERE t.file_path = ? AND s.file_path <> ?
+       WHERE e.target IN (SELECT id FROM nodes WHERE file_path = ?) AND s.file_path <> ?
          AND e.kind IN ('calls', 'imports', 'extends', 'implements', 'references')
          AND e.confidence = 'extracted'`,
       [filePath, filePath],
