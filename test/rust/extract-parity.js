@@ -3,7 +3,10 @@
  * Extraction parity: every file of a project that the Rust engine parses is extracted by both
  * engines, and the results are compared field by field (timestamps aside).
  *
- *   node test/rust/extract-parity.js <projectRoot> [--max-diffs N] [--complexity]
+ *   node test/rust/extract-parity.js <projectRoot> [--max-diffs N] [--complexity] [--lang a,b]
+ *
+ * --lang compares those languages (with a grammar compiled in), native or not yet: how a
+ * language is checked before it is listed in NATIVE_LANGUAGES (native/kirograph-rust/src/lib.rs).
  *
  * Exits 1 when any file differs. Requires `npm run build` and the native module
  * (cd native/kirograph-rust && npm run build).
@@ -22,6 +25,7 @@ const args = process.argv.slice(2);
 const root = path.resolve(args[0] ?? '.');
 const maxDiffs = Number(args[args.indexOf('--max-diffs') + 1]) || 20;
 const complexity = args.includes('--complexity');
+const only = args.includes('--lang') ? args[args.indexOf('--lang') + 1].split(',') : null;
 
 function normalize(f) {
   if (!f) return f;
@@ -57,7 +61,7 @@ function firstDiff(a, b, where = '') {
 }
 
 (async () => {
-  const nativeLangs = new Set(native.nativeLanguages());
+  const nativeLangs = new Set(only ?? native.nativeLanguages());
   const config = await loadConfig(root);
   const files = (await scanDirectory(root, config)).filter(f => nativeLangs.has(detectLanguage(f)));
   let same = 0, diffs = 0;
