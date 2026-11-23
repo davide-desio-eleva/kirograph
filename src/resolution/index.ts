@@ -351,10 +351,11 @@ export class ReferenceResolver {
     let resolved = 0;
     const total = refs.length;
 
-    // Process in batched transactions to avoid WASM heap exhaustion.
-    // Without batching, each individual write allocates journal pages in the
-    // WASM linear memory, which can exceed the 2GB limit on large codebases.
-    const BATCH_SIZE = 1000;
+    // References are resolved in batched transactions. A commit writes every page the batch
+    // changed (in WAL mode, at the commit), and the pages of the indexes are the same from one
+    // batch to the next: fewer, larger batches write them fewer times (django: 445 commits took
+    // 5.9 s of an index, 45 take a fraction). A batch holds the write lock for well under a second.
+    const BATCH_SIZE = 10_000;
 
     for (let batchStart = 0; batchStart < refs.length; batchStart += BATCH_SIZE) {
       const batchEnd = Math.min(batchStart + BATCH_SIZE, refs.length);
@@ -1027,14 +1028,18 @@ export class ReferenceResolver {
       if (!list) supers.set(id, [s]); else if (!list.includes(s)) list.push(s);
     };
     for (const r of rawDb.all(`SELECT source, target FROM edges WHERE kind IN ('extends', 'implements')`) as any[]) addSuper(r.source, r.target);
+    const importedCache = new Map<string, Set<string> | null>();
     return {
       byName: name => this.nameCache.get(name) ?? [],
       node: id => this.nodeByIdCache.get(id),
       importedFiles: filePath => {
         // What the file imports, and what the package files among those re-export
-        // (`__init__.py`, `index.ts`): `from django.template import Template` reaches template/base.py
+        // (`__init__.py`, `index.ts`): `from django.template import Template` reaches template/base.py.
+        // Kept per file until an import is added (callers only read the set)
+        const known = importedCache.get(filePath);
+        if (known !== undefined) return known ?? undefined;
         const direct = imports.get(filePath);
-        if (!direct) return undefined;
+        if (!direct) { importedCache.set(filePath, null); return undefined; }
         const all = new Set(direct);
         const queue = [...direct].map(f => ({ f, depth: 1 }));
         while (queue.length > 0) {
@@ -1044,6 +1049,7 @@ export class ReferenceResolver {
             if (!all.has(next)) { all.add(next); queue.push({ f: next, depth: depth + 1 }); }
           }
         }
+        importedCache.set(filePath, all);
         return all;
       },
       owner: id => {
@@ -1094,7 +1100,7 @@ export class ReferenceResolver {
       addSupertype: addSuper,
       addImport: (filePath, targetId) => {
         const target = this.nodeByIdCache.get(targetId);
-        if (target) add(filePath, target.filePath);
+        if (target) { add(filePath, target.filePath); importedCache.clear(); }
       },
     };
   }

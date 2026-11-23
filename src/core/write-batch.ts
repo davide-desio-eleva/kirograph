@@ -3,17 +3,20 @@
  *
  * One transaction per file costs a commit each: an fsync plus a lock round trip, which was more
  * than half of a sync's time. Writing a batch of files in one transaction removes most of that. A
- * batch is bounded by file count and by row count, so the write lock is held only for a few
- * hundred milliseconds, and each file is written inside a savepoint, so one file that fails does
- * not undo the others.
+ * batch is bounded by file count and by row count, so the write lock is held for about a second at
+ * most, and each file is written inside a savepoint, so one file that fails does not undo the
+ * others.
  */
 
 import type { GraphDatabase } from '../db/database';
 
 /** Flush after this many files. */
-const MAX_FILES = 20;
-/** Flush after this many rows (nodes, edges and references), which bounds how long the lock is held. */
-const MAX_ROWS = 3_000;
+export const MAX_FILES = 100;
+/**
+ * Flush after this many rows (nodes, edges and references), which bounds how long the write lock
+ * is held (about a second; readers are never blocked in WAL mode, and another writer waits).
+ */
+const MAX_ROWS = 20_000;
 
 interface PendingWrite {
   write: () => void;

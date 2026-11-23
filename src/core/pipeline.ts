@@ -31,7 +31,7 @@ import { workspaceFingerprint, isUpToDate, writeSyncState, writeSyncErrors, hasT
 import { LockManager } from './lock-manager';
 import { rustEngineFor, rustDbPaths, type RustEngine, type RustIndexEntry, type RustIndexResult } from './rust-engine';
 import { detectLanguage } from '../extraction/languages';
-import { WriteBatch } from './write-batch';
+import { WriteBatch, MAX_FILES } from './write-batch';
 import { Mutex } from '../utils';
 import { statKey } from '../sync/stat-key';
 
@@ -217,7 +217,9 @@ export class IndexPipeline {
       // takes the results in file order, so the graph is the same as when parsing in-process.
       if (files.length >= PARALLEL_MIN_FILES) pool = ExtractionPool.create();
       const parsing = new Map<number, Promise<ExtractedFile | null>>();
-      const lookahead = (pool?.size ?? 0) * 4;
+      // Files parsed ahead of the loop: a write batch's worth and more, so the workers keep
+      // parsing while the loop flushes a batch (writing 100 files holds this thread for a while)
+      const lookahead = pool ? Math.max(pool.size * 4, MAX_FILES * 2) : 0;
       const startParsing = async (from: number): Promise<void> => {
         if (!pool) return;
         for (let j = from; j < Math.min(files.length, from + lookahead); j++) {
