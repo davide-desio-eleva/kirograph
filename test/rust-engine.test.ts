@@ -39,7 +39,13 @@ describe('index engine selection', () => {
     if (loaded) {
       expect(rustEngineFor(config('rust'))).toBe(loaded);
       expect(rustEngineFallback(config('rust'))).toBeNull();
-      expect(loaded.nativeLanguages()).toContain('typescript');
+      // Both engines parse every file into the same tree: each grammar compiled in is the one
+      // the WASM file was built from (grammars/grammars.json)
+      const prints = loaded.grammarFingerprints();
+      expect(prints.length).toBeGreaterThan(0);
+      for (const f of prints) expect(`${f.abi}/${f.states}/${f.kinds}/${f.fields}/${f.hash}`, f.language).toBe(f.recorded);
+      // The languages it extracts itself have a grammar compiled in
+      for (const lang of loaded.nativeLanguages()) expect(prints.map(f => f.language)).toContain(lang === 'jsx' ? 'javascript' : lang);
     } else {
       expect(rustEngineFor(config('rust'))).toBeNull();
       expect(rustEngineFallback(config('rust'))).toMatch(/^engine "rust" unavailable/);

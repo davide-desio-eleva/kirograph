@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import type { Node, Edge } from '../types';
 import type { ExtractedFile, UnresolvedRef } from './extractor';
-import { makeNodeId } from './extractor';
+import { makeNodeId, callReceiver } from './extractor';
 import { initGrammars, getParser } from './grammars';
 
 interface NotebookCell {
@@ -396,12 +396,14 @@ function walkForPythonCalls(
     if (calleeName) {
       const rawLine = node.startPosition.row + 1;
       const line = remapLine(rawLine, cellOffsets, codeChunks);
+      const receiver = callReceiver(node, source);
       unresolvedRefs.push({
         sourceId,
         refName: calleeName,
         refKind: 'function',
         line,
         column: node.startPosition.column,
+        ...(receiver ? { metadata: { receiver } } : {}),
       });
     }
   }

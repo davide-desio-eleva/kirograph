@@ -394,8 +394,8 @@ export default class KiroGraph {
  *
  * Command actions previously did `const cg = await KiroGraph.open(target); ...;
  * cg.close();` with no try/finally, so a throw from the operation (a
- * node-sqlite3-wasm "Aborted()", the database lock throw, a parser crash) left
- * the SQLite handle open and the WAL unchecked. Wrapping the body here closes
+ * database error, a parser crash) left the SQLite handle open and the WAL
+ * unchecked. Wrapping the body here closes
  * it exactly once, whatever happens.
  */
 export async function withGraph<T>(

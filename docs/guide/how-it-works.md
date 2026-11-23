@@ -10,6 +10,22 @@ tree-sitter parses every source file into an AST. Nodes and edges are extracted 
 
 This layer has no extra dependencies and runs on every `kirograph index` or `kirograph sync`.
 
+#### How calls and imports are resolved
+
+An **import** resolves to the project files it names, by each language's own rule: relative paths, tsconfig `paths` and workspace packages (JavaScript / TypeScript), packages and modules (Python, Java, Kotlin, Scala, Haskell, Elm), namespaces (C#), `go.mod` module paths (Go), the module tree (Rust), PSR-4 (PHP), `#include` (C / C++ / Objective-C), and so on. An import of a library resolves to nothing.
+
+A **call** resolves to the function it calls, or to nothing — a wrong edge is worse than a missing one:
+
+- a call on a receiver whose type the code gives (a typed parameter, a field, a local made by a constructor, a function's declared return type, or the one type every `return` of a function gives, an element of a typed collection, a parameter's default or the one class all its callers pass, an element of a list made of one class) reaches the method of that type, or of its supertypes; a JavaScript `X.prototype.m = function` is a method of the class `X`;
+- a call on `this` / `self` reaches a method of the caller's class or what it inherits; a call on `super`, the parent's;
+- a call on another receiver reaches a method of a type, or a function of a module, that the receiver names (`userService.find()` → `UserService.find`);
+- a bare call reaches a function of the caller's file, else the one of the name in a file it imports (in C / C++, one its includes declare), else the one of the name in the project;
+- a candidate is in the caller's language family; with several left, the call stays unresolved.
+
+A bare call of a parameter (`done()`) is the function passed in, and stays unresolved. Calls into libraries, and calls on receivers whose type the code does not give (a parameter whose callers pass different classes or values of unknown type, a value from a library), stay unresolved.
+
+A call edge records the files its resolution read besides its own two (a supertype the method was found through, the function whose return type typed the receiver, the callers that typed a parameter): a sync that changes one of them resolves the call again, so a sync gives the graph a full index gives.
+
 ### Semantic indexing (opt-in)
 
 When `enableEmbeddings: true` is set, KiroGraph additionally generates 768-dimensional vector embeddings for every embeddable symbol (`function`, `method`, `class`, `interface`, `type_alias`, `component`, `module`) using the `nomic-ai/nomic-embed-text-v1.5` model (~130MB, downloaded once to `~/.kirograph/models/`).

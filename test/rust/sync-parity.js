@@ -9,7 +9,7 @@
 const path = require('path');
 const fs = require('fs');
 const { execFileSync } = require('child_process');
-const { Database } = require('node-sqlite3-wasm');
+const { DatabaseSync } = require('node:sqlite');
 
 const src = path.resolve(process.argv[2]);
 const scratch = path.resolve(process.argv[3]);
@@ -47,9 +47,9 @@ function mutate(dir, sources) {
 }
 
 function dump(dir) {
-  const db = new Database(path.join(dir, '.kirograph', 'kirograph.db'), { readOnly: true });
+  const db = new DatabaseSync(path.join(dir, '.kirograph', 'kirograph.db'), { readOnly: true });
   const out = {};
-  for (const [t, sql] of Object.entries(QUERIES)) out[t] = db.all(sql);
+  for (const [t, sql] of Object.entries(QUERIES)) out[t] = db.prepare(sql).all().map(r => ({ ...r }));
   db.close();
   return out;
 }

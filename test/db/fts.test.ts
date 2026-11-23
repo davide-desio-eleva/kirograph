@@ -120,7 +120,7 @@ describe('FTS migration', () => {
     const s = ftsState();
     expect(s.indexedWrongly).toBe(0);
     expect(s.integrity).toBe('ok');
-    expect(db.getRawDb().get('SELECT max(version) v FROM schema_versions').v).toBe(4);
+    expect(db.getRawDb().get('SELECT max(version) v FROM schema_versions').v).toBe(5);
   });
 });
 

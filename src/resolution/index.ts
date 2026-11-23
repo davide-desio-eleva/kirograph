@@ -5,13 +5,17 @@
  * Mirrors CodeGraph src/resolution/index.ts
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import type { Node, NodeKind, Edge } from '../types';
 import type { GraphDatabase } from '../db/database';
 import type { KiroGraphConfig } from '../config';
-import { matchReference } from './name-matcher';
+import { resolveCall, isCallTarget, recordVia, takeVia, TYPE_KINDS, type CallContext } from './call-resolver';
+import { ImportResolver } from './import-resolver';
+
+const SUPERTYPE_KINDS = new Set<string>(['class', 'interface', 'struct', 'trait', 'protocol', 'component', 'type_alias']);
 import { logDebug, logWarn } from '../errors';
 import { runBridgeResolvers, type BridgeResolutionResult } from './bridges';
-import { rustEngineFor, rustDbPaths } from '../core/rust-engine';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -24,6 +28,28 @@ export interface ResolutionResult {
 }
 
 // ── ReferenceResolver ─────────────────────────────────────────────────────────
+
+/**
+ * The class a call passes for a parameter, from the arguments recorded on its edge (see
+ * extraction's argumentTypes): 'default' when it passes nothing there, null when the code does not
+ * tell the class (or a spread hides which argument it is).
+ */
+function argumentOf(m: any, param: { index: number; name: string }): string | null {
+  if (Array.isArray(m.kwNames) && m.kwNames.includes(param.name)) return m.kwTypes?.[param.name] ?? null;
+  const argc: number | undefined = m.argc;
+  if (argc === -1) return null;
+  if (argc !== undefined && param.index < argc) return m.argTypes?.[param.index] ?? null;
+  // Not passed by position: a `**kwargs` may pass it, else the default
+  return m.kwSpread ? null : 'default';
+}
+
+/** A parameter typed by its callers: the class name, and which classes of the name (none: a library's). */
+interface ParameterType { type: string; typeIds?: string[]; via: string[]; of: string[] }
+/** Languages whose files import the classes they name. */
+const IMPORTING_LANGUAGES = new Set(['javascript', 'typescript', 'tsx', 'jsx', 'python']);
+
+/** The call context, plus what a resolution pass adds to it as it goes. */
+type ResolverContext = CallContext & { addImport(filePath: string, targetId: string): void; addSupertype(id: string, superId: string): void };
 
 export class ReferenceResolver {
   private db: GraphDatabase;
@@ -58,6 +84,10 @@ export class ReferenceResolver {
    * bridge resolvers need whole nodes and load them when they first ask (see _buildBridgeContext).
    */
   warmCaches(full = true): void {
+    this.pythonModules = null;
+    this.importResolverOf = null;
+    this.fileNodes = null;
+    this.cIncludeGraph = null;
     this.nameCache.clear();
     this.qualifiedNameCache.clear();
     this.kindCache.clear();
@@ -73,13 +103,13 @@ export class ReferenceResolver {
       ? rawDb.all(
         `SELECT id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column,
                 end_column, signature, visibility, is_exported, is_async, is_static, is_abstract,
-                decorators, type_parameters, updated_at FROM nodes`)
-      : rawDb.all('SELECT id, kind, name, qualified_name, file_path FROM nodes');
+                decorators, type_parameters, return_type, updated_at FROM nodes`)
+      : rawDb.all('SELECT id, kind, name, qualified_name, file_path, language, start_line, return_type FROM nodes');
 
     for (const row of rows) {
       const node: Node = full
         ? this._rowToNode(row)
-        : { id: row.id, kind: row.kind, name: row.name, qualifiedName: row.qualified_name, filePath: row.file_path } as Node;
+        : { id: row.id, kind: row.kind, name: row.name, qualifiedName: row.qualified_name, filePath: row.file_path, language: row.language, startLine: row.start_line, returnType: row.return_type ?? undefined } as Node;
 
       // nameCache
       const nameList = this.nameCache.get(node.name) ?? [];
@@ -138,39 +168,21 @@ export class ReferenceResolver {
   ): Promise<ResolutionResult> {
     const start = Date.now();
 
-    // engine "rust": the native engine resolves the references (same strategies, same order). The
-    // caches are then needed only by the bridges, which load them when they first ask.
-    const rust = this.projectRoot ? rustEngineFor(this.config) : null;
-    let resolvedCount: number;
-    if (rust) {
-      const native = await rust.resolveReferences({
-        ...rustDbPaths(this.projectRoot),
-        fuzzyThreshold: this.config.fuzzyResolutionThreshold ?? 0.5,
-        // A full index commits without waiting for the disk, as its TypeScript connection does
-        synchronousOff: !changedFiles,
-      }, onProgress);
-      for (const err of native.errors) logWarn(`ReferenceResolver: ${err}`);
-      resolvedCount = native.resolved;
-      this.cacheWarmed = false;
-    } else {
-      this.warmCaches(false);
-      resolvedCount = await this.resolveUnresolvedRefs(onProgress);
-    }
+    this.warmCaches(false);
+    const resolvedCount = await this.resolveUnresolvedRefs(onProgress, changedFiles);
 
     // Count remaining unresolved
     const rawDb = (this.db as any).db;
     const remaining = rawDb.get('SELECT COUNT(*) as c FROM unresolved_refs')?.c ?? 0;
     const total = resolvedCount + remaining;
 
-    // The bridges read only the file types below (and package.json to decide whether they apply),
-    // and the edges they made survive a sync that touched none of those
-    const runBridges = !!this.projectRoot && (!changedFiles || changedFiles.some(f => BRIDGE_FILE.test(f)));
-
     this.applyRoutePrefixes();
 
     // Run cross-language bridge resolvers after standard resolution
     let bridgeResult: BridgeResolutionResult | undefined;
-    if (runBridges) {
+    // The bridges read only the file types below (and package.json to decide whether they apply),
+    // and the edges they made survive a sync that touched none of those
+    if (this.projectRoot && (!changedFiles || changedFiles.some(f => BRIDGE_FILE.test(f)))) {
       bridgeResult = this._runBridgeResolvers();
     }
 
@@ -190,13 +202,152 @@ export class ReferenceResolver {
    * Process all pending unresolved references using warm caches.
    * Returns the count of newly resolved edges.
    */
-  async resolveUnresolvedRefs(onProgress?: (current: number, total: number) => void): Promise<number> {
+  async resolveUnresolvedRefs(onProgress?: (current: number, total: number) => void, changedFiles?: string[]): Promise<number> {
     if (!this.cacheWarmed) {
       this.warmCaches();
     }
 
     const rawDb = (this.db as any).db;
-    const refs: any[] = rawDb.all('SELECT * FROM unresolved_refs');
+    // Imports first, then supertypes: a call prefers the functions of the files its file imports,
+    // and looks a method up in the supertypes of the receiver's type
+    const refs: any[] = rawDb.all(`SELECT * FROM unresolved_refs ORDER BY
+      CASE ref_kind WHEN 'import' THEN 0 WHEN 'extends' THEN 1 WHEN 'implements' THEN 1 ELSE 2 END, id`);
+    const calls = this.callContext();
+    // A call on an untyped parameter waits for every other call: its type is what the function's
+    // callers pass, read from their edges
+    const onParameter = (r: any) => typeof r.metadata === 'string' && r.metadata.includes('"receiverParam"');
+    let resolved = this.resolvePass(refs.filter(r => !onParameter(r)), calls, onProgress);
+    // A sync: the functions the changed files call may have new callers, so their parameters
+    // are typed again
+    if (changedFiles && changedFiles.length > 0) this.db.requeueParameterEdges(changedFiles);
+    const waiting: any[] = rawDb.all(`SELECT * FROM unresolved_refs WHERE metadata LIKE '%"receiverParam"%' ORDER BY id`);
+    resolved += this.resolvePass(waiting, calls, onProgress, this.parameterTypes(waiting, calls));
+    this.db.pruneEdgeDeps();
+    return resolved;
+  }
+
+  /**
+   * The type of each untyped parameter some call's receiver is: the one class every caller of its
+   * function passes (by position or by keyword), from the arguments recorded on their call edges.
+   * A caller whose argument is unknown leaves the parameter untyped; one that passes no argument
+   * there (the default) does not count. Calls resolved this way are no callers here, so the
+   * result does not depend on the order of resolution.
+   */
+  private parameterTypes(waiting: any[], calls: CallContext): Map<number, ParameterType> {
+    const rawDb = (this.db as any).db;
+    const out = new Map<number, ParameterType>();
+    const byParam = new Map<string, ParameterType | null>();
+    // The classes a caller may pass, as the caller sees the name: its file's, the ones it imports;
+    // in a language whose files import what they name (JavaScript, TypeScript, Python), none else
+    // (a class it neither declares nor imports is a library's); in the others every one of the name
+    const classesSeenFrom = (name: string, callerFile: string, callerLanguage: string): Node[] => {
+      const types = calls.byName(name).filter(n => TYPE_KINDS.has(n.kind));
+      const own = types.filter(n => n.filePath === callerFile);
+      if (own.length > 0) return own;
+      const imported = calls.importedFiles(callerFile);
+      const seen = imported ? types.filter(n => imported.has(n.filePath)) : [];
+      if (seen.length > 0) return seen;
+      // Neither declared nor imported: a library's, when every import of the file that resolved to
+      // nothing is a library's too (`events`); one that may be the project's (`./x`, a module of the
+      // project's names that is ambiguous) may be where the class comes from
+      return IMPORTING_LANGUAGES.has(callerLanguage) && importedFromLibrary(callerFile, name) ? [] : types;
+    };
+    // Whether a file imports the name from a library: an import that resolved to nothing, of a module
+    // that cannot be the project's (`events`, not `./x` nor a module named as a project file), that
+    // names it (`import { EventEmitter } from 'events'`, `X = require('x')`, `from lib import X`).
+    // A class reached otherwise (`new context.Reply()`) may be the project's
+    let projectModules: Set<string> | null = null;
+    const texts = new Map<string, string>();
+    const importedFromLibrary = (file: string, name: string): boolean => {
+      if (!projectModules) {
+        projectModules = new Set();
+        for (const r of rawDb.all(`SELECT path FROM files`) as any[]) {
+          for (const seg of String(r.path).split('/')) projectModules.add(seg.replace(/\.[^.]+$/, ''));
+        }
+      }
+      const modules = projectModules;
+      const maybeProject = (s: string) => /^[./~]/.test(s) || s.startsWith('@/') || modules.has(s.split(/[./]/)[0]);
+      const specs = (rawDb.all(`SELECT ref_name AS s FROM unresolved_refs WHERE file_path = ? AND ref_kind = 'import'`, [file]) as any[])
+        .map(r => String(r.s)).filter(s => !maybeProject(s));
+      if (specs.length === 0 || !this.projectRoot) return false;
+      let text = texts.get(file);
+      if (text === undefined) {
+        try { text = fs.readFileSync(path.join(this.projectRoot, file), 'utf8'); } catch { text = ''; }
+        texts.set(file, text);
+      }
+      const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const n = esc(name);
+      return specs.some(spec => {
+        const m = esc(spec);
+        return new RegExp(`import[^;]*\\b${n}\\b[^;]*from\\s*['"]${m}['"]`).test(text!)
+          || new RegExp(`\\b${n}\\b[^=\\n]*=\\s*require\\(\\s*['"]${m}['"]`).test(text!)
+          || new RegExp(`from\\s+${m}\\s+import\\s[^\\n]*\\b${n}\\b`).test(text!);
+      });
+    };
+    for (const ref of waiting) {
+      let param: { lines: number[]; index: number; name: string } | undefined;
+      try { param = JSON.parse(ref.metadata).receiverParam; } catch { continue; }
+      if (!param || !Array.isArray(param.lines)) continue;
+      const key = `${ref.file_path}:${param.lines.join(',')}:${param.index}:${param.name}`;
+      let found = byParam.get(key);
+      if (found === undefined) {
+        found = null;
+        const fn: any = rawDb.get(`SELECT id, name FROM nodes WHERE file_path = ? AND start_line IN (${param.lines.map(() => '?').join(',')})
+          AND kind IN ('function', 'method', 'constant', 'variable') ORDER BY CASE kind WHEN 'method' THEN 0 WHEN 'function' THEN 1 ELSE 2 END LIMIT 1`,
+          [ref.file_path, ...param.lines]);
+        if (fn) {
+          // A constructor's callers call its class
+          const targets = [fn.id];
+          if (fn.name === '__init__' || fn.name === 'constructor') { const owner = calls.owner(fn.id); if (owner) targets.push(owner.id); }
+          const callers: any[] = rawDb.all(`SELECT e.metadata AS m, s.file_path AS f, s.language AS l FROM edges e JOIN nodes s ON s.id = e.source
+            WHERE e.kind = 'calls' AND e.target IN (${targets.map(() => '?').join(',')})`, targets);
+          // The classes every caller may pass (the intersection of what each sees), or the one
+          // library class all of them pass
+          let common: Map<string, Node> | null = null;
+          let library: string | null = null;
+          let name: string | null = null;
+          const files = new Set<string>();
+          let unknown = callers.length === 0;
+          for (const c of callers) {
+            let m: any;
+            try { m = c.m ? JSON.parse(c.m) : {}; } catch { m = {}; }
+            if (m.receiverParam) continue;
+            files.add(c.f);
+            const t = argumentOf(m, param);
+            if (t === 'default') continue;
+            if (!t) { unknown = true; break; }
+            if (name !== null && name !== t) { unknown = true; break; }
+            name = t;
+            // A class of no project file is a library's: the parameter is one, its methods none of ours
+            const classes = classesSeenFrom(t, c.f, c.l);
+            if (classes.length === 0) {
+              if (common) { unknown = true; break; }
+              library = t;
+              continue;
+            }
+            if (library) { unknown = true; break; }
+            const ids = new Map(classes.map(n => [n.id, n] as [string, Node]));
+            const before = common as Map<string, Node> | null;
+            const next: Map<string, Node> = before ? new Map([...before.entries()].filter(([id]) => ids.has(id))) : ids;
+            common = next;
+            if (next.size === 0) { unknown = true; break; }
+          }
+          if (!unknown && name !== null && (library || common)) {
+            // A library's class: no ids, so none of the project's classes of the name
+            found = { type: name, typeIds: common ? [...common.keys()].sort() : [], via: [...files].sort(), of: targets };
+          }
+        }
+        byParam.set(key, found);
+      }
+      if (found) out.set(ref.id, found);
+    }
+    return out;
+  }
+
+  /** Resolves references in batched transactions; `inferred` types the receivers of some of them. */
+  private resolvePass(refs: any[], calls: ResolverContext, onProgress?: (current: number, total: number) => void,
+    inferred?: Map<number, ParameterType>): number {
+    const rawDb = (this.db as any).db;
     let resolved = 0;
     const total = refs.length;
 
@@ -215,7 +366,7 @@ export class ReferenceResolver {
       const strategiesToRecord = new Map<string, number[]>(); // strategies JSON -> ref ids
 
       // Wrap each batch in a transaction — dramatically reduces write amplification
-      rawDb.run('BEGIN');
+      rawDb.run('BEGIN IMMEDIATE');
       try {
         for (let i = batchStart; i < batchEnd; i++) {
           const ref = refs[i];
@@ -233,6 +384,8 @@ export class ReferenceResolver {
 
           const attemptedStrategies: string[] = [];
           let targetId: string | null = null;
+          let extraTargets: string[] = [];
+          let viaFiles: string[] = [];
 
           if (refKind === 'reference' || refKind === 'qualified_call') {
             // Infrastructure references (infra.ts): the exact qualified name, nothing looser
@@ -240,57 +393,58 @@ export class ReferenceResolver {
             targetId = this.qualifiedNameCache.get(refName)?.id ?? null;
           } else if (refKind === 'import') {
             attemptedStrategies.push('import-path');
-            targetId = this._resolveImportPath(refName, filePath);
+            if (C_FAMILY_FILE.test(filePath)) {
+              // `#include "jv.h"`: the header's file. A header with no symbol of its own (only
+              // prototypes) has no node to point at: its include stays a reference, and the
+              // include graph the call resolver reads has it anyway
+              targetId = this.cIncludes().nodeIn(this.cIncludes().resolve(refName, filePath));
+            } else if (!filePath.endsWith('.py') && this.importResolver().handles(filePath)) {
+              // Java / Kotlin / Scala packages, C# namespaces, Go modules, Rust crates, PHP PSR-4,
+              // JS / TS paths and workspace packages, … (see import-resolver)
+              const lang = this.nodeByIdCache.get(sourceId)?.language ?? '';
+              const targets = this.importResolver().resolve(refName, filePath, lang)
+                .map(f => this.importTargetIn(f)).filter((id): id is string => !!id);
+              targetId = targets[0] ?? null;
+              extraTargets = targets.slice(1);
+            } else if (filePath.endsWith('.py')) {
+              // A module, and the submodules among the names it imports (`from django.db import models`)
+              const targets = this._resolvePythonImport(refName, filePath, refMetadata ? JSON.parse(refMetadata).names : undefined);
+              targetId = targets[0] ?? null;
+              extraTargets = targets.slice(1);
+            } else {
+              targetId = this._resolveImportPath(refName, filePath);
+            }
           } else if (refKind === 'extends' || refKind === 'implements') {
             attemptedStrategies.push('type-name');
-            targetId = this._resolveTypeName(refName);
+            targetId = this._resolveSupertype(refName, sourceId, filePath, calls);
           } else {
             attemptedStrategies.push('framework');
 
-            // Strategy 2: Qualified name match (confidence 0.95)
+            // Qualified name match (confidence 0.95)
             attemptedStrategies.push('qualified');
             const qualifiedNode = this.qualifiedNameCache.get(refName);
             if (qualifiedNode) {
               targetId = qualifiedNode.id;
             }
 
-            // Strategy 3: Method call pattern (confidence 0.85)
-            if (!targetId && refName.includes('.')) {
-              attemptedStrategies.push('method');
-              const methodPart = refName.slice(refName.lastIndexOf('.') + 1);
-              const methodCandidates = this.nameCache.get(methodPart) ?? [];
-              if (methodCandidates.length > 0) {
-                targetId = methodCandidates[0].id;
-              }
-            }
-
-            // Strategy 4: Exact name match (confidence 0.9)
+            // By name, with the receiver the call is made on (see call-resolver)
             if (!targetId) {
-              attemptedStrategies.push('exact');
-              const exactCandidates = this.nameCache.get(refName) ?? [];
-              if (exactCandidates.length > 0) {
-                targetId = exactCandidates[0].id;
-              }
-            }
+              const meta = refMetadata ? JSON.parse(refMetadata) : undefined;
+              const dot = refName.lastIndexOf('.');
+              const name = dot > 0 ? refName.slice(dot + 1) : refName;
+              const receiver: string | undefined = meta?.receiver ?? (dot > 0 ? refName.slice(0, dot) : undefined);
+              const call = { name, receiver, receiverType: (inferred?.get(refId)?.type ?? meta?.receiverType) as string | undefined, receiverTypeIds: inferred?.get(refId)?.typeIds, receiverCall: meta?.receiverCall, sourceId, filePath, line: line ?? undefined, parameter: meta?.parameter === true };
+              attemptedStrategies.push(receiver !== undefined ? 'method' : 'exact');
+              recordVia();
+              targetId = resolveCall(call, calls)?.id ?? null;
 
-            // Strategy 5: Fuzzy / lowercase match (confidence 0.5)
-            if (!targetId) {
-              attemptedStrategies.push('fuzzy');
+              // Case-insensitive, for the languages whose names are (only when no node has the exact name)
               const threshold = this.config.fuzzyResolutionThreshold ?? 0.5;
-              const lowerRef = refName.toLowerCase();
-              const fuzzyCandidates = this.lowerNameCache.get(lowerRef) ?? [];
-
-              if (fuzzyCandidates.length > 0) {
-                const match = matchReference(refName, fuzzyCandidates, threshold);
-                if (match) {
-                  targetId = match.nodeId;
-                }
+              if (!targetId && threshold <= 0.5 && !this.nameCache.has(name)) {
+                attemptedStrategies.push('fuzzy');
+                targetId = resolveCall(call, { ...calls, byName: n => this.lowerNameCache.get(n.toLowerCase()) ?? [] })?.id ?? null;
               }
-
-              // No full-scan fallback here: the lowercase index above already holds every node
-              // whose name matches case-insensitively, and the exact, qualified and method
-              // strategies were answered from their indexes earlier. A scan of all nodes per
-              // unresolved reference only repeated that work.
+              viaFiles = takeVia();
             }
           }
 
@@ -300,16 +454,33 @@ export class ReferenceResolver {
               : refKind === 'extends' ? 'extends'
               : refKind === 'implements' ? 'implements'
               : 'calls';
+            // The receiver stays: a sync turns the edge back into this reference (#101)
+            let metadata: Record<string, any> | undefined = refMetadata ? JSON.parse(refMetadata) : undefined;
+            if (edgeKind === 'calls') {
+              // What else the resolution read: a sync re-resolves the call when it changes
+              const inf = inferred?.get(refId);
+              const targetFile = calls.node(targetId)?.filePath;
+              const files = [...new Set([...viaFiles, ...(inf?.via ?? [])])].filter(f => f !== filePath && f !== targetFile).sort();
+              if (metadata) { delete metadata.via; delete metadata.paramOf; }
+              if (files.length > 0) metadata = { ...metadata, via: files };
+              if (inf) metadata = { ...metadata, paramOf: inf.of };
+            }
             const edge: Edge = {
               source: sourceId,
               target: targetId,
               kind: edgeKind,
               line: line ?? undefined,
               column: column ?? undefined,
-              metadata: refMetadata ? JSON.parse(refMetadata) : undefined,
+              metadata,
             };
             batchEdges.push(edge);
+            for (const extra of extraTargets) {
+              batchEdges.push({ ...edge, target: extra });
+              calls.addImport(filePath, extra);
+            }
             resolvedIds.push(refId);
+            if (edgeKind === 'imports') calls.addImport(filePath, targetId);
+            if (edgeKind === 'extends' || edgeKind === 'implements') calls.addSupertype(sourceId, targetId);
             resolved++;
           } else {
             // Nothing to write when the same list is already recorded: a reference that stays
@@ -321,7 +492,9 @@ export class ReferenceResolver {
             }
           }
         }
+        const lastEdge = this.db.maxEdgeId();
         this.db.insertEdges(batchEdges);
+        this.db.recordEdgeDeps(lastEdge);
         for (const group of idGroups(resolvedIds)) {
           rawDb.run(`DELETE FROM unresolved_refs WHERE id IN (${group.map(() => '?').join(',')})`, group);
         }
@@ -552,6 +725,224 @@ export class ReferenceResolver {
     return null;
   }
 
+  /** The import resolver of this pass, and a node of each file for an import edge to point at. */
+  private importResolverOf: ImportResolver | null = null;
+  private fileNodes: Map<string, Node[]> | null = null;
+
+  private importResolver(): ImportResolver {
+    if (!this.importResolverOf) {
+      const rawDb = (this.db as any).db;
+      const files = (rawDb.all('SELECT path FROM files') as any[]).map(r => String(r.path));
+      const byFile = new Map<string, Node[]>();
+      for (const n of this.nodeByIdCache.values()) {
+        const list = byFile.get(n.filePath);
+        if (list) list.push(n); else byFile.set(n.filePath, [n]);
+      }
+      this.fileNodes = byFile;
+      this.importResolverOf = new ImportResolver(this.projectRoot, files, f => byFile.get(f) ?? []);
+    }
+    return this.importResolverOf;
+  }
+
+  /** The node an import of a file points at: a declaration of it, else any of its nodes. */
+  private importTargetIn(file: string): string | null {
+    const nodes = this.fileNodes?.get(file) ?? [];
+    return (nodes.find(n => n.kind !== 'import') ?? nodes[0])?.id ?? null;
+  }
+
+  /** The C / C++ include graph of this pass (see cIncludes). */
+  private cIncludeGraph: CIncludeGraph | null = null;
+
+  /**
+   * The project's C / C++ include graph: what each file's `#include`s resolve to (from the include
+   * nodes and the files table, which lists headers with no symbol too), the files a file reaches
+   * through them, and whether one of those headers declares a name. `#include "x.h"` is looked
+   * for next to the including file, then as a path suffix (`fmt/format.h` →
+   * `include/fmt/format.h`); a system header (`<string.h>`) is not a project file.
+   */
+  private cIncludes(): CIncludeGraph {
+    if (this.cIncludeGraph) return this.cIncludeGraph;
+    const rawDb = (this.db as any).db;
+    const files: string[] = (rawDb.all('SELECT path FROM files') as any[]).map(r => String(r.path)).filter(f => C_FAMILY_FILE.test(f));
+    const fileSet = new Set(files);
+    const bySuffix = new Map<string, string[]>();
+    for (const f of files) {
+      const parts = f.split('/');
+      for (let i = 0; i < parts.length; i++) {
+        const key = parts.slice(i).join('/');
+        const list = bySuffix.get(key);
+        if (list) list.push(f); else bySuffix.set(key, [f]);
+      }
+    }
+    const nodeOf = new Map<string, string>();
+    const includesOf = new Map<string, string[]>();
+    for (const n of this.nodeByIdCache.values()) {
+      if (!C_FAMILY_FILE.test(n.filePath)) continue;
+      if (n.kind === 'import') {
+        const list = includesOf.get(n.filePath);
+        if (list) list.push(n.name); else includesOf.set(n.filePath, [n.name]);
+      } else if (!nodeOf.has(n.filePath)) {
+        nodeOf.set(n.filePath, n.id);
+      }
+    }
+    const resolve = (include: string, from: string): string | undefined => {
+      const dir = from.split('/').slice(0, -1);
+      const joined: string[] = [];
+      for (const seg of [...dir, ...include.split('/')]) {
+        if (seg === '..') joined.pop(); else if (seg !== '.' && seg !== '') joined.push(seg);
+      }
+      const local = joined.join('/');
+      if (fileSet.has(local)) return local;
+      const found = bySuffix.get(include.replace(/^(\.\.?\/)+/, ''));
+      if (!found || found.length === 0) return undefined;
+      // Several files with the path: the one nearest the including file
+      const shared = (f: string) => { let i = 0; while (i < f.length && f[i] === from[i]) i++; return i; };
+      return found.reduce((a, b) => (shared(b) > shared(a) ? b : a));
+    };
+    const direct = new Map<string, string[]>();
+    for (const [file, includes] of includesOf) {
+      direct.set(file, includes.map(i => resolve(i, file)).filter((f): f is string => !!f && f !== file));
+    }
+    const closures = new Map<string, Set<string>>();
+    const reach = (file: string): Set<string> => {
+      const cached = closures.get(file);
+      if (cached) return cached;
+      const seen = new Set<string>();
+      const stack = [...(direct.get(file) ?? [])];
+      while (stack.length > 0) {
+        const f = stack.pop()!;
+        if (seen.has(f)) continue;
+        seen.add(f);
+        stack.push(...(direct.get(f) ?? []));
+      }
+      closures.set(file, seen);
+      return seen;
+    };
+    // A source another file includes (decNumber's decBasic.c, in decDouble.c and decQuad.c) is
+    // compiled as part of it: it sees what its includers see. Not a header, which is included
+    // nearly everywhere and would see the whole project
+    const includers = new Map<string, string[]>();
+    for (const [file, targets] of direct) {
+      for (const target of targets) {
+        const list = includers.get(target);
+        if (list) list.push(file); else includers.set(target, [file]);
+      }
+    }
+    const visibleCache = new Map<string, Set<string>>();
+    const visible = (file: string): Set<string> => {
+      const cached = visibleCache.get(file);
+      if (cached) return cached;
+      const out = new Set(reach(file));
+      const queue = C_HEADER_FILE.test(file) ? [] : [...(includers.get(file) ?? [])];
+      const seen = new Set<string>([file]);
+      while (queue.length > 0) {
+        const g = queue.shift()!;
+        if (seen.has(g)) continue;
+        seen.add(g);
+        out.add(g);
+        for (const f of reach(g)) out.add(f);
+        if (!C_HEADER_FILE.test(g)) queue.push(...(includers.get(g) ?? []));
+      }
+      out.delete(file);
+      visibleCache.set(file, out);
+      return out;
+    };
+    const texts = new Map<string, string>();
+    const textOf = (f: string): string => {
+      let text = texts.get(f);
+      if (text === undefined) {
+        try { text = fs.readFileSync(path.join(this.projectRoot, f), 'utf8'); } catch { text = ''; }
+        texts.set(f, text);
+      }
+      return text;
+    };
+    const declared = new Map<string, boolean>();
+    this.cIncludeGraph = {
+      resolve,
+      nodeIn: f => (f ? nodeOf.get(f) ?? null : null),
+      reach: visible,
+      declares: (from, name) => {
+        const key = from + '\0' + name;
+        let yes = declared.get(key);
+        if (yes === undefined) {
+          const id = name.replace(/[^\w~]/g, '');
+          const re = new RegExp(`\\b${id}\\s*\\(`);
+          yes = declaresItself(textOf(from), id) || [...visible(from)].some(h => C_HEADER_FILE.test(h) &&
+            (re.test(textOf(h)) || re.test(expandPastingMacros(textOf(h)))));
+          declared.set(key, yes);
+        }
+        return yes;
+      },
+    };
+    return this.cIncludeGraph;
+  }
+
+  /** Python modules by every dotted suffix of their path (`db.models`, `django.db.models`), and a node of each file. */
+  private pythonModules: { byKey: Map<string, string[]>; nodeOf: Map<string, string> } | null = null;
+
+  /**
+   * The files a Python import names: the module (`from .base import x`, `import django.db`), and
+   * those of the imported names that are submodules (`from django.db import models`). As node ids
+   * of those files, the module first. A module outside the project resolves to nothing.
+   */
+  private _resolvePythonImport(module: string, sourceFilePath: string, names?: string[]): string[] {
+    if (!this.pythonModules) {
+      const byKey = new Map<string, string[]>();
+      const nodeOf = new Map<string, string>();
+      // A folder with an __init__.py is a package: a module path starts at a folder that is not
+      // one (the project root, `src/`), so `import copy` is the standard library's, not django/utils/copy.py
+      const rawDb = (this.db as any).db;
+      const packages = new Set<string>(
+        (rawDb.all(`SELECT path FROM files WHERE path LIKE '%__init__.py'`) as any[])
+          .map(r => String(r.path).replace(/\/?__init__\.py$/, '')));
+      for (const n of this.nodeByIdCache.values()) {
+        if (!n.filePath.endsWith('.py') || nodeOf.has(n.filePath)) continue;
+        nodeOf.set(n.filePath, n.id);
+        const parts = n.filePath.replace(/\.py$/, '').replace(/(^|\/)__init__$/, '').split('/').filter(Boolean);
+        for (let i = 0; i < parts.length; i++) {
+          if (i > 0 && packages.has(parts.slice(0, i).join('/'))) continue;
+          const key = parts.slice(i).join('.');
+          const list = byKey.get(key);
+          if (list) list.push(n.filePath); else byKey.set(key, [n.filePath]);
+        }
+      }
+      this.pythonModules = { byKey, nodeOf };
+    }
+    const { byKey, nodeOf } = this.pythonModules;
+    const fileOf = (mod: string): string | undefined => {
+      const dots = /^\.*/.exec(mod)![0].length;
+      if (dots === 0) {
+        const candidates = byKey.get(mod);
+        if (!candidates || candidates.length <= 1) return candidates?.[0];
+        // Several modules of the path: the one by the importing file, or in the nearest folder
+        // above it (a script's folder is on sys.path: `from types import X` next to types.py)
+        const rel = mod.replace(/\./g, '/');
+        const dir = sourceFilePath.split('/').slice(0, -1);
+        for (let i = dir.length; i >= 0; i--) {
+          const prefix = dir.slice(0, i).join('/');
+          const near = candidates.filter(c => c === (prefix ? `${prefix}/` : '') + `${rel}.py` || c === (prefix ? `${prefix}/` : '') + `${rel}/__init__.py`);
+          if (near.length > 0) return near[0];
+        }
+        // Else the shortest path (`django/db/models/__init__.py` for django.db.models), when only
+        // one is that short: two of a length are a guess
+        const shortest = Math.min(...candidates.map(c => c.length));
+        const shortestOnes = candidates.filter(c => c.length === shortest);
+        return shortestOnes.length === 1 ? shortestOnes[0] : undefined;
+      }
+      const dir = sourceFilePath.split('/').slice(0, -1);
+      const base = dir.slice(0, Math.max(0, dir.length - (dots - 1))).join('/');
+      const rel = mod.slice(dots).replace(/\./g, '/');
+      const prefix = base ? base + '/' : '';
+      const candidates = rel ? [`${prefix}${rel}.py`, `${prefix}${rel}/__init__.py`] : [`${prefix}__init__.py`];
+      return candidates.find(f => nodeOf.has(f));
+    };
+    const files: string[] = [];
+    const add = (f: string | undefined) => { if (f && !files.includes(f)) files.push(f); };
+    add(fileOf(module));
+    for (const name of names ?? []) add(fileOf(module.endsWith('.') ? module + name : `${module}.${name}`));
+    return files.filter(f => f !== sourceFilePath).map(f => nodeOf.get(f)!);
+  }
+
   private _resolveImportPath(importPath: string, sourceFilePath: string): string | null {
     // ── 1. Relative path (JS/TS etc.) ──────────────────────────────────────────
     if (importPath.startsWith('.')) {
@@ -611,22 +1002,118 @@ export class ReferenceResolver {
   }
 
   /**
-   * Resolve a bare type name to a node ID.
-   * Used for extends/implements refs where we have only the unqualified type name.
-   * Prefers class/interface/trait/protocol nodes over other kinds.
+   * What the call resolver reads: nodes by name and id, the files each file imports (the import
+   * edges already in the graph, and those this pass makes), and each node's owner.
    */
-  private _resolveTypeName(name: string): string | null {
-    const candidates = this.nameCache.get(name) ?? [];
-    if (candidates.length > 0) {
-      const preferred = candidates.find(n =>
-        n.kind === 'class' || n.kind === 'interface' || n.kind === 'trait' || n.kind === 'protocol'
-      );
-      return (preferred ?? candidates[0]).id;
-    }
-    // Try as a fully-qualified name
-    const qualified = this.qualifiedNameCache.get(name);
-    if (qualified) return qualified.id;
-    return null;
+  private callContext(): ResolverContext {
+    const rawDb = (this.db as any).db;
+    const imports = new Map<string, Set<string>>();
+    const add = (from: string, to: string) => {
+      if (from === to) return;
+      let set = imports.get(from);
+      if (!set) imports.set(from, (set = new Set()));
+      set.add(to);
+    };
+    for (const r of rawDb.all(`
+      SELECT s.file_path AS f, t.file_path AS t FROM edges e
+      JOIN nodes s ON s.id = e.source JOIN nodes t ON t.id = e.target
+      WHERE e.kind = 'imports'`) as any[]) add(r.f, r.t);
+    let owners: Map<string, { id: string; name: string; kind: string }> | null = null;
+    let containers: Map<string, string> | null = null;
+    const typesByFile = new Map<string, Array<{ id: string; name: string; kind: string; start: number; end: number }>>();
+    const supers = new Map<string, string[]>();
+    const addSuper = (id: string, s: string) => {
+      const list = supers.get(id);
+      if (!list) supers.set(id, [s]); else if (!list.includes(s)) list.push(s);
+    };
+    for (const r of rawDb.all(`SELECT source, target FROM edges WHERE kind IN ('extends', 'implements')`) as any[]) addSuper(r.source, r.target);
+    return {
+      byName: name => this.nameCache.get(name) ?? [],
+      node: id => this.nodeByIdCache.get(id),
+      importedFiles: filePath => {
+        // What the file imports, and what the package files among those re-export
+        // (`__init__.py`, `index.ts`): `from django.template import Template` reaches template/base.py
+        const direct = imports.get(filePath);
+        if (!direct) return undefined;
+        const all = new Set(direct);
+        const queue = [...direct].map(f => ({ f, depth: 1 }));
+        while (queue.length > 0) {
+          const { f, depth } = queue.shift()!;
+          if (depth > 3 || !BARREL_FILE.test(f)) continue;
+          for (const next of imports.get(f) ?? []) {
+            if (!all.has(next)) { all.add(next); queue.push({ f: next, depth: depth + 1 }); }
+          }
+        }
+        return all;
+      },
+      owner: id => {
+        if (!owners) {
+          owners = new Map();
+          for (const r of rawDb.all(`
+            SELECT e.target AS id, s.id AS owner, s.name AS name, s.kind AS kind FROM edges e JOIN nodes s ON s.id = e.source
+            WHERE e.kind = 'contains' AND s.kind IN ('class', 'struct', 'interface', 'trait', 'protocol',
+              'module', 'namespace', 'component', 'enum', 'type_alias')`) as any[]) owners.set(r.id, { id: r.owner, name: r.name, kind: r.kind });
+          // Go: a method is declared outside its type; its receiver names it (`func (s *Server) Run()`),
+          // a type of that name in the same package (folder)
+          for (const r of rawDb.all(`SELECT id, file_path, signature FROM nodes
+            WHERE language = 'go' AND kind = 'method' AND signature LIKE 'func (%'`) as any[]) {
+            const recv = /^func\s*\(\s*\w*\s*\*?\s*([A-Za-z_]\w*)/.exec(String(r.signature))?.[1];
+            if (!recv || owners.has(r.id)) continue;
+            const dir = String(r.file_path).replace(/\/[^/]*$/, '');
+            const type = (this.nameCache.get(recv) ?? []).find(n => n.language === 'go' && n.kind !== 'method' && n.kind !== 'function'
+              && n.filePath.replace(/\/[^/]*$/, '') === dir);
+            if (type) owners.set(r.id, { id: type.id, name: type.name, kind: type.kind });
+          }
+        }
+        return owners.get(id);
+      },
+      typeAt: (filePath, line) => {
+        let types = typesByFile.get(filePath);
+        if (!types) {
+          types = (rawDb.all(`SELECT id, name, kind, start_line AS start, end_line AS end FROM nodes WHERE file_path = ? AND kind IN
+            ('class', 'struct', 'interface', 'trait', 'protocol', 'module', 'enum', 'component')`, [filePath]) as any[]);
+          typesByFile.set(filePath, types);
+        }
+        let best: { id: string; name: string; kind: string; start: number; end: number } | undefined;
+        for (const t of types) if (t.start <= line && line <= t.end && (!best || t.end - t.start < best.end - best.start)) best = t;
+        return best && { id: best.id, name: best.name, kind: best.kind };
+      },
+      container: id => {
+        if (!containers) {
+          containers = new Map();
+          for (const r of rawDb.all(`SELECT source, target FROM edges WHERE kind = 'contains'`) as any[]) containers.set(r.target, r.source);
+        }
+        return containers.get(id);
+      },
+      supertypes: id => supers.get(id) ?? [],
+      cVisible: (filePath, candidate) => {
+        if (!C_FAMILY_FILE.test(filePath)) return true;
+        const g = this.cIncludes();
+        return g.reach(filePath).has(candidate.filePath) || g.declares(filePath, candidate.name);
+      },
+      addSupertype: addSuper,
+      addImport: (filePath, targetId) => {
+        const target = this.nodeByIdCache.get(targetId);
+        if (target) add(filePath, target.filePath);
+      },
+    };
+  }
+
+  /**
+   * The type a class extends or implements, by name: in the class's language family, in its own
+   * file, else in a file it imports, else the one type of the name. Several left: none, rather than
+   * a wrong supertype for the methods looked up through it.
+   */
+  private _resolveSupertype(name: string, sourceId: string, filePath: string, calls: CallContext): string | null {
+    const source = this.nodeByIdCache.get(sourceId);
+    const types = (this.nameCache.get(name) ?? []).filter(n =>
+      SUPERTYPE_KINDS.has(n.kind) && n.id !== sourceId && isCallTarget(n, source?.language));
+    if (types.length === 0) return null;
+    const local = types.filter(n => n.filePath === filePath);
+    if (local.length > 0) return local[0].id;
+    const imported = calls.importedFiles(filePath);
+    const fromImports = imported ? types.filter(n => imported.has(n.filePath)) : [];
+    return pickSupertype(fromImports.length > 0 ? fromImports : types, filePath);
   }
 
   /**
@@ -653,6 +1140,7 @@ export class ReferenceResolver {
       isAbstract: row.is_abstract === 1,
       decorators: row.decorators ? JSON.parse(row.decorators) : undefined,
       typeParameters: row.type_parameters ? JSON.parse(row.type_parameters) : undefined,
+      returnType: row.return_type ?? undefined,
       updatedAt: row.updated_at,
     };
   }
@@ -736,6 +1224,118 @@ export class ReferenceResolver {
 }
 
 /** Files the bridge resolvers look at (see resolution/bridges). */
+/** C and C++ sources and headers. */
+const C_FAMILY_FILE = /\.(c|h|cc|cpp|cxx|c\+\+|hpp|hh|hxx|h\+\+|ipp|inl|tpp|m|mm)$/;
+const C_HEADER_FILE = /\.(h|hpp|hh|hxx|h\+\+|ipp|inl|tpp)$/;
+
+const expandedCache = new Map<string, string>();
+
+/**
+ * A header's text with its token-pasting macros expanded, for the declarations they write:
+ * `#define BINOP(name) jv binop_ ## name(jv, jv);` applied by a list `BINOPS` of `BINOP(plus)`,
+ * `BINOP(multiply)`, … declares `binop_multiply(`. Only macros whose body pastes (`##`), and the
+ * object-like macros that apply them; arguments without parentheses. Other text is unchanged.
+ */
+function expandPastingMacros(text: string): string {
+  const cached = expandedCache.get(text);
+  if (cached !== undefined) return cached;
+  let out = text;
+  if (text.includes('##')) {
+    const joined = text.replace(/\\\r?\n/g, ' ');
+    const fns = new Map<string, { params: string[]; body: string }>();
+    const objects = new Map<string, string>();
+    const define = /^[ \t]*#[ \t]*define[ \t]+(\w+)(\(([^)]*)\))?[ \t]*(.*)$/gm;
+    for (let m = define.exec(joined); m; m = define.exec(joined)) {
+      if (m[2] !== undefined) fns.set(m[1], { params: m[3].split(',').map(s => s.trim()).filter(Boolean), body: m[4] });
+      else objects.set(m[1], m[4]);
+    }
+    const pasting = [...fns].filter(([, f]) => f.body.includes('##')).map(([n]) => n);
+    if (pasting.length > 0) {
+      const lists = [...objects].filter(([, body]) => pasting.some(n => new RegExp(`\\b${n}\\s*\\(`).test(body)));
+      // Text outside the directives, with the lists written out
+      let body = joined.split('\n').filter(l => !/^[ \t]*#/.test(l)).join('\n');
+      for (const [name, value] of lists) body = body.replace(new RegExp(`\\b${name}\\b`, 'g'), value);
+      for (const name of pasting) {
+        const f = fns.get(name)!;
+        body = body.replace(new RegExp(`\\b${name}\\s*\\(([^()]*)\\)`, 'g'), (_m, args: string) => {
+          const values = args.split(',').map(s => s.trim());
+          let r = f.body;
+          f.params.forEach((p, i) => {
+            // A variadic parameter (`...`, `args...`) takes the rest of the arguments
+            const variadic = /^(\w*)\s*\.\.\.$/.exec(p);
+            const name = variadic ? (variadic[1] || '__VA_ARGS__') : p;
+            if (!/^\w+$/.test(name)) return;
+            const value = variadic ? values.slice(i).join(', ') : values[i] ?? '';
+            r = r.replace(new RegExp(`\\b${name}\\b`, 'g'), value);
+          });
+          return r.replace(/\s*##\s*/g, '');
+        });
+      }
+      out = body;
+    }
+  }
+  // Kept for the headers of one resolution, not for the life of a server
+  if (expandedCache.size >= 512) expandedCache.clear();
+  expandedCache.set(text, out);
+  return out;
+}
+
+/** Words a statement that calls a function can start with: not a declaration's type. */
+const C_STATEMENT_WORDS = new Set(['return', 'else', 'case', 'if', 'while', 'for', 'do', 'goto', 'sizeof',
+  'delete', 'new', 'throw', 'co_return', 'co_await', 'co_yield']);
+
+/**
+ * Whether a C / C++ file declares a function itself: an `extern` prototype
+ * (`extern jv _jq_path_append(…);`), or a prototype line (`GTEST_API_ TestInfo* Make(…);`) — a type
+ * before the name, a parameter list, a semicolon. Its own call (`x = Make(…);`) is neither.
+ */
+function declaresItself(text: string, id: string): boolean {
+  if (new RegExp(`\\bextern\\b[^;{}]*\\b${id}\\s*\\(`).test(text)) return true;
+  const proto = new RegExp(`^[ \\t]*([A-Za-z_][\\w:<>, \\t*&]*?)[ \\t*&]${id}\\s*\\([^;{}()]*(?:\\([^;{}()]*\\)[^;{}()]*)*\\)[^;{}=]*;`, 'gm');
+  for (let m = proto.exec(text); m; m = proto.exec(text)) {
+    const first = m[1].trim().split(/[\s*&]/)[0];
+    if (!C_STATEMENT_WORDS.has(first) && !/[=(]/.test(m[1])) return true;
+  }
+  return false;
+}
+
+interface CIncludeGraph {
+  /** The project file an `#include` names, seen from a file. */
+  resolve(include: string, from: string): string | undefined;
+  /** A node of the file, for an include edge to point at. */
+  nodeIn(file: string | undefined): string | null;
+  /**
+   * The files a file sees: those it reaches through its includes, transitively, and, for a source
+   * other files include, what they see.
+   */
+  reach(file: string): Set<string>;
+  /** Whether a header the file reaches declares the name as a function (`name(`), or the file an `extern` prototype of it. */
+  declares(file: string, name: string): boolean;
+}
+
+/**
+ * One supertype among candidates of the same name: the one; else those of one file (C#'s
+ * `IRequestHandler<T>` and `IRequestHandler<T, R>` are one concept) by their first; else the one
+ * nearest the class's file by folder (a sample project's own `Ping`, not another sample's), when
+ * a single one is nearest. Otherwise none.
+ */
+function pickSupertype(types: Node[], filePath: string): string | null {
+  if (types.length === 0) return null;
+  if (types.length === 1 || types.every(n => n.filePath === types[0].filePath)) return types[0].id;
+  const shared = (f: string) => {
+    const a = f.split('/'), b = filePath.split('/');
+    let i = 0;
+    while (i < a.length - 1 && i < b.length - 1 && a[i] === b[i]) i++;
+    return i;
+  };
+  const best = Math.max(...types.map(n => shared(n.filePath)));
+  const nearest = types.filter(n => shared(n.filePath) === best);
+  return nearest.length === 1 || nearest.every(n => n.filePath === nearest[0].filePath) ? nearest[0].id : null;
+}
+
+/** Files that gather and re-export a package's symbols. */
+const BARREL_FILE = /(^|\/)(__init__\.py|index\.(ts|tsx|js|jsx|mjs|cjs))$/;
+
 const BRIDGE_FILE = /(\.(tsx?|jsx?|m|mm|h|swift|java|kt|dart)|(^|\/)(package\.json|expo-module\.config\.json))$/;
 
 /**

@@ -24,7 +24,6 @@ pub enum Entry {
 pub struct IndexParams {
     pub project_root: String,
     pub db_path: String,
-    pub marker_path: Option<String>,
     pub force: bool,
     pub enable_complexity: bool,
     pub max_file_size: u64,
@@ -199,7 +198,7 @@ pub fn run_index(p: &IndexParams, entries: Vec<Entry>, mut progress: impl FnMut(
     let mut out = IndexOutcome::default();
     let root = PathBuf::from(&p.project_root);
     let real_root = std::fs::canonicalize(&root).ok();
-    let mut db = Db::open(Path::new(&p.db_path), p.marker_path.as_ref().map(PathBuf::from), p.synchronous_off)?;
+    let mut db = Db::open(Path::new(&p.db_path), p.synchronous_off)?;
 
     let t0 = Instant::now();
     let hashes = if p.force && !p.track_oversize { HashMap::new() } else { db.file_hashes()? };
@@ -274,7 +273,7 @@ pub fn run_index(p: &IndexParams, entries: Vec<Entry>, mut progress: impl FnMut(
             // Fast path: the whole round in one transaction. A savepoint per file (so that one file
             // that fails does not undo the others) makes FTS5 flush its pending index each time, so
             // savepoints are used only when the fast path fails, to find and skip the failing file.
-            let fast = db.transaction(|conn, guard| {
+            let fast = db.transaction(|conn| {
                 let mut w = Vec::new();
                 let mut r = Vec::new();
                 let mut fts = Vec::new();
@@ -285,7 +284,6 @@ pub fn run_index(p: &IndexParams, entries: Vec<Entry>, mut progress: impl FnMut(
                 }
                 for prep in &prepared {
                     if let Prepared::Write(f) = prep {
-                        guard.touch();
                         w.push(write_file(conn, f, now_ms(), &opts, &mut r, Some(&mut fts))?);
                     }
                 }
@@ -298,10 +296,9 @@ pub fn run_index(p: &IndexParams, entries: Vec<Entry>, mut progress: impl FnMut(
                     removed = r;
                 }
                 Err(_) => {
-                    db.transaction(|conn, guard| {
+                    db.transaction(|conn| {
                         for (entry, prep) in chunk.iter().zip(prepared.iter()) {
                             if let Prepared::Write(f) = prep {
-                                guard.touch();
                                 match write_file_in_savepoint(conn, f, now_ms(), &opts, &mut removed) {
                                     Ok(w) => writes.push(w),
                                     Err(e) => {

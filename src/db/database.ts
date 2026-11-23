@@ -1,6 +1,6 @@
 /**
  * KiroGraph Database Layer
- * Wraps node-sqlite3-wasm for portability (no native bindings needed).
+ * SQLite through Node's own `node:sqlite` (see sqlite.ts), in WAL mode.
  */
 
 import * as path from 'path';
@@ -9,20 +9,44 @@ import type { Node, Edge, FileRecord, NodeKind, Language, GraphStats, NodeContex
 import type { ArchPackage, ArchLayer, ArchPackageDep, ArchLayerDep, ArchCoupling } from '../architecture/types';
 import type { RouteMountFact } from '../extraction/extractor';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { Database } = require('node-sqlite3-wasm');
-import { BusyRetryDatabase, clearStaleDbLock, dbLockTiming } from './db-lock';
-import { recoverHotJournal } from './journal-recovery';
+import { Database } from './sqlite';
+import { BusyRetryDatabase, dbLockTiming, liveDbWriters } from './db-lock';
 
 /** Languages whose references infra.ts resolves by exact qualified name. */
 const INFRA_LANGUAGES = "('hcl', 'yaml', 'json', 'bash')";
 
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
 
 /** Parameters per multi-row statement. SQLite allows more; a smaller statement is cheaper to parse. */
 const MAX_PARAMS_PER_STATEMENT = 1000;
 /** Rows per statement, largest first. Powers of two keep the number of distinct statements small. */
 const GROUP_SIZES = [128, 64, 32, 16, 8, 4, 2, 1];
+
+/**
+ * Before the first open by 1.6.0 of a database KiroGraph 1.5.x used: the switch to WAL must not
+ * happen while a 1.5.x process still has it open. Those processes use the WASM driver, which
+ * ignores SQLite's file locks and cannot read a WAL database: they lock by creating the directory
+ * `kirograph.db.lock` and keep a marker in `db-writers/` while they work. When one is live, the
+ * open fails and says to stop it. Otherwise their leftovers are removed; a journal a killed 1.5.x
+ * process left behind is rolled back by SQLite itself on the first read.
+ */
+function leaveLegacyDriver(dbDir: string, dbPath: string): void {
+  const lockDir = path.join(dbDir, 'kirograph.db.lock');
+  const writersDir = path.join(dbDir, 'db-writers');
+  if (!fs.existsSync(lockDir) && !fs.existsSync(writersDir)) return;
+  if (fs.existsSync(dbPath)) {
+    const live = liveDbWriters(dbDir);
+    if (live.length > 0) {
+      throw new Error(
+        `KiroGraph 1.5 or older is still using this project's database (pid ${live.join(', ')}). ` +
+        'Stop it first (close the IDE or the MCP server that runs it, and any running sync): ' +
+        'KiroGraph 1.6 switches the database to WAL, which older versions cannot open. ' +
+        'If no KiroGraph 1.5 is running (the pid now belongs to another program), run `kirograph unlock --force`.');
+    }
+  }
+  fs.rmSync(lockDir, { recursive: true, force: true });
+  fs.rmSync(writersDir, { recursive: true, force: true });
+}
 
 export class GraphDatabase {
   private db: any;
@@ -34,20 +58,13 @@ export class GraphDatabase {
     fs.mkdirSync(dbDir, { recursive: true });
     const dbPath = path.join(dbDir, 'kirograph.db');
 
-    // ── Lock check ────────────────────────────────────────────────────────────
-    // The WASM driver locks by creating kirograph.db.lock and never removes it when the
-    // process dies. A stale one is cleared here. A live holder is waited for by the driver's
-    // busy_timeout (set first in the PRAGMAs below), so a long sync is not cut short.
-    const lockPath = path.join(dbDir, 'kirograph.db.lock');
-    const lockFree = clearStaleDbLock(dbDir, lockPath);
-    // A process killed mid-write leaves a hot journal that the driver can never roll back by
-    // itself (see journal-recovery.ts); without this the open waits for the busy timeout and fails
-    if (lockFree) recoverHotJournal(dbPath, lockPath);
+    leaveLegacyDriver(dbDir, dbPath);
 
-    this.db = new BusyRetryDatabase(new Database(dbPath), dbDir, lockPath);
+    this.db = new BusyRetryDatabase(new Database(dbPath));
+    // busy_timeout first: switching to WAL takes the write lock, and another 1.6 process may hold it
+    this.db.exec(`PRAGMA busy_timeout=${dbLockTiming.busyMs};`);
+    this.db.exec('PRAGMA journal_mode=WAL;');
     this.db.exec(`
-      PRAGMA busy_timeout=${dbLockTiming.busyMs};
-      PRAGMA journal_mode=WAL;
       PRAGMA foreign_keys=ON;
       PRAGMA synchronous=NORMAL;
       PRAGMA cache_size=-64000;
@@ -169,11 +186,38 @@ export class GraphDatabase {
   }
 
   private runMigrations(): void {
-    // Record initial schema version if not present
-    const versionRow = this.db.get('SELECT version FROM schema_versions ORDER BY version DESC LIMIT 1');
-    const currentVersion = versionRow ? versionRow.version : 0;
+    // Each migration not yet recorded, in order: an interrupted one runs again even when a later
+    // one was recorded (the highest version alone does not say so)
+    const applied = new Set<number>((this.db.all('SELECT version FROM schema_versions') as any[]).map(r => r.version));
 
-    if (currentVersion < 4) {
+    if (!applied.has(1)) {
+      // Migration 1: schema.sql CREATE IF NOT EXISTS handles initial setup.
+      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)',
+        [1, Date.now()]);
+    }
+
+    if (!applied.has(2)) {
+      // Migration 2: add complexity metric columns to nodes table.
+      for (const col of [
+        'complexity_cyclomatic INTEGER',
+        'complexity_cognitive INTEGER',
+        'complexity_halstead TEXT',
+        'maintainability_index REAL',
+        'nesting_depth INTEGER',
+      ]) {
+        try { this.db.run(`ALTER TABLE nodes ADD COLUMN ${col}`); } catch { /* already exists */ }
+      }
+      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [2, Date.now()]);
+    }
+    if (!applied.has(3)) {
+      // Migration 3: nodes_fts is an external-content table (content_rowid = nodes.rowid), but its
+      // rows used to be inserted without a rowid and deleted by the id column, which is not
+      // indexed, so every delete scanned the whole table. Rows now carry the node's rowid and are
+      // deleted by it. Rebuild once so existing rows line up with their nodes.
+      try { this.db.run("INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')"); } catch { /* no fts table yet */ }
+      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [3, Date.now()]);
+    }
+    if (!applied.has(4)) {
       // Migration 4: edges had no unique key, so INSERT OR IGNORE ignored nothing and every pass
       // that adds the same edge (the security analysis adds declared_in, depends_on and
       // has_vulnerability on each run) added it again: a real project had 218,849 rows for 654
@@ -189,33 +233,12 @@ export class GraphDatabase {
       });
       this.reclaimSpace();
     }
-    if (currentVersion < 3) {
-      // Migration 3: nodes_fts is an external-content table (content_rowid = nodes.rowid), but its
-      // rows used to be inserted without a rowid and deleted by the id column, which is not
-      // indexed, so every delete scanned the whole table. Rows now carry the node's rowid and are
-      // deleted by it. Rebuild once so existing rows line up with their nodes.
-      try { this.db.run("INSERT INTO nodes_fts(nodes_fts) VALUES('rebuild')"); } catch { /* no fts table yet */ }
-      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [3, Date.now()]);
+    if (!applied.has(5)) {
+      // Migration 5: the declared return type of functions and methods, which call resolution reads
+      // to type a receiver that a call returns (`getRepo().save()`). Filled by the next index.
+      try { this.db.run('ALTER TABLE nodes ADD COLUMN return_type TEXT'); } catch { /* already exists */ }
+      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [5, Date.now()]);
     }
-    if (currentVersion < 2) {
-      // Migration 2: add complexity metric columns to nodes table.
-      for (const col of [
-        'complexity_cyclomatic INTEGER',
-        'complexity_cognitive INTEGER',
-        'complexity_halstead TEXT',
-        'maintainability_index REAL',
-        'nesting_depth INTEGER',
-      ]) {
-        try { this.db.run(`ALTER TABLE nodes ADD COLUMN ${col}`); } catch { /* already exists */ }
-      }
-      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)', [2, Date.now()]);
-    }
-    if (currentVersion < 1) {
-      // Migration 1: schema.sql CREATE IF NOT EXISTS handles initial setup.
-      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)',
-        [1, Date.now()]);
-    }
-
     // Add metadata column to unresolved_refs if not present (call-site facts, e.g. argKind).
     try {
       this.db.run('ALTER TABLE unresolved_refs ADD COLUMN metadata TEXT');
@@ -323,8 +346,8 @@ export class GraphDatabase {
        is_exported, is_async, is_static, is_abstract,
        decorators, type_parameters, updated_at,
        complexity_cyclomatic, complexity_cognitive, complexity_halstead,
-       maintainability_index, nesting_depth)`;
-  private static readonly NODE_ROW = '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)';
+       maintainability_index, nesting_depth, return_type)`;
+  private static readonly NODE_ROW = '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)';
 
   private nodeParams(node: Node): unknown[] {
     return [
@@ -339,6 +362,7 @@ export class GraphDatabase {
       node.complexityCyclomatic ?? null, node.complexityCognitive ?? null,
       node.complexityHalstead ?? null, node.maintainabilityIndex ?? null,
       node.nestingDepth ?? null,
+      node.returnType ?? null,
     ];
   }
 
@@ -446,9 +470,8 @@ export class GraphDatabase {
   searchNodes(query: string, opts: SearchOptions = {}): Node[] {
     const { kinds, languages, limit = 20 } = opts;
     // Sanitize for FTS5: strip special chars and append wildcard.
-    // Both the MATCH value and LIMIT are inlined (not bound via ?) because
-    // node-sqlite3-wasm passes bound parameters through to FTS5's own query
-    // parser before SQLite substitutes them, causing "syntax error near ?".
+    // Both the MATCH value and LIMIT are inlined (not bound via ?): the value is
+    // sanitized below to letters, digits and spaces, so inlining it is safe.
     const safe = query
       .replace(/\b(AND|OR|NOT)\b/g, ' ')       // FTS5 boolean operators
       .replace(/['"*()?\-+^~:{}\\\.\/,]/g, ' ')  // FTS5 special chars (incl. / and ,)
@@ -508,6 +531,7 @@ export class GraphDatabase {
     const ids = this.db.all('SELECT id FROM nodes WHERE file_path = ?', [filePath]).map((r: any) => r.id);
     if (ids.length === 0) return;
     this.detachIncomingEdges(filePath);
+    this.detachDependentEdges(filePath);
     const placeholders = ids.map(() => '?').join(',');
     this.db.run(`DELETE FROM edges WHERE source IN (${placeholders}) OR target IN (${placeholders})`, [...ids, ...ids]);
     // By rowid: the FTS table has no index on id, so deleting by id scanned the whole table for
@@ -515,6 +539,62 @@ export class GraphDatabase {
     // are deleted: an external-content table reads the old values from them.
     this.db.run(`DELETE FROM nodes_fts WHERE rowid IN (SELECT rowid FROM nodes WHERE file_path = ?)`, [filePath]);
     this.db.run(`DELETE FROM nodes WHERE file_path = ?`, [filePath]);
+  }
+
+  /**
+   * Turns call edges back into references when what their resolution read changed: edges that
+   * name the file among the files they depend on (`via`: a supertype the method was looked up in,
+   * the function whose return type typed the receiver, the callers that typed a parameter).
+   */
+  private detachDependentEdges(filePath: string): void {
+    this.requeueEdges(`e.id IN (SELECT edge_id FROM edge_deps WHERE dep = ?)`, ['f:' + filePath]);
+  }
+
+  /** Records what the call edges written after `afterId` depend on (their `via` and `paramOf`). */
+  recordEdgeDeps(afterId: number): void {
+    this.db.run(`INSERT INTO edge_deps (edge_id, dep)
+      SELECT e.id, 'f:' || j.value FROM edges e, json_each(e.metadata, '$.via') j
+      WHERE e.id > ? AND e.kind = 'calls' AND e.metadata LIKE '%"via"%'`, [afterId]);
+    this.db.run(`INSERT INTO edge_deps (edge_id, dep)
+      SELECT e.id, 'n:' || j.value FROM edges e, json_each(e.metadata, '$.paramOf') j
+      WHERE e.id > ? AND e.kind = 'calls' AND e.metadata LIKE '%"paramOf"%'`, [afterId]);
+  }
+
+  /** The highest edge id, for recordEdgeDeps. */
+  maxEdgeId(): number {
+    return (this.db.get('SELECT MAX(id) AS m FROM edges') as any)?.m ?? 0;
+  }
+
+  /** Drops the dependencies of edges that are gone. */
+  pruneEdgeDeps(): void {
+    this.db.run('DELETE FROM edge_deps WHERE edge_id NOT IN (SELECT id FROM edges)');
+  }
+
+  /**
+   * A sync: the calls on untyped parameters of the functions the changed files call, back to
+   * references, since a new caller may pass another class (see ReferenceResolver.parameterTypes).
+   */
+  requeueParameterEdges(changedFiles: string[]): void {
+    const placeholders = changedFiles.map(() => '?').join(',');
+    this.requeueEdges(`e.id IN (SELECT d.edge_id FROM edge_deps d WHERE d.dep IN (
+        SELECT 'n:' || c.target FROM edges c JOIN nodes cs ON cs.id = c.source WHERE c.kind = 'calls' AND cs.file_path IN (${placeholders})))`,
+      changedFiles);
+  }
+
+  /** Call edges matching a condition (on `e`) back to unresolved references, as detachIncomingEdges does. */
+  private requeueEdges(condition: string, params: unknown[]): void {
+    const rows = this.db.all(`SELECT e.rowid AS rid FROM edges e WHERE ${condition} AND e.confidence = 'extracted'`, params) as any[];
+    if (rows.length === 0) return;
+    for (let i = 0; i < rows.length; i += 500) {
+      const ids = rows.slice(i, i + 500).map(r => r.rid);
+      const marks = ids.map(() => '?').join(',');
+      this.db.run(
+        `INSERT INTO unresolved_refs (source_id, ref_name, ref_kind, file_path, line, column, metadata)
+         SELECT e.source, t.name, 'function', s.file_path, e.line, e.column, e.metadata
+         FROM edges e JOIN nodes t ON t.id = e.target JOIN nodes s ON s.id = e.source
+         WHERE e.rowid IN (${marks})`, ids);
+      this.db.run(`DELETE FROM edges WHERE rowid IN (${marks})`, ids);
+    }
   }
 
   /**
@@ -1391,7 +1471,9 @@ export class GraphDatabase {
   transaction<T>(fn: () => T): T {
     const release = this.db.hold();
     try {
-      this.db.run('BEGIN');
+      // IMMEDIATE: the write lock is taken (and waited for) now. A deferred transaction that reads
+      // first fails at once in WAL when another process commits before its first write
+      this.db.run('BEGIN IMMEDIATE');
       try {
         const result = fn();
         this.db.run('COMMIT');

@@ -1,0 +1,526 @@
+{
+  "$comment": "Grammar sources of every language KiroGraph parses with tree-sitter, shared by the TypeScript engine (WASM, built by scripts/grammars.mjs into src/extraction/wasm/) and the native engine (compiled from the same sources). Each language is an npm package (package, version) or a GitHub commit (github, version); dir is the grammar inside it; generate: the parser is generated from grammar.js with the pinned tree-sitter-cli. fingerprint identifies the built grammar: two builds with the same fingerprint parse every file into the same tree.",
+  "languages": {
+    "astro": {
+      "github": "virchau13/tree-sitter-astro",
+      "version": "213f6e6973d9b456c6e50e86f19f66877e7ef0ee",
+      "symbol": "astro",
+      "fingerprint": {
+        "abi": 14,
+        "states": 163,
+        "kinds": 59,
+        "fields": 0,
+        "hash": "6bd588dfb15793e4"
+      }
+    },
+    "bash": {
+      "package": "tree-sitter-bash",
+      "version": "0.25.1",
+      "symbol": "bash",
+      "fingerprint": {
+        "abi": 15,
+        "states": 7571,
+        "kinds": 280,
+        "fields": 19,
+        "hash": "316df83a30ce1eb9"
+      }
+    },
+    "c": {
+      "package": "tree-sitter-c",
+      "version": "0.24.1",
+      "symbol": "c",
+      "fingerprint": {
+        "abi": 15,
+        "states": 2015,
+        "kinds": 363,
+        "fields": 39,
+        "hash": "99d87df627ddb4a4"
+      }
+    },
+    "cpp": {
+      "package": "tree-sitter-cpp",
+      "version": "0.23.4",
+      "symbol": "cpp",
+      "fingerprint": {
+        "abi": 14,
+        "states": 8637,
+        "kinds": 543,
+        "fields": 50,
+        "hash": "15b640f00cc68180"
+      }
+    },
+    "csharp": {
+      "package": "tree-sitter-c-sharp",
+      "version": "0.23.5",
+      "symbol": "c_sharp",
+      "fingerprint": {
+        "abi": 15,
+        "states": 8053,
+        "kinds": 533,
+        "fields": 26,
+        "hash": "fbbf525f1d7ae1ca"
+      }
+    },
+    "css": {
+      "package": "tree-sitter-css",
+      "version": "0.25.0",
+      "symbol": "css",
+      "fingerprint": {
+        "abi": 15,
+        "states": 442,
+        "kinds": 151,
+        "fields": 0,
+        "hash": "a08085a152dfe2a7"
+      }
+    },
+    "dart": {
+      "github": "UserNobody14/tree-sitter-dart",
+      "version": "0038280b774b65c1b89ba7fec50624d8baed9fe1",
+      "symbol": "dart",
+      "fingerprint": {
+        "abi": 15,
+        "states": 4292,
+        "kinds": 529,
+        "fields": 23,
+        "hash": "0ea52a49dc8d686d"
+      }
+    },
+    "elixir": {
+      "package": "tree-sitter-elixir",
+      "version": "0.3.5",
+      "symbol": "elixir",
+      "fingerprint": {
+        "abi": 14,
+        "states": 7001,
+        "kinds": 235,
+        "fields": 9,
+        "hash": "8263f41957332d2a"
+      }
+    },
+    "elm": {
+      "package": "@elm-tooling/tree-sitter-elm",
+      "version": "5.9.4",
+      "symbol": "elm",
+      "fingerprint": {
+        "abi": 15,
+        "states": 1060,
+        "kinds": 203,
+        "fields": 35,
+        "hash": "f4548bc1759744df"
+      }
+    },
+    "gdscript": {
+      "package": "tree-sitter-gdscript",
+      "version": "6.1.0",
+      "symbol": "gdscript",
+      "fingerprint": {
+        "abi": 14,
+        "states": 1986,
+        "kinds": 226,
+        "fields": 18,
+        "hash": "7c47ccd7777957f4"
+      }
+    },
+    "go": {
+      "package": "tree-sitter-go",
+      "version": "0.25.0",
+      "symbol": "go",
+      "fingerprint": {
+        "abi": 15,
+        "states": 1442,
+        "kinds": 219,
+        "fields": 35,
+        "hash": "f92d25d465572144"
+      }
+    },
+    "hcl": {
+      "package": "@tree-sitter-grammars/tree-sitter-hcl",
+      "version": "1.2.0",
+      "symbol": "hcl",
+      "fingerprint": {
+        "abi": 15,
+        "states": 678,
+        "kinds": 121,
+        "fields": 2,
+        "hash": "d36d6af98758498a"
+      }
+    },
+    "html": {
+      "package": "tree-sitter-html",
+      "version": "0.23.2",
+      "symbol": "html",
+      "fingerprint": {
+        "abi": 14,
+        "states": 94,
+        "kinds": 41,
+        "fields": 0,
+        "hash": "095b9237c2e8b19d"
+      }
+    },
+    "java": {
+      "package": "tree-sitter-java",
+      "version": "0.23.5",
+      "symbol": "java",
+      "fingerprint": {
+        "abi": 14,
+        "states": 1385,
+        "kinds": 321,
+        "fields": 40,
+        "hash": "d8ec0926352c216b"
+      }
+    },
+    "javascript": {
+      "package": "tree-sitter-javascript",
+      "version": "0.25.0",
+      "symbol": "javascript",
+      "fingerprint": {
+        "abi": 15,
+        "states": 1870,
+        "kinds": 265,
+        "fields": 36,
+        "hash": "671809d1e9176e3b"
+      }
+    },
+    "julia": {
+      "package": "tree-sitter-julia",
+      "version": "0.23.1",
+      "symbol": "julia",
+      "fingerprint": {
+        "abi": 14,
+        "states": 19618,
+        "kinds": 245,
+        "fields": 6,
+        "hash": "d0da577fd478b550"
+      }
+    },
+    "kotlin": {
+      "github": "fwcd/tree-sitter-kotlin",
+      "version": "d6af96d2e23ef0a8ff5ab512864378cf08fba311",
+      "symbol": "kotlin",
+      "fingerprint": {
+        "abi": 14,
+        "states": 11447,
+        "kinds": 381,
+        "fields": 4,
+        "hash": "9cf8ce87694bd1f7"
+      }
+    },
+    "lua": {
+      "package": "@tree-sitter-grammars/tree-sitter-lua",
+      "version": "0.4.1",
+      "symbol": "lua",
+      "fingerprint": {
+        "abi": 15,
+        "states": 262,
+        "kinds": 137,
+        "fields": 22,
+        "hash": "9943e33b0e16192b"
+      }
+    },
+    "nix": {
+      "github": "nix-community/tree-sitter-nix",
+      "version": "64d4f7827dc1a8c7c88108ffdb47b961a729df05",
+      "symbol": "nix",
+      "fingerprint": {
+        "abi": 15,
+        "states": 541,
+        "kinds": 108,
+        "fields": 22,
+        "hash": "b8e40d2fbd811b48"
+      }
+    },
+    "objc": {
+      "package": "tree-sitter-objc",
+      "version": "3.0.2",
+      "symbol": "objc",
+      "fingerprint": {
+        "abi": 14,
+        "states": 6799,
+        "kinds": 588,
+        "fields": 48,
+        "hash": "2e74e823a0cde6fd"
+      }
+    },
+    "ocaml": {
+      "package": "tree-sitter-ocaml",
+      "version": "0.24.2",
+      "dir": "grammars/ocaml",
+      "symbol": "ocaml",
+      "fingerprint": {
+        "abi": 14,
+        "states": 23760,
+        "kinds": 444,
+        "fields": 38,
+        "hash": "fddc1f81f341b401"
+      }
+    },
+    "pascal": {
+      "github": "Isopod/tree-sitter-pascal",
+      "version": "042119eca2e18a60e56317fb06ee3ba5c32cb447",
+      "symbol": "pascal",
+      "fingerprint": {
+        "abi": 14,
+        "states": 2715,
+        "kinds": 371,
+        "fields": 38,
+        "hash": "7376958840602047"
+      }
+    },
+    "perl": {
+      "package": "tree-sitter-perl",
+      "version": "2.1.0",
+      "symbol": "perl",
+      "fingerprint": {
+        "abi": 15,
+        "states": 2368,
+        "kinds": 606,
+        "fields": 44,
+        "hash": "924db364d3e14940"
+      }
+    },
+    "php": {
+      "package": "tree-sitter-php",
+      "version": "0.24.2",
+      "dir": "php",
+      "symbol": "php",
+      "fingerprint": {
+        "abi": 15,
+        "states": 3371,
+        "kinds": 432,
+        "fields": 31,
+        "hash": "68d92fcbc9279f7c"
+      }
+    },
+    "powershell": {
+      "package": "tree-sitter-powershell",
+      "version": "0.26.6",
+      "symbol": "powershell",
+      "fingerprint": {
+        "abi": 15,
+        "states": 2192,
+        "kinds": 423,
+        "fields": 14,
+        "hash": "445fcdd007e1575e"
+      }
+    },
+    "python": {
+      "package": "tree-sitter-python",
+      "version": "0.25.0",
+      "symbol": "python",
+      "fingerprint": {
+        "abi": 15,
+        "states": 2786,
+        "kinds": 274,
+        "fields": 32,
+        "hash": "8ccb758b0ef1afab"
+      }
+    },
+    "r": {
+      "package": "@davisvaughan/tree-sitter-r",
+      "version": "1.3.0",
+      "symbol": "r",
+      "fingerprint": {
+        "abi": 14,
+        "states": 2112,
+        "kinds": 136,
+        "fields": 20,
+        "hash": "0ef81a96252bc6d1"
+      }
+    },
+    "rescript": {
+      "github": "rescript-lang/tree-sitter-rescript",
+      "version": "v6.0.0",
+      "symbol": "rescript",
+      "fingerprint": {
+        "abi": 15,
+        "states": 5077,
+        "kinds": 353,
+        "fields": 31,
+        "hash": "4765bdb11e22bde8"
+      }
+    },
+    "ruby": {
+      "package": "tree-sitter-ruby",
+      "version": "0.23.1",
+      "symbol": "ruby",
+      "fingerprint": {
+        "abi": 14,
+        "states": 5989,
+        "kinds": 351,
+        "fields": 32,
+        "hash": "5e7b3bf8de84340e"
+      }
+    },
+    "rust": {
+      "package": "tree-sitter-rust",
+      "version": "0.24.0",
+      "symbol": "rust",
+      "fingerprint": {
+        "abi": 15,
+        "states": 3823,
+        "kinds": 355,
+        "fields": 31,
+        "hash": "6bc2bf2f70e2b350"
+      }
+    },
+    "scala": {
+      "package": "tree-sitter-scala",
+      "version": "0.24.0",
+      "symbol": "scala",
+      "fingerprint": {
+        "abi": 14,
+        "states": 20285,
+        "kinds": 353,
+        "fields": 32,
+        "hash": "a426de56dc4fc875"
+      }
+    },
+    "scss": {
+      "package": "tree-sitter-scss",
+      "version": "1.0.0",
+      "symbol": "scss",
+      "fingerprint": {
+        "abi": 14,
+        "states": 674,
+        "kinds": 185,
+        "fields": 7,
+        "hash": "e2782e0c56f62c70"
+      }
+    },
+    "solidity": {
+      "github": "JoranHonig/tree-sitter-solidity",
+      "version": "048fe686cb1fde267243739b8bdbec8fc3a55272",
+      "symbol": "solidity",
+      "fingerprint": {
+        "abi": 15,
+        "states": 977,
+        "kinds": 531,
+        "fields": 35,
+        "hash": "cad122d8df3b079b"
+      }
+    },
+    "sql": {
+      "package": "@derekstride/tree-sitter-sql",
+      "version": "0.3.13",
+      "symbol": "sql",
+      "fingerprint": {
+        "abi": 15,
+        "states": 32966,
+        "kinds": 822,
+        "fields": 57,
+        "hash": "0dd3d0eb2eb83b2a"
+      }
+    },
+    "swift": {
+      "github": "alex-pinkus/tree-sitter-swift",
+      "version": "fef1236022ccde2d2bc5c32d4db8947c87a7f848",
+      "generate": true,
+      "symbol": "swift",
+      "fingerprint": {
+        "abi": 15,
+        "states": 11742,
+        "kinds": 575,
+        "fields": 47,
+        "hash": "795c99a6e0f630b3"
+      }
+    },
+    "tsx": {
+      "package": "tree-sitter-typescript",
+      "version": "0.23.2",
+      "dir": "tsx",
+      "symbol": "tsx",
+      "fingerprint": {
+        "abi": 14,
+        "states": 5986,
+        "kinds": 400,
+        "fields": 43,
+        "hash": "3aa0bde90f33253a"
+      }
+    },
+    "typescript": {
+      "package": "tree-sitter-typescript",
+      "version": "0.23.2",
+      "dir": "typescript",
+      "symbol": "typescript",
+      "fingerprint": {
+        "abi": 14,
+        "states": 5870,
+        "kinds": 383,
+        "fields": 40,
+        "hash": "ef341fe4e2d06df4"
+      }
+    },
+    "verilog": {
+      "package": "tree-sitter-verilog",
+      "version": "1.0.0",
+      "symbol": "verilog",
+      "fingerprint": {
+        "abi": 14,
+        "states": 20534,
+        "kinds": 1231,
+        "fields": 0,
+        "hash": "440b8f306ca284e6"
+      }
+    },
+    "vue": {
+      "github": "tree-sitter-grammars/tree-sitter-vue",
+      "version": "ce8011a414fdf8091f4e4071752efc376f4afb08",
+      "symbol": "vue",
+      "fingerprint": {
+        "abi": 15,
+        "states": 170,
+        "kinds": 67,
+        "fields": 0,
+        "hash": "e5ec95153d35512f"
+      }
+    },
+    "yaml": {
+      "package": "@tree-sitter-grammars/tree-sitter-yaml",
+      "version": "0.7.1",
+      "symbol": "yaml",
+      "fingerprint": {
+        "abi": 14,
+        "states": 1579,
+        "kinds": 301,
+        "fields": 2,
+        "hash": "3d87eb5a28bd11a0"
+      }
+    },
+    "zig": {
+      "package": "@tree-sitter-grammars/tree-sitter-zig",
+      "version": "1.1.2",
+      "symbol": "zig",
+      "fingerprint": {
+        "abi": 14,
+        "states": 1852,
+        "kinds": 274,
+        "fields": 16,
+        "hash": "ba2ad7315ecd9a67"
+      }
+    },
+    "haskell": {
+      "package": "tree-sitter-haskell",
+      "version": "0.23.1",
+      "symbol": "haskell",
+      "fingerprint": {
+        "abi": 14,
+        "states": 12862,
+        "kinds": 552,
+        "fields": 84,
+        "hash": "b758e446059cbbdb"
+      }
+    },
+    "liquid": {
+      "github": "hankthetank27/tree-sitter-liquid",
+      "version": "e45dbac8c5fa95b1f0e00e7e0c04bc8855823391",
+      "symbol": "liquid",
+      "fingerprint": {
+        "abi": 14,
+        "states": 1300,
+        "kinds": 215,
+        "fields": 28,
+        "hash": "2abd7f12998dea8c"
+      }
+    }
+  }
+}

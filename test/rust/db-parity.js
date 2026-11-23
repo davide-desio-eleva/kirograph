@@ -11,7 +11,7 @@
 const path = require('path');
 const fs = require('fs');
 const { execFileSync } = require('child_process');
-const { Database } = require('node-sqlite3-wasm');
+const { DatabaseSync } = require('node:sqlite');
 
 const root = path.resolve(process.argv[2] ?? '.');
 const cli = path.join(__dirname, '..', '..', 'dist', 'bin', 'kirograph.js');
@@ -21,7 +21,7 @@ const QUERIES = {
   files: 'SELECT path, content_hash, language, file_size, symbol_count FROM files ORDER BY path',
   nodes: `SELECT rowid, id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column, end_column,
             docstring, signature, visibility, is_exported, is_async, is_static, is_abstract, decorators, type_parameters,
-            complexity_cyclomatic, complexity_cognitive, complexity_halstead, maintainability_index, nesting_depth
+            complexity_cyclomatic, complexity_cognitive, complexity_halstead, maintainability_index, nesting_depth, return_type
           FROM nodes ORDER BY rowid`,
   edges: 'SELECT id, source, target, kind, metadata, line, column, confidence, confidence_score FROM edges ORDER BY id',
   unresolved_refs: 'SELECT id, source_id, ref_name, ref_kind, file_path, line, column, metadata, attempted_strategies FROM unresolved_refs ORDER BY id',
@@ -36,9 +36,9 @@ function index(engine) {
   const t = Date.now();
   execFileSync(process.execPath, [cli, 'index', root, '--force'], { env: { ...process.env, KIROGRAPH_ENGINE: engine }, stdio: 'ignore' });
   const ms = Date.now() - t;
-  const db = new Database(dbFile, { readOnly: true });
+  const db = new DatabaseSync(dbFile, { readOnly: true });
   const dump = {};
-  for (const [table, sql] of Object.entries(QUERIES)) dump[table] = db.all(sql);
+  for (const [table, sql] of Object.entries(QUERIES)) dump[table] = db.prepare(sql).all().map(r => ({ ...r }));
   db.close();
   return { dump, ms };
 }

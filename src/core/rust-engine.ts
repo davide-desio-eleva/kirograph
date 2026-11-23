@@ -2,9 +2,9 @@
  * The native engine (config `"engine": "rust"`, package `kirograph-rust`, sources in
  * native/kirograph-rust).
  *
- * It takes over the two phases where an index spends its time: extraction (parse each file and
- * write its symbols) and reference resolution. It writes the same rows the TypeScript engine
- * writes, so everything else reads the graph as usual. Languages it has no grammar for are
+ * It takes over extraction (parse each file) and the writing of the graph; references are resolved
+ * by the TypeScript resolver, as with the default engine. It writes the same rows the TypeScript
+ * engine writes, so everything else reads the graph as usual. Languages it has no grammar for are
  * extracted by the TypeScript engine and handed to it already extracted, so the files are still
  * written in order and the graph is the same as with `"engine": "node"`.
  *
@@ -31,7 +31,6 @@ export interface RustIndexEntry {
 export interface RustIndexOptions {
   projectRoot: string;
   dbPath: string;
-  markerPath?: string;
   /** Re-extract files whose content hash is unchanged (index --force). */
   force: boolean;
   enableComplexity: boolean;
@@ -68,20 +67,22 @@ export interface RustIndexResult {
   timings: Record<string, number>;
 }
 
-export interface RustResolveResult {
-  resolved: number;
-  remaining: number;
-  errors: string[];
+/** A compiled grammar's fingerprint, and the one grammars/grammars.json records (the WASM file's). */
+export interface RustGrammarFingerprint {
+  language: string;
+  abi: number;
+  states: number;
+  kinds: number;
+  fields: number;
+  hash: string;
+  recorded: string;
 }
 
 export interface RustEngine {
   nativeLanguages(): string[];
   engineVersion(): string;
   indexFiles(options: RustIndexOptions, entries: RustIndexEntry[], onProgress?: (current: number, total: number) => void): Promise<RustIndexResult>;
-  resolveReferences(
-    options: { dbPath: string; markerPath?: string; fuzzyThreshold?: number; synchronousOff?: boolean },
-    onProgress?: (current: number, total: number) => void,
-  ): Promise<RustResolveResult>;
+  grammarFingerprints(): RustGrammarFingerprint[];
   extractFileJson(path: string, projectRoot: string, language: string, enableComplexity: boolean): string | null;
 }
 
@@ -103,8 +104,10 @@ export function effectiveEngine(config: KiroGraphConfig): 'node' | 'rust' {
 export function loadRustEngine(): RustEngine | null {
   if (loaded !== undefined) return loaded;
   try {
-    // A source checkout's own build first (development), then the installed package
-    const isEngine = (m: any) => typeof m?.indexFiles === 'function' && typeof m?.resolveReferences === 'function';
+    // A source checkout's own build first (development), then the installed package. An engine
+    // of 1.5 (with resolveReferences, without grammarFingerprints) writes for the WASM driver's
+    // locks and an older schema: it is not used
+    const isEngine = (m: any) => typeof m?.indexFiles === 'function' && typeof m?.grammarFingerprints === 'function';
     let mod: any = null;
     const checkout = path.join(__dirname, '..', '..', 'native', 'kirograph-rust');
     if (fs.existsSync(path.join(checkout, 'index.js'))) {
@@ -113,7 +116,7 @@ export function loadRustEngine(): RustEngine | null {
     }
     if (!isEngine(mod)) mod = requireEngine('kirograph-rust');
     if (!isEngine(mod)) {
-      throw new Error('kirograph-rust has no native binary for this platform (build it: cd native/kirograph-rust && npm run build)');
+      throw new Error('kirograph-rust has no native binary for this platform, or one of an older KiroGraph (build it: cd native/kirograph-rust && npm run build)');
     }
     loaded = mod as RustEngine;
   } catch (err) {
@@ -143,10 +146,9 @@ export function rustEngineFallback(config: KiroGraphConfig): string | null {
   return loadRustEngine() ? null : `engine "rust" unavailable (${failure}), using "node"`;
 }
 
-/** Where the native engine finds the database and this process's writer marker (src/db/db-lock.ts). */
-export function rustDbPaths(projectRoot: string): { dbPath: string; markerPath: string } {
-  const dir = path.join(projectRoot, '.kirograph');
-  return { dbPath: path.join(dir, 'kirograph.db'), markerPath: path.join(dir, 'db-writers', String(process.pid)) };
+/** Where the native engine finds the database. */
+export function rustDbPaths(projectRoot: string): { dbPath: string } {
+  return { dbPath: path.join(projectRoot, '.kirograph', 'kirograph.db') };
 }
 
 /** Test hook: forget the loaded module. */

@@ -76,8 +76,11 @@ describe('lua', () => {
   });
 });
 
+const WASM_DIR = path.resolve(__dirname, '../../src/extraction/wasm');
+
 describe('zeroMallocInBinary', () => {
-  const lua = fs.readFileSync(require.resolve('tree-sitter-wasms/out/tree-sitter-lua.wasm'));
+  // A grammar whose scanner allocates with malloc (Lua's did until its 0.4 grammar, which uses calloc)
+  const lua = fs.readFileSync(path.join(WASM_DIR, 'tree-sitter-python.wasm'));
 
   it('renames the malloc import and nothing else', () => {
     const out = zeroMallocInBinary(new Uint8Array(lua));
@@ -97,9 +100,8 @@ describe('zeroMallocInBinary', () => {
   });
 
   it('leaves every grammar a valid module', () => {
-    const dir = path.dirname(require.resolve('tree-sitter-wasms/out/tree-sitter-lua.wasm'));
-    for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.wasm'))) {
-      const out = zeroMallocInBinary(new Uint8Array(fs.readFileSync(path.join(dir, f))));
+    for (const f of fs.readdirSync(WASM_DIR).filter(f => f.endsWith('.wasm'))) {
+      const out = zeroMallocInBinary(new Uint8Array(fs.readFileSync(path.join(WASM_DIR, f))));
       expect(() => new WebAssembly.Module(out), f).not.toThrow();
     }
   });

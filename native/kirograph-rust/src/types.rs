@@ -36,6 +36,9 @@ pub struct GraphNode {
     pub decorators: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub type_parameters: Option<Value>,
+    /// The class a function or method returns (`Repo`, `Job[]`, `Queue<Job>`), read by resolution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub return_type: Option<String>,
     pub updated_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub complexity_cyclomatic: Option<i64>,

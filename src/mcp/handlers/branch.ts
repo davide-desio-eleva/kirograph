@@ -52,14 +52,14 @@ export async function handleBranch(toolName: string, args: Record<string, unknow
         return `Branch database for "${branchB}" not found at ${pathB}.\nUse kirograph branch add ${branchB} to create it.`;
       }
 
-      const { Database } = ((await import('node-sqlite3-wasm')) as any).default;
-      const rawDbA = new Database(pathA);
+      const { Database } = await import('../../db/sqlite');
+      const rawDbA = new Database(pathA, { readOnly: true });
       const rowsA = rawDbA.all('SELECT id, name, kind, file_path, qualified_name FROM nodes', []) as Array<{
         id: string; name: string; kind: string; file_path: string; qualified_name: string;
       }>;
       rawDbA.close();
 
-      const rawDbB = new Database(pathB);
+      const rawDbB = new Database(pathB, { readOnly: true });
       const rowsB = rawDbB.all('SELECT id, name, kind, file_path, qualified_name FROM nodes', []) as Array<{
         id: string; name: string; kind: string; file_path: string; qualified_name: string;
       }>;
@@ -137,8 +137,8 @@ export async function handleBranch(toolName: string, args: Record<string, unknow
         return `Branch database for "${branch}" not found at ${dbPath}.\nUse kirograph branch add ${branch} to create it.`;
       }
 
-      const { Database } = ((await import('node-sqlite3-wasm')) as any).default;
-      const rawDb = new Database(dbPath);
+      const { Database } = await import('../../db/sqlite');
+      const rawDb = new Database(dbPath, { readOnly: true });
       const pattern = `%${query}%`;
       const rows = rawDb.all(
         'SELECT name, kind, file_path, start_line FROM nodes WHERE name LIKE ? OR qualified_name LIKE ? LIMIT ?',

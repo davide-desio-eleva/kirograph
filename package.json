@@ -1,6 +1,6 @@
 {
   "name": "kirograph",
-  "version": "1.5.4",
+  "version": "1.6.1",
   "description": "Semantic code knowledge graph for Kiro: fewer tool calls, instant symbol lookups, 100% local.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,6 +14,7 @@
   ],
   "scripts": {
     "build": "tsx scripts/build.ts",
+    "grammars": "node scripts/grammars.mjs",
     "dev": "tsx scripts/build.ts --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
@@ -71,10 +72,8 @@
     "@huggingface/transformers": "^4.2.0",
     "commander": "^14.0.2",
     "figlet": "^1.11.0",
-    "node-sqlite3-wasm": "0.8.55",
     "parquetjs-lite": "^0.8.7",
     "picomatch": "^4.0.3",
-    "tree-sitter-wasms": "^0.1.11",
     "web-tree-sitter": "^0.25.3"
   },
   "optionalDependencies": {
@@ -113,15 +112,16 @@
   },
   "devDependencies": {
     "@types/figlet": "^1.7.0",
-    "@types/node": "^20.0.0",
+    "@types/node": "^22.20.5",
     "@types/picomatch": "^4.0.2",
     "esbuild": "^0.28.0",
+    "tree-sitter-cli": "0.25.8",
     "tsx": "^4.21.0",
     "typescript": "^5.0.0",
     "vitest": "^4.1.2"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.16.0"
   },
   "overrides": {
     "tar": "^7.5.11",

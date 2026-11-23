@@ -1,9 +1,8 @@
 //! KiroGraph's native engine (config `"engine": "rust"`).
 //!
-//! It takes over the two phases where an index spends its time: extraction (parse every file
-//! and write its symbols) and reference resolution. Everything else stays in TypeScript, and the
-//! database is the same file with the same rows, so the rest of KiroGraph does not know which
-//! engine wrote it.
+//! It takes over extraction (parse every file) and the writing of the graph. Reference
+//! resolution, and everything else, stays in TypeScript, and the database is the same file with
+//! the same rows, so the rest of KiroGraph does not know which engine wrote it.
 
 #![deny(clippy::all)]
 
@@ -12,8 +11,6 @@ pub mod db;
 pub mod engine;
 pub mod extract;
 pub mod jstext;
-pub mod lock;
-pub mod resolve;
 pub mod routes;
 pub mod types;
 
@@ -28,11 +25,57 @@ use napi::threadsafe_function::{ErrorStrategy, ThreadsafeFunction, ThreadsafeFun
 use napi::JsFunction;
 use napi_derive::napi;
 
-/// Languages the engine parses itself. Other files are extracted by the TypeScript engine and
-/// handed over already extracted.
+/// Languages the engine extracts itself: those whose extraction is ported from
+/// src/extraction (every field of every file the same, see test/rust/extract-parity.js). Other
+/// files are extracted by the TypeScript engine and handed over already extracted.
+pub const NATIVE_LANGUAGES: &[&str] = &[];
+
 #[napi]
 pub fn native_languages() -> Vec<String> {
-    grammars::GRAMMAR_LANGUAGES.iter().map(|s| s.to_string()).chain(["jsx".to_string()]).collect()
+    NATIVE_LANGUAGES.iter().filter(|l| engine::grammar_for(l).is_some()).map(|s| s.to_string()).collect()
+}
+
+#[napi(object)]
+pub struct GrammarFingerprint {
+    pub language: String,
+    /// What the compiled grammar has: ABI, parse states, node kinds, fields, hash of the names.
+    pub abi: u32,
+    pub states: u32,
+    pub kinds: u32,
+    pub fields: u32,
+    pub hash: String,
+    /// What grammars/grammars.json records (the WASM file's): both must be equal.
+    pub recorded: String,
+}
+
+/// The fingerprint of every compiled grammar, measured as scripts/grammars.mjs measures a WASM
+/// file, with the recorded one: the two engines parse a file into the same tree only when equal.
+#[napi]
+pub fn grammar_fingerprints() -> Vec<GrammarFingerprint> {
+    use sha2::{Digest, Sha256};
+    let mut out = Vec::new();
+    for lang in grammars::GRAMMAR_LANGUAGES {
+        let Some(f) = grammars::grammar(lang) else { continue };
+        let l = tree_sitter::Language::new(f);
+        let kinds: Vec<String> = (0..l.node_kind_count() as u16)
+            .map(|i| format!("{} {}", if l.node_kind_is_named(i) { "N" } else { "a" }, l.node_kind_for_id(i).unwrap_or("")))
+            .collect();
+        let fields: Vec<String> = (1..=l.field_count() as u16).map(|i| l.field_name_for_id(i).unwrap_or("").to_string()).collect();
+        let digest = Sha256::digest(format!("{}\n\n{}", kinds.join("\n"), fields.join("\n")).as_bytes());
+        let rec = grammars::recorded_fingerprint(lang)
+            .map(|(a, s, k, f, h)| format!("{a}/{s}/{k}/{f}/{h}"))
+            .unwrap_or_default();
+        out.push(GrammarFingerprint {
+            language: lang.to_string(),
+            abi: l.abi_version() as u32,
+            states: l.parse_state_count() as u32,
+            kinds: l.node_kind_count() as u32,
+            fields: l.field_count() as u32,
+            hash: hex::encode(digest)[..16].to_string(),
+            recorded: rec,
+        });
+    }
+    out
 }
 
 #[napi]
@@ -55,7 +98,6 @@ pub struct IndexEntry {
 pub struct IndexOptions {
     pub project_root: String,
     pub db_path: String,
-    pub marker_path: Option<String>,
     pub force: bool,
     pub enable_complexity: bool,
     pub max_file_size: f64,
@@ -162,7 +204,6 @@ pub fn index_files(options: IndexOptions, entries: Vec<IndexEntry>, on_progress:
     let params = engine::IndexParams {
         project_root: options.project_root,
         db_path: options.db_path,
-        marker_path: options.marker_path,
         force: options.force,
         enable_complexity: options.enable_complexity,
         max_file_size: options.max_file_size.max(0.0) as u64,
@@ -181,55 +222,6 @@ pub fn index_files(options: IndexOptions, entries: Vec<IndexEntry>, on_progress:
         }
     }
     Ok(AsyncTask::new(IndexTask { params: Some((params, list)), progress: make_progress(on_progress)? }))
-}
-
-#[napi(object)]
-pub struct ResolveOptions {
-    pub db_path: String,
-    pub marker_path: Option<String>,
-    pub fuzzy_threshold: Option<f64>,
-    /// Commit without waiting for the disk (a full index: one that does not finish is run again).
-    pub synchronous_off: Option<bool>,
-}
-
-#[napi(object)]
-pub struct ResolveResult {
-    pub resolved: i64,
-    pub remaining: i64,
-    pub errors: Vec<String>,
-}
-
-pub struct ResolveTask {
-    options: Option<ResolveOptions>,
-    progress: Progress,
-}
-
-impl Task for ResolveTask {
-    type Output = resolve::ResolveOutcome;
-    type JsValue = ResolveResult;
-
-    fn compute(&mut self) -> Result<Self::Output> {
-        let o = self.options.take().ok_or_else(|| Error::from_reason("task already run"))?;
-        let progress = self.progress.clone();
-        resolve::run_resolve(
-            &o.db_path,
-            o.marker_path,
-            o.fuzzy_threshold.unwrap_or(0.5),
-            o.synchronous_off.unwrap_or(false),
-            |c, t| report(&progress, c, t),
-        )
-            .map_err(Error::from_reason)
-    }
-
-    fn resolve(&mut self, _env: Env, out: Self::Output) -> Result<Self::JsValue> {
-        Ok(ResolveResult { resolved: out.resolved, remaining: out.remaining, errors: out.errors })
-    }
-}
-
-/// Resolves every pending reference into edges, in a background thread.
-#[napi(ts_return_type = "Promise<ResolveResult>")]
-pub fn resolve_references(options: ResolveOptions, on_progress: Option<JsFunction>) -> Result<AsyncTask<ResolveTask>> {
-    Ok(AsyncTask::new(ResolveTask { options: Some(options), progress: make_progress(on_progress)? }))
 }
 
 /// Extracts one file without writing it, as JSON (for the parity tests).

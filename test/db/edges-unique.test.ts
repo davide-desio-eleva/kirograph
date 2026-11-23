@@ -20,6 +20,23 @@ function downgrade(db: GraphDatabase): void {
   raw.run('DELETE FROM schema_versions WHERE version >= 4');
 }
 
+describe('migrations', () => {
+  it('runs one that was interrupted, though a later one was recorded', () => {
+    let db = new GraphDatabase(root);
+    const raw = db.getRawDb();
+    raw.run('DROP INDEX IF EXISTS idx_edges_unique');
+    raw.run('DELETE FROM schema_versions WHERE version = 4');   // 5 recorded, 4 not
+    edge(db, 'f', 'g', 'calls', 10, 2); edge(db, 'f', 'g', 'calls', 10, 2);
+    db.close();
+
+    db = new GraphDatabase(root);
+    try {
+      expect(count(db)).toBe(1);
+      expect(db.getRawDb().get("SELECT count(*) AS c FROM sqlite_master WHERE name = 'idx_edges_unique'").c).toBe(1);
+    } finally { db.close(); }
+  });
+});
+
 describe('edges unique key', () => {
   it('ignores an edge that is already there, with or without a line', () => {
     const db = new GraphDatabase(root);
@@ -53,7 +70,7 @@ describe('edges unique key', () => {
       expect(count(db)).toBe(200 + 2);
       expect(count(db, "kind = 'calls'")).toBe(2);
       expect(db.getRawDb().get("SELECT count(*) AS c FROM sqlite_master WHERE name = 'idx_edges_unique'").c).toBe(1);
-      expect(db.getRawDb().get('SELECT max(version) AS v FROM schema_versions').v).toBe(4);
+      expect(db.getRawDb().get('SELECT max(version) AS v FROM schema_versions').v).toBe(5);
     } finally { db.close(); }
   });
 

@@ -136,7 +136,7 @@ export class DocsIndexer {
     let codeRefsCount = 0;
 
     // Upsert sections in a transaction
-    this.db.run('BEGIN');
+    this.db.run('BEGIN IMMEDIATE');
     try {
       for (const section of flatSections) {
         if (existingIds.has(section.id)) {

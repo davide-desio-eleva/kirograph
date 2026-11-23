@@ -13,8 +13,8 @@ const yellow = '\x1b[38;5;179m';
 export function register(program: Command): void {
   program
     .command('unlock [projectPath]')
-    .description('Force-release stale KiroGraph locks (process lock and database lock)')
-    .option('--force', 'Release the locks even if another KiroGraph process (such as an MCP server) has the database open')
+    .description('Force-release a stale KiroGraph process lock (and the database lock left by KiroGraph 1.5 or older)')
+    .option('--force', 'Release the locks even if a KiroGraph 1.5 process seems to have the database open')
     .action(async (projectPath: string | undefined, opts: { force?: boolean }) => {
       const root = path.resolve(projectPath ?? process.cwd());
       const dir = path.join(root, '.kirograph');
@@ -32,8 +32,9 @@ export function register(program: Command): void {
         return;
       }
 
-      // An MCP server or another command that has the database open keeps a marker in
-      // db-writers/. Taking the lock from under it could corrupt a write in progress.
+      // A KiroGraph 1.5 process that has the database open keeps a marker in db-writers/. Taking
+      // its lock from under it could corrupt a write in progress. (1.6 and later lock the file with
+      // SQLite itself, which leaves nothing behind when a process dies.)
       const holders = liveDbWriters(dir);
       if (holders.length > 0 && !opts.force) {
         console.log(
@@ -56,17 +57,24 @@ export function register(program: Command): void {
         released++;
       }
 
-      // ── Database lock (kirograph.db.lock) ──────────────────────────────────
-      // This is the lock the "Database is locked" error actually points at, and
-      // the one `unlock` historically did NOT clear — the whole point of this
-      // command for most users. GraphDatabase refuses to open while the
-      // directory exists; a killed sync leaves it behind as a stale, empty dir.
-      // We reach here only when no live indexer holds the process lock (checked
-      // above), so removing it is safe.
+      // ── Database lock of KiroGraph 1.5 or older (kirograph.db.lock) ─────────
+      // The WASM driver of 1.5 and older locked by creating this directory, and a killed process
+      // left it behind. 1.6 removes it when it first opens the database; this is for a project
+      // still used by an older version.
       if (fs.existsSync(dbLockPath)) {
         // Directory in current versions; tolerate a plain file from older ones.
         fs.rmSync(dbLockPath, { recursive: true, force: true });
         console.log(`  ${green}✓${reset} Database lock released ${dim}(${dbLockPath})${reset}`);
+        released++;
+      }
+
+      // ── Markers of KiroGraph 1.5 processes (db-writers/) ───────────────────
+      // Only with --force: a marker of a live pid stops 1.6 from switching the database to WAL
+      // under a 1.5 process; when that pid is another program's, this clears it.
+      const writersDir = path.join(dir, 'db-writers');
+      if (opts.force && fs.existsSync(writersDir)) {
+        fs.rmSync(writersDir, { recursive: true, force: true });
+        console.log(`  ${green}✓${reset} KiroGraph 1.5 process markers removed ${dim}(${writersDir})${reset}`);
         released++;
       }
 

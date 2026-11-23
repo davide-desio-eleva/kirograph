@@ -13,7 +13,6 @@ export interface IndexEntry {
 export interface IndexOptions {
   projectRoot: string
   dbPath: string
-  markerPath?: string
   force: boolean
   enableComplexity: boolean
   maxFileSize: number
@@ -45,25 +44,24 @@ export interface IndexResult {
   timings: Record<string, number>
 }
 
-export interface ResolveOptions {
-  dbPath: string
-  markerPath?: string
-  fuzzyThreshold?: number
-  synchronousOff?: boolean
+export interface GrammarFingerprint {
+  language: string
+  /** What the compiled grammar has: ABI, parse states, node kinds, fields, hash of the names. */
+  abi: number
+  states: number
+  kinds: number
+  fields: number
+  hash: string
+  /** What grammars/grammars.json records (the WASM file's): both must be equal. */
+  recorded: string
 }
 
-export interface ResolveResult {
-  resolved: number
-  remaining: number
-  errors: string[]
-}
-
-/** Languages the engine parses itself. */
+/** Languages the engine extracts itself (the others are extracted in TypeScript and handed over). */
 export function nativeLanguages(): string[]
 export function engineVersion(): string
 /** Extracts and writes the given files, in order, in a background thread. */
 export function indexFiles(options: IndexOptions, entries: IndexEntry[], onProgress?: (current: number, total: number) => void): Promise<IndexResult>
-/** Resolves every pending reference into edges, in a background thread. */
-export function resolveReferences(options: ResolveOptions, onProgress?: (current: number, total: number) => void): Promise<ResolveResult>
+/** The fingerprint of every compiled grammar, with the one grammars/grammars.json records. */
+export function grammarFingerprints(): GrammarFingerprint[]
 /** Extracts one file without writing it, as JSON (parity tests). */
 export function extractFileJson(path: string, projectRoot: string, language: string, enableComplexity: boolean): string | null

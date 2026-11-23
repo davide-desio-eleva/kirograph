@@ -6,21 +6,24 @@
 //! rowids as after an index by the TypeScript engine.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::time::{Duration, Instant};
 
 use indexmap::IndexMap;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
-use crate::lock::{DirLock, LockGuard};
 use crate::types::ExtractedFile;
 
 pub struct Db {
     pub conn: Connection,
-    lock: DirLock,
-    /// Time spent waiting for the database lock, in milliseconds.
+    /// Time spent waiting for the write lock, in milliseconds.
     pub lock_wait_ms: f64,
 }
+
+/// How long in all a transaction waits for the write lock held by another process (SQLite waits
+/// `busy_timeout` each time; past that it is tried again), as src/db/db-lock.ts does.
+const MAX_WAIT: Duration = Duration::from_secs(120);
 
 /// What writing one file changed, for the sync result.
 #[derive(Default, Clone)]
@@ -72,27 +75,40 @@ fn to_err(e: rusqlite::Error) -> String {
     e.to_string()
 }
 
+/// Another process holds the lock (SQLite already waited busy_timeout).
+fn is_busy(e: &rusqlite::Error) -> bool {
+    matches!(e, rusqlite::Error::SqliteFailure(f, _) if f.code == rusqlite::ErrorCode::DatabaseBusy)
+}
+
 impl Db {
-    pub fn open(db_path: &Path, marker: Option<PathBuf>, synchronous_off: bool) -> Result<Db, String> {
+    pub fn open(db_path: &Path, synchronous_off: bool) -> Result<Db, String> {
         let conn = Connection::open(db_path).map_err(to_err)?;
-        // Same settings as the TypeScript connection. The journal mode is left as the file has it:
-        // the WASM driver cannot read a WAL database.
+        // Same settings as the TypeScript connection (src/db/database.ts). The database is in WAL
+        // mode (the TypeScript connection that opened it first switched it); SQLite's own locks
+        // order the writers of every process.
         conn.execute_batch(&format!(
-            "PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA synchronous={}; PRAGMA cache_size=-262144; PRAGMA temp_store=MEMORY;",
+            "PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA synchronous={}; PRAGMA cache_size=-262144; PRAGMA temp_store=MEMORY;",
             if synchronous_off { "OFF" } else { "NORMAL" }
         ))
         .map_err(to_err)?;
         conn.set_prepared_statement_cache_capacity(64);
-        Ok(Db { conn, lock: DirLock::new(db_path, marker), lock_wait_ms: 0.0 })
+        Ok(Db { conn, lock_wait_ms: 0.0 })
     }
 
-    /// Runs `f` inside a transaction that holds the database lock.
-    pub fn transaction<T>(&mut self, f: impl FnOnce(&Connection, &mut LockGuard) -> Result<T, String>) -> Result<T, String> {
-        let waited = std::time::Instant::now();
-        let mut guard = self.lock.acquire()?;
+    /// Runs `f` inside a transaction. It begins IMMEDIATE, taking the write lock at once (a
+    /// deferred one that reads first fails in WAL when another process commits before its first
+    /// write), and waits for a lock another process holds up to MAX_WAIT.
+    pub fn transaction<T>(&mut self, f: impl FnOnce(&Connection) -> Result<T, String>) -> Result<T, String> {
+        let waited = Instant::now();
+        loop {
+            match self.conn.execute_batch("BEGIN IMMEDIATE") {
+                Ok(()) => break,
+                Err(e) if is_busy(&e) && waited.elapsed() < MAX_WAIT => continue,
+                Err(e) => return Err(to_err(e)),
+            }
+        }
         self.lock_wait_ms += waited.elapsed().as_secs_f64() * 1000.0;
-        self.conn.execute_batch("BEGIN").map_err(to_err)?;
-        match f(&self.conn, &mut guard) {
+        match f(&self.conn) {
             Ok(v) => {
                 self.conn.execute_batch("COMMIT").map_err(to_err)?;
                 Ok(v)
@@ -106,7 +122,7 @@ impl Db {
 
     /// path → (content hash, stat key) of every indexed file.
     pub fn file_hashes(&mut self) -> Result<HashMap<String, (String, Option<String>)>, String> {
-        self.transaction(|conn, _| {
+        self.transaction(|conn| {
             let mut stmt = conn.prepare("SELECT path, content_hash, stat_key FROM files").map_err(to_err)?;
             let rows = stmt
                 .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?)))
@@ -151,6 +167,38 @@ pub fn detach_incoming_edges(conn: &Connection, path: &str) -> Result<(), String
         infra = INFRA_LANGUAGES
     );
     conn.prepare_cached(&sql).and_then(|mut s| s.execute([path])).map_err(to_err)?;
+    Ok(())
+}
+
+/// Port of GraphDatabase.detachDependentEdges and requeueEdges (src/db/database.ts): the call
+/// edges whose resolution read the file (`edge_deps`: a supertype's file, a return type's
+/// function's, a parameter's callers') go back to unresolved references, to be resolved again. The
+/// same statements in the same order, so both engines write the same rows.
+pub fn detach_dependent_edges(conn: &Connection, path: &str) -> Result<(), String> {
+    let dep = format!("f:{path}");
+    let rows: Vec<i64> = {
+        let mut s = conn
+            .prepare_cached(
+                "SELECT e.rowid AS rid FROM edges e WHERE e.id IN (SELECT edge_id FROM edge_deps WHERE dep = ?) AND e.confidence = 'extracted'",
+            )
+            .map_err(to_err)?;
+        let it = s.query_map([dep.as_str()], |r| r.get::<_, i64>(0)).map_err(to_err)?;
+        it.collect::<Result<_, _>>().map_err(to_err)?
+    };
+    for chunk in rows.chunks(500) {
+        let marks = vec!["?"; chunk.len()].join(",");
+        conn.execute(
+            &format!(
+                "INSERT INTO unresolved_refs (source_id, ref_name, ref_kind, file_path, line, column, metadata)
+         SELECT e.source, t.name, 'function', s.file_path, e.line, e.column, e.metadata
+         FROM edges e JOIN nodes t ON t.id = e.target JOIN nodes s ON s.id = e.source
+         WHERE e.rowid IN ({marks})"
+            ),
+            rusqlite::params_from_iter(chunk.iter()),
+        )
+        .map_err(to_err)?;
+        conn.execute(&format!("DELETE FROM edges WHERE rowid IN ({marks})"), rusqlite::params_from_iter(chunk.iter())).map_err(to_err)?;
+    }
     Ok(())
 }
 
@@ -221,6 +269,7 @@ pub fn write_file(
     };
     if !old_ids.is_empty() {
         detach_incoming_edges(conn, path)?;
+        detach_dependent_edges(conn, path)?;
         conn.prepare_cached(
             "DELETE FROM edges WHERE source IN (SELECT id FROM nodes WHERE file_path = ?1) OR target IN (SELECT id FROM nodes WHERE file_path = ?1)",
         )
@@ -254,7 +303,7 @@ pub fn write_file(
     {
         let mut ins = conn
             .prepare_cached(
-                "INSERT OR REPLACE INTO nodes (id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column, end_column, docstring, signature, visibility, is_exported, is_async, is_static, is_abstract, decorators, type_parameters, updated_at, complexity_cyclomatic, complexity_cognitive, complexity_halstead, maintainability_index, nesting_depth) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO nodes (id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column, end_column, docstring, signature, visibility, is_exported, is_async, is_static, is_abstract, decorators, type_parameters, updated_at, complexity_cyclomatic, complexity_cognitive, complexity_halstead, maintainability_index, nesting_depth, return_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             )
             .map_err(to_err)?;
         for n in unique.values() {
@@ -288,6 +337,7 @@ pub fn write_file(
                 halstead,
                 n.maintainability_index,
                 n.nesting_depth,
+                n.return_type,
             ])
             .map_err(to_err)?;
         }

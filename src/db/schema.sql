@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS nodes (
   is_abstract INTEGER NOT NULL DEFAULT 0,
   decorators TEXT,
   type_parameters TEXT,
+  -- Declared return type of a function or method (the class name), for call resolution
+  return_type TEXT,
   updated_at INTEGER NOT NULL,
   -- Complexity metrics (nullable; populated when enableComplexity=true)
   complexity_cyclomatic INTEGER,
@@ -77,6 +79,16 @@ CREATE TABLE IF NOT EXISTS edges (
   confidence TEXT NOT NULL DEFAULT 'extracted',
   confidence_score REAL NOT NULL DEFAULT 1.0
 );
+
+-- What a resolved call read besides its own two ends: 'f:<file>' (a supertype's, a return type's
+-- function's, a parameter's caller's file) and 'n:<node id>' (a function whose parameter typed it).
+-- A sync of the file, or a new call of the function, resolves the edge again. Rows of deleted edges
+-- are pruned after each resolution.
+CREATE TABLE IF NOT EXISTS edge_deps (
+  edge_id INTEGER NOT NULL,
+  dep TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_edge_deps_dep ON edge_deps(dep);
 
 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target);

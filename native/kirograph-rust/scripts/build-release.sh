@@ -11,6 +11,7 @@ set -euo pipefail
 
 VERSION="${1:?usage: build-release.sh <version>}"
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# The repository is mounted whole in Docker: the grammar sources are at its root (grammars/.sources)
 cd "$DIR"
 OUT="$DIR/npm"
 BIN="$DIR/target/release-bin"
@@ -37,7 +38,7 @@ docker info >/dev/null 2>&1 || fail "Docker is not running (needed for the Linux
 rm -rf "$BIN" "$OUT"
 mkdir -p "$BIN" "$OUT"
 
-node scripts/fetch-grammars.mjs
+node ../../scripts/grammars.mjs sources
 [ -x node_modules/.bin/napi ] || npm install --silent
 
 # ── macOS ─────────────────────────────────────────────────────────────────────
@@ -50,7 +51,7 @@ done
 # ── Linux and Windows, in Docker ──────────────────────────────────────────────
 docker build -q -t "$IMAGE" release >/dev/null
 docker run --rm \
-  -v "$DIR":/src -w /src \
+  -v "$DIR/../..":/src -w /src/native/kirograph-rust \
   -v kirograph-rust-cargo:/usr/local/cargo/registry \
   -v kirograph-rust-xwin:/root/.cache/cargo-xwin \
   "$IMAGE" bash -c '

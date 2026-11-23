@@ -3,8 +3,8 @@
  *
  * Opt-in ANN index backed by sqlite-vec (the successor to sqlite-vss).
  * Uses better-sqlite3 to load the sqlite-vec extension into a dedicated
- * .kirograph/vec.db file, keeping it separate from the main node-sqlite3-wasm
- * database to avoid WAL-mode conflicts.
+ * .kirograph/vec.db file, keeping it separate from the main graph
+ * database (node:sqlite) to avoid WAL-mode conflicts.
  *
  * Required optional dependencies (not installed by default):
  *   npm install better-sqlite3 sqlite-vec

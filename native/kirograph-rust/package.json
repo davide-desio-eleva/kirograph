@@ -15,9 +15,9 @@
     ]
   },
   "scripts": {
-    "fetch-grammars": "node scripts/fetch-grammars.mjs",
-    "build": "node scripts/fetch-grammars.mjs && napi build --platform --release --no-js --dts target/napi.d.ts",
-    "build:debug": "node scripts/fetch-grammars.mjs && napi build --platform --no-js --dts target/napi.d.ts"
+    "grammar-sources": "node ../../scripts/grammars.mjs sources",
+    "build": "node ../../scripts/grammars.mjs sources && napi build --platform --release --no-js --dts target/napi.d.ts",
+    "build:debug": "node ../../scripts/grammars.mjs sources && napi build --platform --no-js --dts target/napi.d.ts"
   },
   "files": [
     "index.js",

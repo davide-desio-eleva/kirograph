@@ -45,6 +45,8 @@ export interface Node {
   isAbstract?: boolean;
   decorators?: string[];
   typeParameters?: string[];
+  /** Declared return type of a function or method: the class name (`Repo` for `(): Promise<Repo>`). */
+  returnType?: string;
   updatedAt: number;
   // Complexity metrics (populated when enableComplexity=true)
   complexityCyclomatic?: number;
