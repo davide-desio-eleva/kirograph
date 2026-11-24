@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.6.2] - 2026-11-24: Kiro starts the MCP server when opened from the Dock or Finder
+
+Kiro started outside a terminal could not connect to KiroGraph: the generated `.kiro/settings/mcp.json` ran `kirograph` by its bare name, which a GUI-launched app finds only on the PATH of a shell profile, and not when the binary lives in a version manager or Homebrew directory.
+
+### Upgrading
+
+- **Run `kirograph init` again** (or `kirograph doctor --fix`) in each project using Kiro: the entry in `.kiro/settings/mcp.json` is rewritten with the absolute Node binary and the absolute KiroGraph entry script. An absolute path goes stale after a Node version switch or a reinstall; `kirograph doctor` reports it.
+
+### Fixed
+
+- **Kiro cannot start the MCP server**: the installer writes the Node binary and the entry script as absolute paths instead of the bare `kirograph` command ([#121](https://github.com/davide-desio-eleva/kirograph/issues/121)). Other installer targets still write the bare command.
+- **`kirograph doctor` did not see a bare or stale Kiro MCP launch**: it checks that `kirograph` is on the shell PATH, which says nothing about a Kiro started from the Dock. It now reports a bare command as a warning and a launch path that no longer exists as a failure, and `--fix` rewrites both.
+
 ## [1.6.1] - 2026-11-19: calls on receivers whose type the code does not write down, and fixes to 1.6.0
 
 Compared with 1.6.0, in a sample of 50 random call edges checked against the code (django, fastify, nest, commons-lang, OpenZeppelin, 10 each, as for 1.6.0) 50 are right (49 in 1.6.0); so are 50 of 50 drawn from the edges 1.6.1 adds, and 20 of 20 of those typed by a parameter's callers. Call edges, 1.6.0 → 1.6.1: django 180,265 → 183,622, fastify 7,077 → 6,569, nest 23,190 → 23,411, commons-lang 53,033 → 53,425, OpenZeppelin 8,452 → 9,252, Slim 2,822 → 3,010, sinatra 2,138 → 2,214. A removed edge was wrong, or reaches another target now: a class's call reached the first method of the name in its file, not its own override; `done()` reached a `done` variable of another file; `article_set.all()` reached `QuerySet.all`; fastify's `reply.send()` reached a `send` nested in another function. A full index takes about 9% longer (django 28.4 s → 31.0 s).

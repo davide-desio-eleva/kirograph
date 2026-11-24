@@ -32,7 +32,7 @@ export function register(program: Command): void {
   program
     .command('doctor [projectPath]')
     .description('Health check: index, config, hooks, and permissions')
-    .option('--fix', 'Auto-repair fixable issues (hook permissions, stale lock file)')
+    .option('--fix', 'Auto-repair fixable issues (hook permissions, stale lock file, Kiro MCP launch path)')
     .action(async (projectPath: string | undefined, opts: { fix?: boolean }) => {
       const target = path.resolve(projectPath ?? process.cwd());
       const kirographDir = path.join(target, '.kirograph');
@@ -140,6 +140,24 @@ export function register(program: Command): void {
         checks.push(pass('binary', `kirograph found at ${which}`));
       } catch {
         checks.push(warn('binary', 'kirograph not found in PATH — install via `npm install -g kirograph`'));
+      }
+
+      // ── Kiro MCP launch ──────────────────────────────────────────────────────
+      // Kiro started from the Dock or Finder has no shell PATH, so the entry must be absolute.
+      const kiroMcpPath = path.join(target, '.kiro', 'settings', 'mcp.json');
+      const { inspectMcpLaunch, refreshMcpLaunch } = await import('../installer/mcp');
+      const launch = inspectMcpLaunch(kiroMcpPath);
+      const repairLaunch = () => refreshMcpLaunch(kiroMcpPath, target);
+      if (launch.kind === 'none') {
+        checks.push(skip('kiro mcp', `no KiroGraph server in .kiro/settings/mcp.json (${launch.message})`));
+      } else if (launch.kind === 'absolute') {
+        checks.push(pass('kiro mcp', `Kiro launches KiroGraph by absolute path (${launch.message})`));
+      } else if (launch.kind === 'bare') {
+        checks.push(warn('kiro mcp', `${launch.message}; a Kiro started from the Dock may not find it — run \`kirograph doctor --fix\``,
+          opts.fix ? repairLaunch : undefined));
+      } else {
+        checks.push(fail('kiro mcp', `Kiro launch path is stale: ${launch.message} — run \`kirograph doctor --fix\``,
+          opts.fix ? repairLaunch : undefined));
       }
 
       // ── Apply fixes ──────────────────────────────────────────────────────────
