@@ -31,6 +31,12 @@ describe('resolveMcpLaunch', () => {
     expect(launch).toEqual({ command: NODE, args: [fs.realpathSync(entry), 'serve', '--mcp'] });
   });
 
+  it('resolves a bin link without a .js suffix to the .js file it points at', () => {
+    const link = path.join(root, 'kirograph');
+    fs.symlinkSync(entry, link);
+    expect(resolveMcpLaunch(link, NODE)).toEqual({ command: NODE, args: [fs.realpathSync(entry), 'serve', '--mcp'] });
+  });
+
   it('falls back to the bare command when the entry is not a located .js file', () => {
     const bare = { command: 'kirograph', args: ['serve', '--mcp'] };
     expect(resolveMcpLaunch('', NODE)).toEqual(bare);

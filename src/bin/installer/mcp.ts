@@ -54,9 +54,12 @@ export interface McpLaunch {
  */
 export function resolveMcpLaunch(entry: string | undefined = process.argv[1], node: string = process.execPath): McpLaunch {
   const fallback: McpLaunch = { command: KIROGRAPH_COMMAND, args: [...KIROGRAPH_MCP_ARGS] };
-  if (!entry || !entry.endsWith('.js')) return fallback;
+  if (!entry) return fallback;
   try {
-    return { command: node, args: [fs.realpathSync(entry), ...KIROGRAPH_MCP_ARGS] };
+    // The npm bin link (`.../bin/kirograph`) has no .js suffix; the file it points at does.
+    const script = fs.realpathSync(entry);
+    if (!script.endsWith('.js')) return fallback;
+    return { command: node, args: [script, ...KIROGRAPH_MCP_ARGS] };
   } catch {
     return fallback;
   }
