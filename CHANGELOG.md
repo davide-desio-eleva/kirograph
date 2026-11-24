@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.3] - 2026-11-24: installer modes Default and Light
+
+### Changed
+
+- **The first installer choice is Default**: it enables the Developer profile (code health, navigation, complexity, call-site tracking), so the MCP server exposes the health and complexity tools without choosing a profile.
+- **Core is now Light**: "Core only" is renamed Light, and says it enables only the three core tools (search, context, node). The install mode value `core` is now `light`.
+
 ## [1.6.2] - 2026-11-24: Kiro starts the MCP server when opened from the Dock or Finder
 
 Kiro started outside a terminal could not connect to KiroGraph: the generated `.kiro/settings/mcp.json` ran `kirograph` by its bare name, which a GUI-launched app finds only on the PATH of a shell profile, and not when the binary lives in a version manager or Homebrew directory.

@@ -30,7 +30,7 @@ export type ConfigPatch = Pick<KiroGraphConfig,
 > & { embeddingModel?: string; embeddingDim?: number };
 export type SemanticEngine = KiroGraphConfig['semanticEngine'];
 
-type InstallMode = 'core' | 'full' | 'custom' | 'profiles';
+type InstallMode = 'default' | 'light' | 'full' | 'custom' | 'profiles';
 
 const PROFILES: Record<string, { label: string; description: string; patch: Partial<ConfigPatch> }> = {
   developer: {
@@ -104,7 +104,7 @@ type EmbeddingPatch = Pick<ConfigPatch,
 
 /**
  * Semantic embeddings are a core feature, not a "custom"-only extra — asked
- * for every install mode (core, full, profiles, custom) so users always get
+ * for every install mode (default, light, full, profiles, custom) so users always get
  * to pick whether embeddings run and, if so, which model/engine.
  */
 async function promptEmbeddings(rl: readline.Interface): Promise<EmbeddingPatch> {
@@ -258,7 +258,8 @@ export async function promptConfigOptions(
 ): Promise<{ patch: ConfigPatch; hooksToImport: string[] | null }> {
   // ── Install mode ─────────────────────────────────────────────────────────────
   const installMode = await arrowSelect<InstallMode>(rl, 'Installation mode:', [
-    { value: 'core',     label: 'Core only',  description: '3 always-on tools (search, context, node) — ~170 tok. Zero config.' },
+    { value: 'default',  label: 'Default',    description: 'Developer profile: code health, navigation, complexity, call-site tracking.' },
+    { value: 'light',    label: 'Light',      description: 'Only the core: 3 always-on tools (search, context, node), ~170 tok. No extra features.' },
     { value: 'full',     label: 'Full',        description: 'Enable every feature with sensible defaults. Best for a fresh project.' },
     { value: 'profiles', label: 'Profiles',   description: 'Choose a preset bundle (Developer, Team, Security, Data & Docs, AI/LLM).' },
     { value: 'custom',   label: 'Custom',     description: 'Answer each question individually. Maximum control.' },
@@ -282,9 +283,15 @@ export async function promptConfigOptions(
     memoryRelationMode: 'agent', wikiContradictionMode: 'heuristic', securityAuthDetectionMode: 'heuristic',
   };
 
-  if (installMode === 'core') {
+  if (installMode === 'light') {
     const embeddingPatch = await promptEmbeddings(rl);
     return { patch: { ...basePatch, ...embeddingPatch }, hooksToImport: null };
+  }
+
+  if (installMode === 'default') {
+    const embeddingPatch = await promptEmbeddings(rl);
+    const patch: ConfigPatch = { ...basePatch, ...PROFILES.developer.patch, ...embeddingPatch };
+    return { patch, hooksToImport: null };
   }
 
   if (installMode === 'full') {
