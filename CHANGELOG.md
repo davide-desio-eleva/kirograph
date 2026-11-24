@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.7.0] - 2026-11-24: the Kiro agent file follows the enabled features
+## [1.6.4] - 2026-11-24: the Kiro agent file follows the enabled features
 
 ### Fixed
 
