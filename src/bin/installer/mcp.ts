@@ -29,7 +29,8 @@ export interface McpFeatureFlags {
   trackCallSites?: boolean;
 }
 
-function computeAutoApprove(features?: McpFeatureFlags): string[] {
+/** The KiroGraph tools the enabled features expose (all of them when no flags are given). */
+export function computeAutoApprove(features?: McpFeatureFlags): string[] {
   if (!features) return KIROGRAPH_TOOLS;
   const hidden = new Set<string>();
   for (const [flag, names] of Object.entries(FEATURE_TOOL_SETS)) {
@@ -154,6 +155,6 @@ export function writeMcpConfigFinal(kiroDir: string, projectRoot: string, featur
     autoApprove,
   };
   writeJson(mcpPath, config);
-  updateInstallState(kiroDir, { autoApprove });
+  updateInstallState(kiroDir, { autoApprove, features: { ...features } });
   console.log(`  ✓ MCP server registered in ${mcpPath}`);
 }

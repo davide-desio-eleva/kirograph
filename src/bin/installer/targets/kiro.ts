@@ -19,10 +19,11 @@ export function installKiroLate(projectRoot: string, opts: LateInstallOptions): 
   const kiroDir = path.join(projectRoot, '.kiro');
   const enableCompression = shellCompressionLevel !== 'off';
   const enableShellExec = shellCompressionLevel !== 'off';
-  writeMcpConfigFinal(kiroDir, projectRoot, { enableArchitecture, enableMemory, enableWatchmen, enableDocs, enableData, enableSecurity, enablePatterns, enableWiki, enableCodeHealth, enableNavigation, enableComplexity, enableGitContext, enableEditPrimitives, enableBranch, enableAgentUtils, enableGeneralCompression, enableShellExec, trackCallSites });
+  const features = { enableArchitecture, enableMemory, enableWatchmen, enableDocs, enableData, enableSecurity, enablePatterns, enableWiki, enableCodeHealth, enableNavigation, enableComplexity, enableGitContext, enableEditPrimitives, enableBranch, enableAgentUtils, enableGeneralCompression, enableShellExec, trackCallSites };
+  writeMcpConfigFinal(kiroDir, projectRoot, features);
   writeHooks(kiroDir, { enableCompression, enableMemory, enableWatchmen, watchmenSynthesisMode, enableWiki, wikiSynthesisMode, kiroHookFormat });
   writeSteering(kiroDir, { cavemanMode, enableCompression, shellCompressionLevel: shellCompressionLevel as any, enableMemory, enableDocs, enableData, enableSecurity, enableArchitecture, enablePatterns, enableWiki, enableCodeHealth, enableNavigation, enableGitContext, enableAgentUtils, enableGeneralCompression, trackCallSites });
-  writeCliAgent(kiroDir, { enableSecurity, enableArchitecture, enablePatterns });
+  writeCliAgent(kiroDir, features);
 }
 
 export function printKiroNextSteps(): void {

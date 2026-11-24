@@ -16,12 +16,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { KIROGRAPH_SCOPED_TOOLS, KIROGRAPH_SYNC_CMD } from './common';
 import { mergeToolList, readInstallState, updateInstallState } from './install-state';
+import { computeAutoApprove, McpFeatureFlags } from './mcp';
 
-export interface CliAgentOptions {
-  enableArchitecture?: boolean;
-  enableSecurity?: boolean;
-  enablePatterns?: boolean;
-}
+/** The same feature flags the MCP entry is written from, so the agent lists what the server exposes. */
+export type CliAgentOptions = McpFeatureFlags;
 
 function buildAgentConfig(opts?: CliAgentOptions) {
   const workflowResources = [
@@ -52,13 +50,13 @@ function buildAgentConfig(opts?: CliAgentOptions) {
 
   return {
     name: 'kirograph',
-    description: `KiroGraph-aware agent — semantic code graph for symbol lookup, call graphs, impact analysis${opts?.enableArchitecture ? ', architecture metrics' : ''}${opts?.enableSecurity ? ', security auditing' : ''}${opts?.enablePatterns ? ', AST pattern search' : ''}. Workflow steering files are registered as resources — activate one with ${slashCommands}.`,
+    description: `KiroGraph-aware agent — semantic code graph for symbol lookup, call graphs, impact analysis${opts?.enableArchitecture ? ', architecture metrics' : ''}${opts?.enableCodeHealth || opts?.enableComplexity ? ', code health and complexity' : ''}${opts?.enableSecurity ? ', security auditing' : ''}${opts?.enablePatterns ? ', AST pattern search' : ''}. Workflow steering files are registered as resources — activate one with ${slashCommands}.`,
     resources: [
       'file://.kiro/steering/kirograph.md',
       ...workflowResources,
     ],
     tools: ['@builtin', '@kirograph'],
-    allowedTools: KIROGRAPH_SCOPED_TOOLS,
+    allowedTools: computeAutoApprove(opts).map(name => `@kirograph/${name}`),
     useLegacyMcpJson: true,
     hooks: {
       agentSpawn: [{ command: KIROGRAPH_SYNC_CMD }],
@@ -124,13 +122,19 @@ export function mergeAgentConfig(
   };
 }
 
-export function writeCliAgent(kiroDir: string, opts?: CliAgentOptions): void {
+/**
+ * Write the agent file. Without flags (a command such as `caveman` rewrites it) the features of the
+ * last install are used, read from install-state; an install with no record gets every tool, as before.
+ */
+export function writeCliAgent(kiroDir: string, features?: CliAgentOptions): void {
   const agentsDir = path.join(kiroDir, 'agents');
   ensureDir(agentsDir);
   const agentPath = path.join(agentsDir, 'kirograph.json');
   let existing: Record<string, any> | null = null;
   try { existing = JSON.parse(fs.readFileSync(agentPath, 'utf8')); } catch { /* none, or not JSON: written fresh */ }
-  const merged = mergeAgentConfig(buildAgentConfig(opts), existing, readInstallState(kiroDir)?.allowedTools, path.dirname(kiroDir));
+  const installed = readInstallState(kiroDir);
+  const opts = features ?? (installed?.features as CliAgentOptions | undefined);
+  const merged = mergeAgentConfig(buildAgentConfig(opts), existing, installed?.allowedTools, path.dirname(kiroDir));
   writeJson(agentPath, merged);
   updateInstallState(kiroDir, { allowedTools: merged.allowedTools as string[] });
   console.log(`  ✓ CLI agent config written to ${agentPath}`);
