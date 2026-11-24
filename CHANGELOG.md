@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.7.0] - 2026-11-24: Kiro starts the MCP server when opened from the Dock or Finder
+## [1.6.2] - 2026-11-24: Kiro starts the MCP server when opened from the Dock or Finder
 
 Kiro started outside a terminal could not connect to KiroGraph: the generated `.kiro/settings/mcp.json` ran `kirograph` by its bare name, which a GUI-launched app finds only on the PATH of a shell profile, and not when the binary lives in a version manager or Homebrew directory.
 
