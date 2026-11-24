@@ -90,9 +90,12 @@ CREATE TABLE IF NOT EXISTS edge_deps (
 );
 CREATE INDEX IF NOT EXISTS idx_edge_deps_dep ON edge_deps(dep);
 
+CREATE INDEX IF NOT EXISTS idx_edges_kind ON edges(kind);
+-- edges by source and by target alone: the planner picks them for a file's edges (detachIncomingEdges
+-- joins through the target). Without them it scans every edge of a kind for each file, and a forced
+-- re-index of django spent 25 s there. The (source, kind) and (target, kind) indexes do not replace them.
 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target);
-CREATE INDEX IF NOT EXISTS idx_edges_kind ON edges(kind);
 CREATE INDEX IF NOT EXISTS idx_edges_source_kind ON edges(source, kind);
 CREATE INDEX IF NOT EXISTS idx_edges_target_kind ON edges(target, kind);
 
@@ -123,8 +126,6 @@ CREATE TABLE IF NOT EXISTS route_mounts (
 CREATE INDEX IF NOT EXISTS idx_route_mounts_file ON route_mounts(file_path);
 
 CREATE INDEX IF NOT EXISTS idx_unresolved_source ON unresolved_refs(source_id);
-CREATE INDEX IF NOT EXISTS idx_unresolved_name ON unresolved_refs(ref_name);
-CREATE INDEX IF NOT EXISTS idx_unresolved_kind ON unresolved_refs(ref_kind);
 -- Every file written deletes its references by path first: without this index each delete read
 -- the whole table, which made writing a large project quadratic
 CREATE INDEX IF NOT EXISTS idx_unresolved_file ON unresolved_refs(file_path);

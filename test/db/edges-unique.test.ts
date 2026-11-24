@@ -70,7 +70,7 @@ describe('edges unique key', () => {
       expect(count(db)).toBe(200 + 2);
       expect(count(db, "kind = 'calls'")).toBe(2);
       expect(db.getRawDb().get("SELECT count(*) AS c FROM sqlite_master WHERE name = 'idx_edges_unique'").c).toBe(1);
-      expect(db.getRawDb().get('SELECT max(version) AS v FROM schema_versions').v).toBe(5);
+      expect(db.getRawDb().get('SELECT max(version) AS v FROM schema_versions').v).toBe(6);
     } finally { db.close(); }
   });
 
