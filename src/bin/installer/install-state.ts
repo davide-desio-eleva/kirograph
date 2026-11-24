@@ -17,6 +17,8 @@ export interface InstallState {
   allowedTools?: string[];
   /** Ids of the hooks last written to `.kiro/hooks/`. */
   hooks?: string[];
+  /** The feature flags of the last install (`enable*`), so a later rewrite of the agent keeps them. */
+  features?: Record<string, boolean | undefined>;
 }
 
 function statePath(kiroDir: string): string {

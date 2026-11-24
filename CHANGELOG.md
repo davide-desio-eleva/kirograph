@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.4] - 2026-11-24: the Kiro agent file follows the enabled features
+
+### Fixed
+
+- **The Kiro agent listed tools the server does not expose**: `.kiro/agents/kirograph.json` allowed every KiroGraph tool, including those of features that are off, and its description did not mention code health or complexity. Its tool list now comes from the same enabled features as the MCP server, and its description names them ([#124](https://github.com/davide-desio-eleva/kirograph/issues/124)).
+- **`kirograph caveman` dropped the agent's optional entries**: rewriting the agent without flags removed the architecture, security and patterns entries. It now uses the features of the last install, saved in `.kirograph/install-state.json`.
+
 ## [1.6.3] - 2026-11-24: installer modes Default and Light
 
 ### Changed
